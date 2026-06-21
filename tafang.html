@@ -49,24 +49,53 @@
             color: #f39c12;
         }
         .controls button {
-            background: #0078d7;
             border: none;
-            color: white;
             font-weight: 600;
-            padding: 8px 22px;
+            padding: 8px 16px;
             border-radius: 6px;
-            font-size: 1rem;
+            font-size: 0.9rem;
             cursor: pointer;
             transition: 0.15s;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-left: 8px;
+            margin-left: 6px;
+            color: white;
         }
         .controls button:hover {
-            background: #106ebe;
             transform: scale(1.02);
         }
         .controls button:active {
             transform: scale(0.97);
+        }
+        .controls .btn-save {
+            background: #28a745;
+        }
+        .controls .btn-save:hover {
+            background: #218838;
+        }
+        .controls .btn-load {
+            background: #ffc107;
+            color: #2c3e50;
+        }
+        .controls .btn-load:hover {
+            background: #e0a800;
+        }
+        .controls .btn-pause {
+            background: #6c757d;
+        }
+        .controls .btn-pause:hover {
+            background: #5a6268;
+        }
+        .controls .btn-pause.paused {
+            background: #28a745;
+        }
+        .controls .btn-pause.paused:hover {
+            background: #218838;
+        }
+        .controls .btn-reset {
+            background: #dc3545;
+        }
+        .controls .btn-reset:hover {
+            background: #c82333;
         }
         canvas {
             display: block;
@@ -218,7 +247,7 @@
     </style>
 </head>
 <body>
-<div class="game-wrapper">
+<div class="game-wrapper" id="gameWrapper">
     <div class="top-bar">
         <div class="stats">
             <span>🏠 <span id="livesDisplay">100</span></span>
@@ -227,7 +256,10 @@
             <span class="debug-info">👾 <span id="enemyCount">0</span></span>
         </div>
         <div class="controls">
-            <button id="resetBtn">⟳ 重置</button>
+            <button class="btn-save" id="saveBtn">💾 保存</button>
+            <button class="btn-load" id="loadBtn">📂 读取</button>
+            <button class="btn-pause" id="pauseBtn">⏸️ 暂停</button>
+            <button class="btn-reset" id="resetBtn">⟳ 重置</button>
         </div>
     </div>
 
@@ -267,6 +299,7 @@
         const waveSpan = document.getElementById('waveDisplay');
         const enemyCountSpan = document.getElementById('enemyCount');
         const statusMsg = document.getElementById('statusMsg');
+        const pauseBtn = document.getElementById('pauseBtn');
 
         const panel = document.getElementById('towerPanel');
         const panelType = document.getElementById('panelType');
@@ -290,12 +323,14 @@
         let enemies = [];
         let bullets = [];
         let laserBeams = [];
-        let gold = 500;
+        const INITIAL_GOLD = 600;
+        let gold = INITIAL_GOLD;
         let lives = 100;
         let wave = 0;
         let gameOver = false;
         let gameStarted = false;
         let path = [];
+        let isPaused = false;
 
         let enemiesSpawnedInWave = 0;
         let enemiesPerWave = 0;
@@ -312,53 +347,21 @@
         };
 
         // ============================================================
-        // 怪物模板：速度固定，血量封顶大幅提高
+        // 怪物模板
         // ============================================================
         function getEnemyTemplate(wave) {
-            // 血量成长：前5波不增长，5~20波线性增长到封顶，20波后封顶
             let hpMult = 1;
             if (wave > 5) {
-                const progress = Math.min((wave - 5) / 15, 1.0); // 0~1 之间
-                hpMult = 1 + progress * 9; // 最大10倍
+                const progress = Math.min((wave - 5) / 15, 1.0);
+                hpMult = 1 + progress * 9;
             }
 
-            // 小怪：速度 1.0~1.5 随机，血量 30~300（封顶）
-            // 中怪：速度 0.7~1.1 随机，血量 60~800（封顶）
-            // 大怪：速度 0.5~0.8 随机，血量 120~1800（封顶）
             const types = [
-                {
-                    hpBase: 30,
-                    hpMax: 300,
-                    speedMin: 1.0,
-                    speedMax: 1.5,
-                    size: 12,
-                    label: '小',
-                    rewardBase: 5,
-                    rewardCap: 20
-                },
-                {
-                    hpBase: 60,
-                    hpMax: 800,
-                    speedMin: 0.7,
-                    speedMax: 1.1,
-                    size: 18,
-                    label: '中',
-                    rewardBase: 8,
-                    rewardCap: 35
-                },
-                {
-                    hpBase: 120,
-                    hpMax: 1800,
-                    speedMin: 0.5,
-                    speedMax: 0.8,
-                    size: 24,
-                    label: '大',
-                    rewardBase: 12,
-                    rewardCap: 55
-                }
+                { hpBase: 30, hpMax: 300, speedMin: 1.0, speedMax: 1.5, size: 12, label: '小', rewardBase: 10, rewardCap: 35 },
+                { hpBase: 60, hpMax: 800, speedMin: 0.7, speedMax: 1.1, size: 18, label: '中', rewardBase: 18, rewardCap: 55 },
+                { hpBase: 120, hpMax: 1800, speedMin: 0.5, speedMax: 0.8, size: 24, label: '大', rewardBase: 25, rewardCap: 90 }
             ];
 
-            // 根据波次决定出哪种类型
             let idx = 0;
             if (wave > 3) idx = Math.random() < 0.5 ? 1 : 0;
             if (wave > 8) {
@@ -375,18 +378,12 @@
             }
 
             const t = types[idx % types.length];
-            // 血量在范围内随机，再乘以波次系数
             const rawHp = t.hpBase + Math.random() * (t.hpMax - t.hpBase);
             const hp = Math.floor(rawHp * hpMult);
-            // 速度在范围内随机（不随波次增长）
             const speed = t.speedMin + Math.random() * (t.speedMax - t.speedMin);
 
-            // ============================================================
-            // 动态赏金：根据血量和速度综合评估
-            // ============================================================
             const hpRatio = (hp - t.hpBase) / (t.hpMax * hpMult - t.hpBase + 1);
-            const hpBonus = Math.floor(hpRatio * 14);
-
+            const hpBonus = Math.floor(hpRatio * 16);
             const speedRatio = (speed - t.speedMin) / (t.speedMax - t.speedMin + 0.01);
             const speedBonus = Math.floor(speedRatio * 6);
 
@@ -456,6 +453,7 @@
 
         function isBlocked(col, row) {
             if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return true;
+            if (col === END.x && row === END.y) return false;
             if (grid[row][col] === 1) return true;
             if (towers.some(t => t.x === col && t.y === row)) return true;
             return false;
@@ -589,14 +587,26 @@
                 reward: template.reward,
                 label: template.label,
                 waypoints: waypoints,
-                pathIndex: 1
+                pathIndex: 1,
+                dodgePhase: Math.random() * Math.PI * 2,
+                dodgeAmplitude: 0.2 + Math.random() * 0.3,
+                dodgeFrequency: 0.02 + Math.random() * 0.025,
+                dodgeTimer: 0,
+                dodgeDirection: Math.random() > 0.5 ? 1 : -1
             });
         }
 
+        // ============================================================
+        // ★★★ 修复：终点附近禁用躲避 ★★★
+        // ============================================================
         function updateEnemies() {
+            const endPixelX = END.x * CELL_SIZE + CELL_SIZE / 2;
+            const endPixelY = END.y * CELL_SIZE + CELL_SIZE / 2;
+
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const e = enemies[i];
 
+                // 更新路径
                 if (e.waypoints.length !== path.length) {
                     e.waypoints = path.map(p => ({
                         x: p.x * CELL_SIZE + CELL_SIZE / 2,
@@ -605,36 +615,121 @@
                     e.pathIndex = Math.min(e.pathIndex, e.waypoints.length - 1);
                 }
 
-                if (e.pathIndex >= e.waypoints.length) {
-                    const damage = Math.max(5, Math.floor(e.maxHp / 15));
-                    lives -= damage;
-                    if (lives < 0) lives = 0;
-                    enemies.splice(i, 1);
-                    updateUI();
-                    if (lives <= 0) {
-                        gameOver = true;
-                        statusMsg.innerText = '💀 游戏结束! 点击重置';
+                // ★★★ 第一步：检查是否到达终点（大范围判定）★★★
+                const distToEnd = Math.hypot(e.x - endPixelX, e.y - endPixelY);
+                if (distToEnd < 20) {
+                    // 直接拉向终点中心
+                    const dx = endPixelX - e.x;
+                    const dy = endPixelY - e.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < 3) {
+                        // 到达终点！
+                        const damage = Math.max(5, Math.floor(e.maxHp / 15));
+                        lives -= damage;
+                        if (lives < 0) lives = 0;
+                        enemies.splice(i, 1);
+                        updateUI();
+                        if (lives <= 0) {
+                            gameOver = true;
+                            statusMsg.innerText = '💀 游戏结束! 点击重置';
+                        }
+                        continue;
                     }
+                    // 直线冲向终点（完全禁用躲避）
+                    const step = Math.min(e.speed * 2.0, dist);
+                    e.x += (dx / dist) * step;
+                    e.y += (dy / dist) * step;
                     continue;
                 }
 
-                const target = e.waypoints[e.pathIndex];
-                const dx = target.x - e.x;
-                const dy = target.y - e.y;
-                const dist = Math.hypot(dx, dy);
+                // ★★★ 正常路径移动（距离终点 > 20 像素时才允许躲避）★★★
+                if (e.pathIndex >= e.waypoints.length) {
+                    // 路径索引异常，直接冲向终点
+                    const dx = endPixelX - e.x;
+                    const dy = endPixelY - e.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < 1.5) {
+                        const damage = Math.max(5, Math.floor(e.maxHp / 15));
+                        lives -= damage;
+                        if (lives < 0) lives = 0;
+                        enemies.splice(i, 1);
+                        updateUI();
+                        if (lives <= 0) {
+                            gameOver = true;
+                            statusMsg.innerText = '💀 游戏结束! 点击重置';
+                        }
+                        continue;
+                    }
+                    const step = Math.min(e.speed * 2.0, dist);
+                    e.x += (dx / dist) * step;
+                    e.y += (dy / dist) * step;
+                    continue;
+                }
 
-                if (dist < 1.5) {
+                const from = e.waypoints[e.pathIndex - 1] || e.waypoints[0];
+                const target = e.waypoints[e.pathIndex];
+                const dx = target.x - from.x;
+                const dy = target.y - from.y;
+                const segLen = Math.hypot(dx, dy);
+                if (segLen === 0) { e.pathIndex++; continue; }
+
+                const dirX = dx / segLen;
+                const dirY = dy / segLen;
+                const perpX = -dirY;
+                const perpY = dirX;
+
+                const distToTarget = Math.hypot(e.x - target.x, e.y - target.y);
+                const step = Math.min(e.speed * 1.8, distToTarget + 0.5);
+
+                // 计算躲避偏移（距离终点 > 20 像素才生效）
+                let dodgeFactor = Math.min(distToTarget / 20, 1.0);
+                const pathProgress = 1 - dodgeFactor;
+                const swingAmount = Math.sin(e.dodgeTimer * e.dodgeFrequency + e.dodgePhase) * e.dodgeAmplitude * pathProgress * 0.5;
+
+                if (Math.random() < 0.002) {
+                    e.dodgeDirection *= -1;
+                }
+
+                const offsetMagnitude = swingAmount * e.dodgeDirection * CELL_SIZE * 0.3;
+                const offsetX = perpX * offsetMagnitude;
+                const offsetY = perpY * offsetMagnitude;
+
+                let newX = e.x + dirX * step;
+                let newY = e.y + dirY * step;
+
+                // 检测偏移是否撞墙
+                const testCol = Math.floor((newX + offsetX) / CELL_SIZE);
+                const testRow = Math.floor((newY + offsetY) / CELL_SIZE);
+                let canDodge = true;
+                if (testCol >= 0 && testCol < COLS && testRow >= 0 && testRow < ROWS) {
+                    if (grid[testRow][testCol] === 1 || towers.some(t => t.x === testCol && t.y === testRow)) {
+                        canDodge = false;
+                    }
+                }
+
+                if (canDodge && Math.abs(offsetMagnitude) > 0.5) {
+                    newX += offsetX;
+                    newY += offsetY;
+                }
+
+                e.x = newX;
+                e.y = newY;
+                e.dodgeTimer += 0.015;
+
+                if (Math.hypot(e.x - target.x, e.y - target.y) < 1.5) {
                     e.x = target.x;
                     e.y = target.y;
                     e.pathIndex++;
-                } else {
-                    const step = Math.min(e.speed * 1.5, dist);
-                    e.x += (dx / dist) * step;
-                    e.y += (dy / dist) * step;
                 }
+
+                e.x = Math.max(5, Math.min(795, e.x));
+                e.y = Math.max(5, Math.min(595, e.y));
             }
         }
 
+        // ============================================================
+        // 炮塔系统
+        // ============================================================
         function updateTowers() {
             const endPixelX = END.x * CELL_SIZE + CELL_SIZE / 2;
             const endPixelY = END.y * CELL_SIZE + CELL_SIZE / 2;
@@ -837,7 +932,7 @@
             enemies = [];
             bullets = [];
             laserBeams = [];
-            gold = 500;
+            gold = INITIAL_GOLD;
             lives = 100;
             wave = 0;
             gameOver = false;
@@ -847,11 +942,157 @@
             spawnCooldown = 0;
             path = [];
             selectedTowerIdx = -1;
+            isPaused = false;
+            pauseBtn.textContent = '⏸️ 暂停';
+            pauseBtn.classList.remove('paused');
             closePanel();
             updatePath();
             updateUI();
             statusMsg.innerText = '🔄 已重置, 放置第一个炮塔自动开始!';
             statusMsg.style.borderLeftColor = '#0078d7';
+        }
+
+        function saveGame() {
+            try {
+                const saveData = {
+                    version: '1.0',
+                    timestamp: Date.now(),
+                    gold: gold,
+                    lives: lives,
+                    wave: wave,
+                    gameStarted: gameStarted,
+                    gameOver: gameOver,
+                    grid: grid,
+                    towers: towers.map(t => ({
+                        x: t.x,
+                        y: t.y,
+                        type: t.type,
+                        level: t.level || 1,
+                        totalCost: t.totalCost || BASE_CONFIG[t.type].cost,
+                        cooldown: t.cooldown || 0,
+                        angle: t.angle || 0
+                    })),
+                    enemies: enemies.map(e => ({
+                        x: e.x,
+                        y: e.y,
+                        hp: e.hp,
+                        maxHp: e.maxHp,
+                        speed: e.speed,
+                        size: e.size,
+                        color: e.color,
+                        borderColor: e.borderColor,
+                        reward: e.reward,
+                        label: e.label,
+                        pathIndex: e.pathIndex || 1,
+                        waypoints: e.waypoints || [],
+                        dodgePhase: e.dodgePhase || 0,
+                        dodgeAmplitude: e.dodgeAmplitude || 0.3,
+                        dodgeFrequency: e.dodgeFrequency || 0.02,
+                        dodgeTimer: e.dodgeTimer || 0,
+                        dodgeDirection: e.dodgeDirection || 1
+                    })),
+                    enemiesSpawnedInWave: enemiesSpawnedInWave,
+                    enemiesPerWave: enemiesPerWave,
+                    spawnCooldown: spawnCooldown,
+                    path: path
+                };
+                localStorage.setItem('td_save_data', JSON.stringify(saveData));
+                statusMsg.innerText = '✅ 游戏已保存! (' + new Date().toLocaleTimeString() + ')';
+                statusMsg.style.borderLeftColor = '#28a745';
+            } catch (e) {
+                statusMsg.innerText = '❌ 保存失败: ' + e.message;
+                statusMsg.style.borderLeftColor = '#dc3545';
+            }
+        }
+
+        function loadGame() {
+            try {
+                const raw = localStorage.getItem('td_save_data');
+                if (!raw) {
+                    statusMsg.innerText = '⚠️ 没有找到存档!';
+                    statusMsg.style.borderLeftColor = '#ffc107';
+                    return;
+                }
+                const data = JSON.parse(raw);
+
+                gold = data.gold;
+                lives = data.lives;
+                wave = data.wave;
+                gameStarted = data.gameStarted;
+                gameOver = data.gameOver;
+                grid = data.grid;
+                enemiesSpawnedInWave = data.enemiesSpawnedInWave || 0;
+                enemiesPerWave = data.enemiesPerWave || 0;
+                spawnCooldown = data.spawnCooldown || 0;
+                path = data.path || [];
+
+                towers = data.towers.map(t => ({
+                    x: t.x,
+                    y: t.y,
+                    type: t.type,
+                    level: t.level || 1,
+                    totalCost: t.totalCost || BASE_CONFIG[t.type].cost,
+                    cooldown: t.cooldown || 0,
+                    angle: t.angle || 0,
+                    target: null
+                }));
+
+                enemies = data.enemies.map(e => ({
+                    x: e.x,
+                    y: e.y,
+                    hp: e.hp,
+                    maxHp: e.maxHp,
+                    speed: e.speed,
+                    size: e.size,
+                    color: e.color,
+                    borderColor: e.borderColor || '#2c3e50',
+                    reward: e.reward,
+                    label: e.label || '中',
+                    pathIndex: e.pathIndex || 1,
+                    waypoints: e.waypoints || [],
+                    dodgePhase: e.dodgePhase || 0,
+                    dodgeAmplitude: e.dodgeAmplitude || 0.3,
+                    dodgeFrequency: e.dodgeFrequency || 0.02,
+                    dodgeTimer: e.dodgeTimer || 0,
+                    dodgeDirection: e.dodgeDirection || 1
+                }));
+
+                bullets = [];
+                laserBeams = [];
+                selectedTowerIdx = -1;
+                closePanel();
+
+                updatePath();
+                updateUI();
+                statusMsg.innerText = '📂 存档读取成功! (波次 ' + wave + ')';
+                statusMsg.style.borderLeftColor = '#0078d7';
+
+                if (gameOver) {
+                    statusMsg.innerText = '📂 存档读取成功, 但游戏已结束';
+                    statusMsg.style.borderLeftColor = '#dc3545';
+                }
+            } catch (e) {
+                statusMsg.innerText = '❌ 读取失败: ' + e.message;
+                statusMsg.style.borderLeftColor = '#dc3545';
+            }
+        }
+
+        function togglePause() {
+            if (gameOver) {
+                statusMsg.innerText = '⛔ 游戏已结束, 无法暂停';
+                return;
+            }
+            isPaused = !isPaused;
+            if (isPaused) {
+                pauseBtn.textContent = '▶️ 继续';
+                pauseBtn.classList.add('paused');
+                statusMsg.innerText = '⏸️ 已暂停';
+            } else {
+                pauseBtn.textContent = '⏸️ 暂停';
+                pauseBtn.classList.remove('paused');
+                statusMsg.innerText = '▶️ 已继续';
+                statusMsg.style.borderLeftColor = '#28a745';
+            }
         }
 
         function draw() {
@@ -998,7 +1239,6 @@
                 ctx.textBaseline = 'bottom';
                 ctx.fillText('💰' + e.reward, e.x, e.y - e.size - 16);
 
-                // 显示血量数值（方便看怪物有多肉）
                 ctx.fillStyle = 'rgba(255,255,255,0.8)';
                 ctx.font = 'bold 8px sans-serif';
                 ctx.textBaseline = 'top';
@@ -1048,7 +1288,7 @@
         }
 
         function gameLoop() {
-            if (!gameOver) {
+            if (!gameOver && !isPaused) {
                 trySpawnEnemy();
                 updateEnemies();
                 updateTowers();
@@ -1062,6 +1302,10 @@
         canvas.addEventListener('click', (e) => {
             if (gameOver) {
                 statusMsg.innerText = '⛔ 游戏已结束, 请重置';
+                return;
+            }
+            if (isPaused) {
+                statusMsg.innerText = '⏸️ 游戏已暂停, 请继续';
                 return;
             }
 
@@ -1169,6 +1413,11 @@
         btnSell.addEventListener('click', sellTower);
         btnClose.addEventListener('click', closePanel);
 
+        document.getElementById('saveBtn').addEventListener('click', saveGame);
+        document.getElementById('loadBtn').addEventListener('click', loadGame);
+        document.getElementById('pauseBtn').addEventListener('click', togglePause);
+        document.getElementById('resetBtn').addEventListener('click', resetGame);
+
         document.querySelectorAll('.tower-buttons button').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.tower-buttons button').forEach(b => b.classList.remove('active'));
@@ -1181,7 +1430,13 @@
             });
         });
 
-        document.getElementById('resetBtn').addEventListener('click', resetGame);
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if (e.key === ' ' || e.key === 'Space') {
+                e.preventDefault();
+                togglePause();
+            }
+        });
 
         initGrid();
         updatePath();
