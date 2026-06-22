@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>路障塔防 - 高血量版</title>
+    <title>路障塔防 - 平衡版</title>
     <style>
         * {
             box-sizing: border-box;
@@ -244,6 +244,55 @@
         .tower-panel .cost.gold {
             color: #f39c12;
         }
+
+        .block-panel {
+            position: absolute;
+            bottom: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #ffffff;
+            border: 1px solid #dc3545;
+            border-radius: 8px;
+            padding: 12px 24px;
+            display: none;
+            gap: 14px;
+            align-items: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+            z-index: 10;
+        }
+        .block-panel.show {
+            display: flex;
+        }
+        .block-panel .info {
+            color: #2c3e50;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+        .block-panel button {
+            border: 1px solid #dc3545;
+            border-radius: 6px;
+            padding: 8px 18px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: 0.1s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .block-panel button:hover {
+            background: #f5c6cb;
+        }
+        .block-panel .btn-close {
+            border-color: #d0d5db;
+            background: #f0f2f5;
+            color: #2c3e50;
+        }
+        .block-panel .btn-close:hover {
+            background: #e5e8ec;
+        }
     </style>
 </head>
 <body>
@@ -251,7 +300,7 @@
     <div class="top-bar">
         <div class="stats">
             <span>🏠 <span id="livesDisplay">100</span></span>
-            <span>💰 <span id="goldDisplay">500</span></span>
+            <span>💰 <span id="goldDisplay">600</span></span>
             <span>🌊 <span id="waveDisplay">0</span></span>
             <span class="debug-info">👾 <span id="enemyCount">0</span></span>
         </div>
@@ -277,13 +326,19 @@
         <button class="btn-close" id="btnClose">✕</button>
     </div>
 
+    <div class="block-panel" id="blockPanel">
+        <div class="info">🧱 路障</div>
+        <button id="btnRemoveBlock">🗑️ 拆除 (+<span id="removeBlockPrice">3</span>)</button>
+        <button class="btn-close" id="btnCloseBlock">✕</button>
+    </div>
+
     <div class="bottom-bar">
         <div class="tower-buttons">
             <button data-tower="light" class="active">🔫 轻机枪 100</button>
             <button data-tower="medium">⚙️ 中机枪 300</button>
             <button data-tower="heavy">💥 重机枪 800</button>
             <button data-tower="laser">🔴 激光炮 2000</button>
-            <button data-tower="block">🧱 路障 (免费)</button>
+            <button data-tower="block">🧱 路障 5</button>
         </div>
         <div class="msg" id="statusMsg">🏗️ 放置第一个炮塔自动开始!</div>
     </div>
@@ -312,11 +367,18 @@
         const btnSell = document.getElementById('btnSell');
         const btnClose = document.getElementById('btnClose');
 
+        const blockPanel = document.getElementById('blockPanel');
+        const btnRemoveBlock = document.getElementById('btnRemoveBlock');
+        const removeBlockPrice = document.getElementById('removeBlockPrice');
+        const btnCloseBlock = document.getElementById('btnCloseBlock');
+
         const COLS = 20;
         const ROWS = 15;
         const CELL_SIZE = 40;
         const START = { x: 0, y: 7 };
         const END = { x: 19, y: 7 };
+        const BLOCK_COST = 5;
+        const BLOCK_SELL = 3;
 
         let grid = [];
         let towers = [];
@@ -331,6 +393,7 @@
         let gameStarted = false;
         let path = [];
         let isPaused = false;
+        let selectedBlockPos = null;
 
         let enemiesSpawnedInWave = 0;
         let enemiesPerWave = 0;
@@ -339,27 +402,38 @@
         let selectedTower = 'light';
         let selectedTowerIdx = -1;
 
+        // ============================================================
+        // 炮塔配置
+        // ============================================================
         const BASE_CONFIG = {
-            light: { label: '轻机枪', cost: 100, range: 3.5, damage: 8, fireRate: 6, accuracy: 0.85, color: '#2ecc71', size: 12 },
+            light: { label: '轻机枪', cost: 100, range: 3.5, damage: 8, fireRate: 5, accuracy: 0.85, color: '#2ecc71', size: 12 },
             medium: { label: '中机枪', cost: 300, range: 4.5, damage: 20, fireRate: 14, accuracy: 0.70, color: '#f39c12', size: 14 },
             heavy: { label: '重机枪', cost: 800, range: 5.5, damage: 45, fireRate: 24, accuracy: 0.50, color: '#e74c3c', size: 16 },
-            laser: { label: '激光炮', cost: 2000, range: 7.0, damage: 80, fireRate: 3, accuracy: 1.0, color: '#e74c3c', size: 18, isLaser: true }
+            laser: { label: '激光炮', cost: 2000, range: 7.0, damage: 25, fireRate: 4, accuracy: 1.0, color: '#e74c3c', size: 18, isLaser: true }
         };
 
         // ============================================================
-        // 怪物模板
+        // 怪物模板：调整赏金（25波出重机枪，35波出激光炮）
         // ============================================================
         function getEnemyTemplate(wave) {
             let hpMult = 1;
-            if (wave > 5) {
-                const progress = Math.min((wave - 5) / 15, 1.0);
-                hpMult = 1 + progress * 9;
+            if (wave <= 10) {
+                hpMult = 1 + wave * 0.05;
+            } else if (wave <= 20) {
+                hpMult = 1.5 + (wave - 10) * 0.08;
+            } else if (wave <= 30) {
+                hpMult = 2.3 + (wave - 20) * 0.12;
+            } else if (wave <= 50) {
+                hpMult = 3.5 + (wave - 30) * 0.15;
+            } else {
+                hpMult = 6.5 + (wave - 50) * 0.08;
+                hpMult = Math.min(hpMult, 10);
             }
 
             const types = [
-                { hpBase: 30, hpMax: 300, speedMin: 1.0, speedMax: 1.5, size: 12, label: '小', rewardBase: 10, rewardCap: 35 },
-                { hpBase: 60, hpMax: 800, speedMin: 0.7, speedMax: 1.1, size: 18, label: '中', rewardBase: 18, rewardCap: 55 },
-                { hpBase: 120, hpMax: 1800, speedMin: 0.5, speedMax: 0.8, size: 24, label: '大', rewardBase: 25, rewardCap: 90 }
+                { hpBase: 30, hpMax: 300, speedMin: 1.0, speedMax: 1.5, size: 12, label: '小', rewardBase: 8, rewardCap: 25 },
+                { hpBase: 60, hpMax: 500, speedMin: 0.7, speedMax: 1.1, size: 18, label: '中', rewardBase: 15, rewardCap: 45 },
+                { hpBase: 120, hpMax: 800, speedMin: 0.5, speedMax: 0.8, size: 24, label: '大', rewardBase: 28, rewardCap: 80 }
             ];
 
             let idx = 0;
@@ -379,23 +453,41 @@
 
             const t = types[idx % types.length];
             const rawHp = t.hpBase + Math.random() * (t.hpMax - t.hpBase);
-            const hp = Math.floor(rawHp * hpMult);
+            let hp = Math.floor(rawHp * Math.min(hpMult, 10));
+            hp = Math.min(hp, t.hpMax);
+
             const speed = t.speedMin + Math.random() * (t.speedMax - t.speedMin);
 
-            const hpRatio = (hp - t.hpBase) / (t.hpMax * hpMult - t.hpBase + 1);
-            const hpBonus = Math.floor(hpRatio * 16);
-            const speedRatio = (speed - t.speedMin) / (t.speedMax - t.speedMin + 0.01);
-            const speedBonus = Math.floor(speedRatio * 6);
+            // ★★★ 波次加成（调低，让25波出重机枪，35波出激光炮）★★★
+            let waveBonus = 0;
+            if (wave > 5) waveBonus = Math.floor((wave - 5) * 1.5);
+            if (wave > 10) waveBonus = Math.floor((wave - 5) * 2.5);
+            if (wave > 15) waveBonus = Math.floor((wave - 5) * 4);
+            if (wave > 20) waveBonus = Math.floor((wave - 5) * 6);
+            if (wave > 30) waveBonus = Math.floor((wave - 5) * 9);
+            waveBonus = Math.min(waveBonus, 1200);
 
-            let reward = t.rewardBase + hpBonus + speedBonus;
-            reward = Math.min(reward, t.rewardCap);
+            const hpRatio = (hp - t.hpBase) / (t.hpMax - t.hpBase + 1);
+            const hpBonus = Math.floor(hpRatio * 10);
+            const speedRatio = (speed - t.speedMin) / (t.speedMax - t.speedMin + 0.01);
+            const speedBonus = Math.floor(speedRatio * 4);
+
+            let reward = t.rewardBase + hpBonus + speedBonus + waveBonus;
+
+            let dynamicCap = t.rewardCap;
+            if (wave > 10) dynamicCap = Math.min(t.rewardCap + wave * 1.5, 100);
+            if (wave > 20) dynamicCap = Math.min(t.rewardCap + wave * 3, 250);
+            if (wave > 30) dynamicCap = Math.min(t.rewardCap + wave * 6, 500);
+            if (wave > 40) dynamicCap = Math.min(t.rewardCap + wave * 12, 1000);
+
+            reward = Math.min(reward, dynamicCap);
             reward = Math.max(reward, t.rewardBase);
 
             return {
                 hp: hp,
                 speed: Math.round(speed * 100) / 100,
                 size: t.size,
-                reward: reward,
+                reward: Math.floor(reward),
                 label: t.label
             };
         }
@@ -422,11 +514,16 @@
         function getTowerStats(tower) {
             const base = BASE_CONFIG[tower.type];
             const level = tower.level || 1;
-            const dmgMult = 1 + (level - 1) * 0.20;
+            let damage = base.damage;
+            if (tower.type === 'laser') {
+                damage = base.damage + (level - 1) * 60;
+            } else {
+                damage = Math.round(base.damage * (1 + (level - 1) * 0.20));
+            }
             const rangeMult = 1 + (level - 1) * 0.10;
             return {
                 ...base,
-                damage: Math.round(base.damage * dmgMult),
+                damage: damage,
                 range: Math.round((base.range * rangeMult) * 10) / 10,
                 level: level
             };
@@ -435,6 +532,9 @@
         function getUpgradeCost(tower) {
             const base = BASE_CONFIG[tower.type];
             const level = tower.level || 1;
+            if (tower.type === 'laser') {
+                return 1000 + (level - 1) * 500;
+            }
             let cost = Math.ceil(base.cost * (0.5 + 0.4 * level));
             cost = Math.ceil(cost / 5) * 5;
             return cost;
@@ -453,6 +553,7 @@
 
         function isBlocked(col, row) {
             if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return true;
+            if (col === START.x && row === START.y) return false;
             if (col === END.x && row === END.y) return false;
             if (grid[row][col] === 1) return true;
             if (towers.some(t => t.x === col && t.y === row)) return true;
@@ -523,6 +624,15 @@
 
         function updatePath() {
             path = aStar({ x: START.x, y: START.y }, { x: END.x, y: END.y });
+            for (const e of enemies) {
+                if (path.length > 0) {
+                    e.waypoints = path.map(p => ({
+                        x: p.x * CELL_SIZE + CELL_SIZE / 2,
+                        y: p.y * CELL_SIZE + CELL_SIZE / 2
+                    }));
+                    e.pathIndex = Math.min(e.pathIndex, e.waypoints.length - 1);
+                }
+            }
             if (path.length === 0) {
                 statusMsg.innerText = '⚠️ 路径被堵死!';
                 statusMsg.style.borderLeftColor = '#dc3545';
@@ -587,18 +697,10 @@
                 reward: template.reward,
                 label: template.label,
                 waypoints: waypoints,
-                pathIndex: 1,
-                dodgePhase: Math.random() * Math.PI * 2,
-                dodgeAmplitude: 0.2 + Math.random() * 0.3,
-                dodgeFrequency: 0.02 + Math.random() * 0.025,
-                dodgeTimer: 0,
-                dodgeDirection: Math.random() > 0.5 ? 1 : -1
+                pathIndex: 1
             });
         }
 
-        // ============================================================
-        // ★★★ 修复：终点附近禁用躲避 ★★★
-        // ============================================================
         function updateEnemies() {
             const endPixelX = END.x * CELL_SIZE + CELL_SIZE / 2;
             const endPixelY = END.y * CELL_SIZE + CELL_SIZE / 2;
@@ -606,7 +708,6 @@
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const e = enemies[i];
 
-                // 更新路径
                 if (e.waypoints.length !== path.length) {
                     e.waypoints = path.map(p => ({
                         x: p.x * CELL_SIZE + CELL_SIZE / 2,
@@ -615,41 +716,30 @@
                     e.pathIndex = Math.min(e.pathIndex, e.waypoints.length - 1);
                 }
 
-                // ★★★ 第一步：检查是否到达终点（大范围判定）★★★
                 const distToEnd = Math.hypot(e.x - endPixelX, e.y - endPixelY);
-                if (distToEnd < 20) {
-                    // 直接拉向终点中心
-                    const dx = endPixelX - e.x;
-                    const dy = endPixelY - e.y;
-                    const dist = Math.hypot(dx, dy);
-                    if (dist < 3) {
-                        // 到达终点！
-                        const damage = Math.max(5, Math.floor(e.maxHp / 15));
-                        lives -= damage;
-                        if (lives < 0) lives = 0;
-                        enemies.splice(i, 1);
-                        updateUI();
-                        if (lives <= 0) {
-                            gameOver = true;
-                            statusMsg.innerText = '💀 游戏结束! 点击重置';
-                        }
-                        continue;
+                if (distToEnd < 15) {
+                    let damage = 2;
+                    if (e.label === '中') damage = 4;
+                    if (e.label === '大') damage = 6;
+                    lives -= damage;
+                    if (lives < 0) lives = 0;
+                    enemies.splice(i, 1);
+                    updateUI();
+                    if (lives <= 0) {
+                        gameOver = true;
+                        statusMsg.innerText = '💀 游戏结束! 点击重置';
                     }
-                    // 直线冲向终点（完全禁用躲避）
-                    const step = Math.min(e.speed * 2.0, dist);
-                    e.x += (dx / dist) * step;
-                    e.y += (dy / dist) * step;
                     continue;
                 }
 
-                // ★★★ 正常路径移动（距离终点 > 20 像素时才允许躲避）★★★
                 if (e.pathIndex >= e.waypoints.length) {
-                    // 路径索引异常，直接冲向终点
                     const dx = endPixelX - e.x;
                     const dy = endPixelY - e.y;
                     const dist = Math.hypot(dx, dy);
                     if (dist < 1.5) {
-                        const damage = Math.max(5, Math.floor(e.maxHp / 15));
+                        let damage = 2;
+                        if (e.label === '中') damage = 4;
+                        if (e.label === '大') damage = 6;
                         lives -= damage;
                         if (lives < 0) lives = 0;
                         enemies.splice(i, 1);
@@ -666,60 +756,19 @@
                     continue;
                 }
 
-                const from = e.waypoints[e.pathIndex - 1] || e.waypoints[0];
                 const target = e.waypoints[e.pathIndex];
-                const dx = target.x - from.x;
-                const dy = target.y - from.y;
-                const segLen = Math.hypot(dx, dy);
-                if (segLen === 0) { e.pathIndex++; continue; }
+                const dx = target.x - e.x;
+                const dy = target.y - e.y;
+                const dist = Math.hypot(dx, dy);
 
-                const dirX = dx / segLen;
-                const dirY = dy / segLen;
-                const perpX = -dirY;
-                const perpY = dirX;
-
-                const distToTarget = Math.hypot(e.x - target.x, e.y - target.y);
-                const step = Math.min(e.speed * 1.8, distToTarget + 0.5);
-
-                // 计算躲避偏移（距离终点 > 20 像素才生效）
-                let dodgeFactor = Math.min(distToTarget / 20, 1.0);
-                const pathProgress = 1 - dodgeFactor;
-                const swingAmount = Math.sin(e.dodgeTimer * e.dodgeFrequency + e.dodgePhase) * e.dodgeAmplitude * pathProgress * 0.5;
-
-                if (Math.random() < 0.002) {
-                    e.dodgeDirection *= -1;
-                }
-
-                const offsetMagnitude = swingAmount * e.dodgeDirection * CELL_SIZE * 0.3;
-                const offsetX = perpX * offsetMagnitude;
-                const offsetY = perpY * offsetMagnitude;
-
-                let newX = e.x + dirX * step;
-                let newY = e.y + dirY * step;
-
-                // 检测偏移是否撞墙
-                const testCol = Math.floor((newX + offsetX) / CELL_SIZE);
-                const testRow = Math.floor((newY + offsetY) / CELL_SIZE);
-                let canDodge = true;
-                if (testCol >= 0 && testCol < COLS && testRow >= 0 && testRow < ROWS) {
-                    if (grid[testRow][testCol] === 1 || towers.some(t => t.x === testCol && t.y === testRow)) {
-                        canDodge = false;
-                    }
-                }
-
-                if (canDodge && Math.abs(offsetMagnitude) > 0.5) {
-                    newX += offsetX;
-                    newY += offsetY;
-                }
-
-                e.x = newX;
-                e.y = newY;
-                e.dodgeTimer += 0.015;
-
-                if (Math.hypot(e.x - target.x, e.y - target.y) < 1.5) {
+                if (dist < 1.5) {
                     e.x = target.x;
                     e.y = target.y;
                     e.pathIndex++;
+                } else {
+                    const step = Math.min(e.speed * 1.8, dist);
+                    e.x += (dx / dist) * step;
+                    e.y += (dy / dist) * step;
                 }
 
                 e.x = Math.max(5, Math.min(795, e.x));
@@ -727,10 +776,9 @@
             }
         }
 
-        // ============================================================
-        // 炮塔系统
-        // ============================================================
         function updateTowers() {
+            const startPixelX = START.x * CELL_SIZE + CELL_SIZE / 2;
+            const startPixelY = START.y * CELL_SIZE + CELL_SIZE / 2;
             const endPixelX = END.x * CELL_SIZE + CELL_SIZE / 2;
             const endPixelY = END.y * CELL_SIZE + CELL_SIZE / 2;
 
@@ -755,7 +803,7 @@
                 }
                 t.target = target;
 
-                let aimX = endPixelX, aimY = endPixelY;
+                let aimX = startPixelX, aimY = startPixelY;
                 if (target) {
                     aimX = target.x;
                     aimY = target.y;
@@ -830,11 +878,19 @@
             }
         }
 
+        // ============================================================
+        // 波次管理：前期怪物数量少，后期逐步增加
+        // ============================================================
         function startWave() {
             if (gameOver || !gameStarted) return;
             wave++;
             enemiesSpawnedInWave = 0;
-            enemiesPerWave = Math.min(4 + wave * 2, 30);
+            let count = 4 + wave * 2;
+            if (wave <= 5) count = 3 + wave * 1.5;
+            else if (wave <= 15) count = 5 + wave * 1.8;
+            else if (wave <= 30) count = 8 + wave * 2;
+            else count = 10 + wave * 2.2;
+            enemiesPerWave = Math.min(Math.floor(count), 35);
             spawnCooldown = 5;
             updateUI();
             statusMsg.innerText = `🌊 第 ${wave} 波来袭! (${enemiesPerWave}个)`;
@@ -926,6 +982,33 @@
             statusMsg.style.borderLeftColor = '#f39c12';
         }
 
+        function closeBlockPanel() {
+            blockPanel.classList.remove('show');
+            selectedBlockPos = null;
+        }
+
+        function showBlockPanel(col, row) {
+            selectedBlockPos = { col, row };
+            removeBlockPrice.textContent = BLOCK_SELL;
+            blockPanel.classList.add('show');
+        }
+
+        function removeBlock() {
+            if (!selectedBlockPos) return;
+            const { col, row } = selectedBlockPos;
+            if (grid[row][col] !== 1) {
+                closeBlockPanel();
+                return;
+            }
+            grid[row][col] = 0;
+            gold += BLOCK_SELL;
+            closeBlockPanel();
+            updateUI();
+            updatePath();
+            statusMsg.innerText = '🧱 路障已拆除 (+' + BLOCK_SELL + ' 金币)';
+            statusMsg.style.borderLeftColor = '#28a745';
+        }
+
         function resetGame() {
             initGrid();
             towers = [];
@@ -942,10 +1025,12 @@
             spawnCooldown = 0;
             path = [];
             selectedTowerIdx = -1;
+            selectedBlockPos = null;
             isPaused = false;
             pauseBtn.textContent = '⏸️ 暂停';
             pauseBtn.classList.remove('paused');
             closePanel();
+            closeBlockPanel();
             updatePath();
             updateUI();
             statusMsg.innerText = '🔄 已重置, 放置第一个炮塔自动开始!';
@@ -984,12 +1069,7 @@
                         reward: e.reward,
                         label: e.label,
                         pathIndex: e.pathIndex || 1,
-                        waypoints: e.waypoints || [],
-                        dodgePhase: e.dodgePhase || 0,
-                        dodgeAmplitude: e.dodgeAmplitude || 0.3,
-                        dodgeFrequency: e.dodgeFrequency || 0.02,
-                        dodgeTimer: e.dodgeTimer || 0,
-                        dodgeDirection: e.dodgeDirection || 1
+                        waypoints: e.waypoints || []
                     })),
                     enemiesSpawnedInWave: enemiesSpawnedInWave,
                     enemiesPerWave: enemiesPerWave,
@@ -1050,17 +1130,13 @@
                     label: e.label || '中',
                     pathIndex: e.pathIndex || 1,
                     waypoints: e.waypoints || [],
-                    dodgePhase: e.dodgePhase || 0,
-                    dodgeAmplitude: e.dodgeAmplitude || 0.3,
-                    dodgeFrequency: e.dodgeFrequency || 0.02,
-                    dodgeTimer: e.dodgeTimer || 0,
-                    dodgeDirection: e.dodgeDirection || 1
                 }));
 
                 bullets = [];
                 laserBeams = [];
                 selectedTowerIdx = -1;
                 closePanel();
+                closeBlockPanel();
 
                 updatePath();
                 updateUI();
@@ -1318,6 +1394,11 @@
             const row = Math.floor(my / CELL_SIZE);
             if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
 
+            if (grid[row][col] === 1) {
+                showBlockPanel(col, row);
+                return;
+            }
+
             const clickedTowerIdx = towers.findIndex(t => t.x === col && t.y === row);
             if (clickedTowerIdx !== -1) {
                 if (selectedTowerIdx === clickedTowerIdx) {
@@ -1329,6 +1410,7 @@
             }
 
             closePanel();
+            closeBlockPanel();
 
             if (selectedTower === 'block') {
                 if (grid[row][col] === 1) {
@@ -1339,14 +1421,20 @@
                     statusMsg.innerText = '⚠️ 此处有炮塔，不能放路障';
                     return;
                 }
+                if (gold < BLOCK_COST) {
+                    statusMsg.innerText = '❌ 金币不足! 路障需要 ' + BLOCK_COST + ' 金币';
+                    return;
+                }
                 if (wouldBlockPath(col, row)) {
                     statusMsg.innerText = '🚫 会堵死路径! 禁止放置!';
                     statusMsg.style.borderLeftColor = '#dc3545';
                     return;
                 }
                 grid[row][col] = 1;
+                gold -= BLOCK_COST;
+                updateUI();
                 updatePath();
-                statusMsg.innerText = '🧱 路障已放置';
+                statusMsg.innerText = '🧱 路障已放置 (-' + BLOCK_COST + ' 金币)';
                 statusMsg.style.borderLeftColor = '#28a745';
                 return;
             }
@@ -1413,6 +1501,9 @@
         btnSell.addEventListener('click', sellTower);
         btnClose.addEventListener('click', closePanel);
 
+        btnRemoveBlock.addEventListener('click', removeBlock);
+        btnCloseBlock.addEventListener('click', closeBlockPanel);
+
         document.getElementById('saveBtn').addEventListener('click', saveGame);
         document.getElementById('loadBtn').addEventListener('click', loadGame);
         document.getElementById('pauseBtn').addEventListener('click', togglePause);
@@ -1427,6 +1518,7 @@
                 statusMsg.innerText = `🔧 当前模式: ${label}`;
                 statusMsg.style.borderLeftColor = '#0078d7';
                 closePanel();
+                closeBlockPanel();
             });
         });
 
