@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>路障塔防 - 平衡版</title>
+    <title>路障塔防 - 均衡版</title>
     <style>
         * {
             box-sizing: border-box;
@@ -318,7 +318,7 @@
         <div class="info">
             <span class="type" id="panelType">轻机枪</span>
             Lv.<span class="level" id="panelLevel">1</span>
-            <span class="stat">⚔<span id="panelDamage">8</span></span>
+            <span class="stat">⚔<span id="panelDamage">10</span></span>
             <span class="stat">📡<span id="panelRange">3.5</span></span>
         </div>
         <button class="btn-upgrade" id="btnUpgrade">🔼 TOP <span class="cost gold" id="upgradeCost">+50</span></button>
@@ -345,6 +345,95 @@
 </div>
 
 <script>
+    // ============================================================
+    // ★★★ 全局配置（均衡版）★★★
+    // ============================================================
+    const CONFIG = {
+        INITIAL_GOLD: 600,
+
+        TOWERS: {
+            light: { label: '轻机枪', cost: 100, range: 3.5, damage: 10, fireRate: 5, accuracy: 0.92, color: '#2ecc71', size: 12 },
+            medium: { label: '中机枪', cost: 300, range: 4.5, damage: 20, fireRate: 14, accuracy: 0.70, color: '#f39c12', size: 14 },
+            heavy: { label: '重机枪', cost: 800, range: 5.5, damage: 45, fireRate: 24, accuracy: 0.50, color: '#e74c3c', size: 16 },
+            laser: { label: '激光炮', cost: 2000, range: 7.0, damage: 25, fireRate: 4, accuracy: 1.0, color: '#e74c3c', size: 18, isLaser: true }
+        },
+
+        // 怪物基础血量（均衡）
+        ENEMY_BASE_HP: {
+            small: 14,
+            medium: 28,
+            large: 56
+        },
+
+        // 怪物封顶血量
+        ENEMY_MAX_HP: {
+            small: 800,
+            medium: 1200,
+            large: 1800
+        },
+
+        ENEMY_SPEED: {
+            small: { min: 0.5, max: 1.0 },
+            medium: { min: 0.7, max: 1.1 },
+            large: { min: 0.5, max: 0.8 }
+        },
+
+        // 血量成长曲线
+        HP_GROWTH: [
+            { wave: 5, multiplier: 1.2 },
+            { wave: 10, multiplier: 1.6 },
+            { wave: 20, multiplier: 2.8 },
+            { wave: 30, multiplier: 4.5 },
+            { wave: 40, multiplier: 6.5 },
+            { wave: 50, multiplier: 9.0 },
+            { wave: 60, multiplier: 12.0 },
+            { wave: 999, multiplier: 20.0 }
+        ],
+
+        BLOCK_COST: 5,
+        BLOCK_SELL: 3,
+
+        DAMAGE_ON_END: {
+            small: 2,
+            medium: 4,
+            large: 6
+        },
+
+        LASER_UPGRADE: {
+            baseCost: 1000,
+            costIncrement: 500,
+            damagePerLevel: 60
+        },
+
+        // ★★★ 赏金适中（不会太低也不会太高）★★★
+        REWARD_BASE: {
+            small: 8,
+            medium: 15,
+            large: 25
+        },
+        REWARD_CAP: {
+            small: 30,
+            medium: 50,
+            large: 80
+        },
+
+        // ★★★ 每波数量适中（45封顶）★★★
+        WAVE_COUNT: [
+            { wave: 5, count: 4 },
+            { wave: 10, count: 8 },
+            { wave: 15, count: 13 },
+            { wave: 20, count: 18 },
+            { wave: 25, count: 24 },
+            { wave: 30, count: 30 },
+            { wave: 40, count: 38 },
+            { wave: 50, count: 45 },
+            { wave: 999, count: 45 }
+        ]
+    };
+
+    // ============================================================
+    // 游戏主代码
+    // ============================================================
     (function() {
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -377,16 +466,13 @@
         const CELL_SIZE = 40;
         const START = { x: 0, y: 7 };
         const END = { x: 19, y: 7 };
-        const BLOCK_COST = 5;
-        const BLOCK_SELL = 3;
 
         let grid = [];
         let towers = [];
         let enemies = [];
         let bullets = [];
         let laserBeams = [];
-        const INITIAL_GOLD = 600;
-        let gold = INITIAL_GOLD;
+        let gold = CONFIG.INITIAL_GOLD;
         let lives = 100;
         let wave = 0;
         let gameOver = false;
@@ -394,50 +480,69 @@
         let path = [];
         let isPaused = false;
         let selectedBlockPos = null;
-
         let enemiesSpawnedInWave = 0;
         let enemiesPerWave = 0;
         let spawnCooldown = 0;
-
         let selectedTower = 'light';
         let selectedTowerIdx = -1;
 
-        // ============================================================
-        // 炮塔配置（价格不变）
-        // ============================================================
-        const BASE_CONFIG = {
-            light: { label: '轻机枪', cost: 100, range: 3.5, damage: 8, fireRate: 5, accuracy: 0.85, color: '#2ecc71', size: 12 },
-            medium: { label: '中机枪', cost: 300, range: 4.5, damage: 20, fireRate: 14, accuracy: 0.70, color: '#f39c12', size: 14 },
-            heavy: { label: '重机枪', cost: 800, range: 5.5, damage: 45, fireRate: 24, accuracy: 0.50, color: '#e74c3c', size: 16 },
-            laser: { label: '激光炮', cost: 2000, range: 7.0, damage: 25, fireRate: 4, accuracy: 1.0, color: '#e74c3c', size: 18, isLaser: true }
-        };
+        function randomColor() {
+            const colors = ['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6','#1abc9c','#e67e22','#e84393','#00b894','#fd79a8'];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
 
-        // ============================================================
-        // 怪物模板：前期血量跟原来差不多，后期慢慢涨到封顶
-        // ============================================================
-        function getEnemyTemplate(wave) {
-            // ★★★ 血量成长：平缓增长，前期跟原来差不多 ★★★
-            let hpMult = 1;
-            if (wave <= 5) {
-                hpMult = 1 + wave * 0.06;
-            } else if (wave <= 10) {
-                hpMult = 1.3 + (wave - 5) * 0.10;
-            } else if (wave <= 20) {
-                hpMult = 1.8 + (wave - 10) * 0.15;
-            } else if (wave <= 30) {
-                hpMult = 3.3 + (wave - 20) * 0.25;
-            } else if (wave <= 40) {
-                hpMult = 5.8 + (wave - 30) * 0.4;
-            } else {
-                hpMult = 9.8 + (wave - 40) * 0.3;
-                hpMult = Math.min(hpMult, 16.67); // 封顶 500/30 ≈ 16.67
+        function getWaveMultiplier(wave) {
+            for (const seg of CONFIG.HP_GROWTH) {
+                if (wave <= seg.wave) return seg.multiplier;
             }
+            return CONFIG.HP_GROWTH[CONFIG.HP_GROWTH.length - 1].multiplier;
+        }
 
-            // ★★★ 血量封顶提高 ★★★
+        function getWaveCount(wave) {
+            for (const seg of CONFIG.WAVE_COUNT) {
+                if (wave <= seg.wave) return seg.count;
+            }
+            return CONFIG.WAVE_COUNT[CONFIG.WAVE_COUNT.length - 1].count;
+        }
+
+        function getTowerConfig(type) {
+            return CONFIG.TOWERS[type];
+        }
+
+        function getEnemyTemplate(wave) {
+            const mult = getWaveMultiplier(wave);
+
             const types = [
-                { hpBase: 30, hpMax: 500, speedMin: 1.0, speedMax: 1.5, size: 12, label: '小', rewardBase: 6, rewardCap: 20 },
-                { hpBase: 60, hpMax: 1000, speedMin: 0.7, speedMax: 1.1, size: 18, label: '中', rewardBase: 12, rewardCap: 36 },
-                { hpBase: 120, hpMax: 1800, speedMin: 0.5, speedMax: 0.8, size: 24, label: '大', rewardBase: 22, rewardCap: 64 }
+                {
+                    hpBase: CONFIG.ENEMY_BASE_HP.small,
+                    hpMax: CONFIG.ENEMY_MAX_HP.small,
+                    speedMin: CONFIG.ENEMY_SPEED.small.min,
+                    speedMax: CONFIG.ENEMY_SPEED.small.max,
+                    size: 12,
+                    label: '小',
+                    rewardBase: CONFIG.REWARD_BASE.small,
+                    rewardCap: CONFIG.REWARD_CAP.small
+                },
+                {
+                    hpBase: CONFIG.ENEMY_BASE_HP.medium,
+                    hpMax: CONFIG.ENEMY_MAX_HP.medium,
+                    speedMin: CONFIG.ENEMY_SPEED.medium.min,
+                    speedMax: CONFIG.ENEMY_SPEED.medium.max,
+                    size: 18,
+                    label: '中',
+                    rewardBase: CONFIG.REWARD_BASE.medium,
+                    rewardCap: CONFIG.REWARD_CAP.medium
+                },
+                {
+                    hpBase: CONFIG.ENEMY_BASE_HP.large,
+                    hpMax: CONFIG.ENEMY_MAX_HP.large,
+                    speedMin: CONFIG.ENEMY_SPEED.large.min,
+                    speedMax: CONFIG.ENEMY_SPEED.large.max,
+                    size: 24,
+                    label: '大',
+                    rewardBase: CONFIG.REWARD_BASE.large,
+                    rewardCap: CONFIG.REWARD_CAP.large
+                }
             ];
 
             let idx = 0;
@@ -457,13 +562,11 @@
 
             const t = types[idx % types.length];
             const rawHp = t.hpBase + Math.random() * (t.hpMax - t.hpBase);
-            let hp = Math.floor(rawHp * Math.min(hpMult, 16.67));
+            let hp = Math.floor(rawHp * mult);
             hp = Math.min(hp, t.hpMax);
 
-            // ★★★ 速度恢复正常 ★★★
             const speed = t.speedMin + Math.random() * (t.speedMax - t.speedMin);
 
-            // ★★★ 赏金下调20% ★★★
             let waveBonus = 0;
             if (wave > 5) waveBonus = Math.floor((wave - 5) * 1.2);
             if (wave > 10) waveBonus = Math.floor((wave - 5) * 2.0);
@@ -497,31 +600,12 @@
             };
         }
 
-        function randomColor() {
-            const colors = ['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6','#1abc9c','#e67e22','#e84393','#00b894','#fd79a8'];
-            return colors[Math.floor(Math.random() * colors.length)];
-        }
-
-        function drawRoundRect(ctx, x, y, w, h, r) {
-            ctx.beginPath();
-            ctx.moveTo(x + r, y);
-            ctx.lineTo(x + w - r, y);
-            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-            ctx.lineTo(x + w, y + h - r);
-            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-            ctx.lineTo(x + r, y + h);
-            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-            ctx.lineTo(x, y + r);
-            ctx.quadraticCurveTo(x, y, x + r, y);
-            ctx.closePath();
-        }
-
         function getTowerStats(tower) {
-            const base = BASE_CONFIG[tower.type];
+            const base = getTowerConfig(tower.type);
             const level = tower.level || 1;
             let damage = base.damage;
             if (tower.type === 'laser') {
-                damage = base.damage + (level - 1) * 60;
+                damage = base.damage + (level - 1) * CONFIG.LASER_UPGRADE.damagePerLevel;
             } else {
                 damage = Math.round(base.damage * (1 + (level - 1) * 0.20));
             }
@@ -535,10 +619,10 @@
         }
 
         function getUpgradeCost(tower) {
-            const base = BASE_CONFIG[tower.type];
+            const base = getTowerConfig(tower.type);
             const level = tower.level || 1;
             if (tower.type === 'laser') {
-                return 1000 + (level - 1) * 500;
+                return CONFIG.LASER_UPGRADE.baseCost + (level - 1) * CONFIG.LASER_UPGRADE.costIncrement;
             }
             let cost = Math.ceil(base.cost * (0.5 + 0.4 * level));
             cost = Math.ceil(cost / 5) * 5;
@@ -546,7 +630,7 @@
         }
 
         function getTotalCost(tower) {
-            return tower.totalCost || BASE_CONFIG[tower.type].cost;
+            return tower.totalCost || getTowerConfig(tower.type).cost;
         }
 
         function initGrid() {
@@ -723,9 +807,9 @@
 
                 const distToEnd = Math.hypot(e.x - endPixelX, e.y - endPixelY);
                 if (distToEnd < 15) {
-                    let damage = 2;
-                    if (e.label === '中') damage = 4;
-                    if (e.label === '大') damage = 6;
+                    let damage = CONFIG.DAMAGE_ON_END.small;
+                    if (e.label === '中') damage = CONFIG.DAMAGE_ON_END.medium;
+                    if (e.label === '大') damage = CONFIG.DAMAGE_ON_END.large;
                     lives -= damage;
                     if (lives < 0) lives = 0;
                     enemies.splice(i, 1);
@@ -742,9 +826,9 @@
                     const dy = endPixelY - e.y;
                     const dist = Math.hypot(dx, dy);
                     if (dist < 1.5) {
-                        let damage = 2;
-                        if (e.label === '中') damage = 4;
-                        if (e.label === '大') damage = 6;
+                        let damage = CONFIG.DAMAGE_ON_END.small;
+                        if (e.label === '中') damage = CONFIG.DAMAGE_ON_END.medium;
+                        if (e.label === '大') damage = CONFIG.DAMAGE_ON_END.large;
                         lives -= damage;
                         if (lives < 0) lives = 0;
                         enemies.splice(i, 1);
@@ -887,12 +971,7 @@
             if (gameOver || !gameStarted) return;
             wave++;
             enemiesSpawnedInWave = 0;
-            let count = 4 + wave * 2;
-            if (wave <= 5) count = 3 + wave * 1.5;
-            else if (wave <= 15) count = 5 + wave * 1.8;
-            else if (wave <= 30) count = 8 + wave * 2;
-            else count = 10 + wave * 2.2;
-            enemiesPerWave = Math.min(Math.floor(count), 35);
+            enemiesPerWave = getWaveCount(wave);
             spawnCooldown = 5;
             updateUI();
             statusMsg.innerText = `🌊 第 ${wave} 波来袭! (${enemiesPerWave}个)`;
@@ -936,7 +1015,7 @@
             if (!tower) return;
             selectedTowerIdx = index;
             const stats = getTowerStats(tower);
-            const base = BASE_CONFIG[tower.type];
+            const base = getTowerConfig(tower.type);
 
             panelType.textContent = base.label;
             panelLevel.textContent = stats.level;
@@ -964,7 +1043,7 @@
             }
             gold -= cost;
             tower.level = (tower.level || 1) + 1;
-            tower.totalCost = (tower.totalCost || BASE_CONFIG[tower.type].cost) + cost;
+            tower.totalCost = (tower.totalCost || getTowerConfig(tower.type).cost) + cost;
             updateUI();
             showTowerPanel(selectedTowerIdx);
             statusMsg.innerText = '⬆️ 升级成功! 当前等级 ' + tower.level;
@@ -991,7 +1070,7 @@
 
         function showBlockPanel(col, row) {
             selectedBlockPos = { col, row };
-            removeBlockPrice.textContent = BLOCK_SELL;
+            removeBlockPrice.textContent = CONFIG.BLOCK_SELL;
             blockPanel.classList.add('show');
         }
 
@@ -1003,11 +1082,11 @@
                 return;
             }
             grid[row][col] = 0;
-            gold += BLOCK_SELL;
+            gold += CONFIG.BLOCK_SELL;
             closeBlockPanel();
             updateUI();
             updatePath();
-            statusMsg.innerText = '🧱 路障已拆除 (+' + BLOCK_SELL + ' 金币)';
+            statusMsg.innerText = '🧱 路障已拆除 (+' + CONFIG.BLOCK_SELL + ' 金币)';
             statusMsg.style.borderLeftColor = '#28a745';
         }
 
@@ -1017,7 +1096,7 @@
             enemies = [];
             bullets = [];
             laserBeams = [];
-            gold = INITIAL_GOLD;
+            gold = CONFIG.INITIAL_GOLD;
             lives = 100;
             wave = 0;
             gameOver = false;
@@ -1055,7 +1134,7 @@
                         y: t.y,
                         type: t.type,
                         level: t.level || 1,
-                        totalCost: t.totalCost || BASE_CONFIG[t.type].cost,
+                        totalCost: t.totalCost || getTowerConfig(t.type).cost,
                         cooldown: t.cooldown || 0,
                         angle: t.angle || 0
                     })),
@@ -1113,7 +1192,7 @@
                     y: t.y,
                     type: t.type,
                     level: t.level || 1,
-                    totalCost: t.totalCost || BASE_CONFIG[t.type].cost,
+                    totalCost: t.totalCost || getTowerConfig(t.type).cost,
                     cooldown: t.cooldown || 0,
                     angle: t.angle || 0,
                     target: null
@@ -1171,6 +1250,20 @@
                 statusMsg.innerText = '▶️ 已继续';
                 statusMsg.style.borderLeftColor = '#28a745';
             }
+        }
+
+        function drawRoundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
         }
 
         function draw() {
@@ -1423,8 +1516,8 @@
                     statusMsg.innerText = '⚠️ 此处有炮塔，不能放路障';
                     return;
                 }
-                if (gold < BLOCK_COST) {
-                    statusMsg.innerText = '❌ 金币不足! 路障需要 ' + BLOCK_COST + ' 金币';
+                if (gold < CONFIG.BLOCK_COST) {
+                    statusMsg.innerText = '❌ 金币不足! 路障需要 ' + CONFIG.BLOCK_COST + ' 金币';
                     return;
                 }
                 if (wouldBlockPath(col, row)) {
@@ -1433,15 +1526,15 @@
                     return;
                 }
                 grid[row][col] = 1;
-                gold -= BLOCK_COST;
+                gold -= CONFIG.BLOCK_COST;
                 updateUI();
                 updatePath();
-                statusMsg.innerText = '🧱 路障已放置 (-' + BLOCK_COST + ' 金币)';
+                statusMsg.innerText = '🧱 路障已放置 (-' + CONFIG.BLOCK_COST + ' 金币)';
                 statusMsg.style.borderLeftColor = '#28a745';
                 return;
             }
 
-            const base = BASE_CONFIG[selectedTower];
+            const base = getTowerConfig(selectedTower);
             if (!base) return;
             if (gold < base.cost) {
                 statusMsg.innerText = `❌ 金币不足! ${base.label}需要${base.cost}金币`;
