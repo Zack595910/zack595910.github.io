@@ -403,7 +403,7 @@
         let selectedTowerIdx = -1;
 
         // ============================================================
-        // 炮塔配置
+        // 炮塔配置（价格不变）
         // ============================================================
         const BASE_CONFIG = {
             light: { label: '轻机枪', cost: 100, range: 3.5, damage: 8, fireRate: 5, accuracy: 0.85, color: '#2ecc71', size: 12 },
@@ -413,27 +413,31 @@
         };
 
         // ============================================================
-        // 怪物模板：调整赏金（25波出重机枪，35波出激光炮）
+        // 怪物模板：前期血量跟原来差不多，后期慢慢涨到封顶
         // ============================================================
         function getEnemyTemplate(wave) {
+            // ★★★ 血量成长：平缓增长，前期跟原来差不多 ★★★
             let hpMult = 1;
-            if (wave <= 10) {
-                hpMult = 1 + wave * 0.05;
+            if (wave <= 5) {
+                hpMult = 1 + wave * 0.06;
+            } else if (wave <= 10) {
+                hpMult = 1.3 + (wave - 5) * 0.10;
             } else if (wave <= 20) {
-                hpMult = 1.5 + (wave - 10) * 0.08;
+                hpMult = 1.8 + (wave - 10) * 0.15;
             } else if (wave <= 30) {
-                hpMult = 2.3 + (wave - 20) * 0.12;
-            } else if (wave <= 50) {
-                hpMult = 3.5 + (wave - 30) * 0.15;
+                hpMult = 3.3 + (wave - 20) * 0.25;
+            } else if (wave <= 40) {
+                hpMult = 5.8 + (wave - 30) * 0.4;
             } else {
-                hpMult = 6.5 + (wave - 50) * 0.08;
-                hpMult = Math.min(hpMult, 10);
+                hpMult = 9.8 + (wave - 40) * 0.3;
+                hpMult = Math.min(hpMult, 16.67); // 封顶 500/30 ≈ 16.67
             }
 
+            // ★★★ 血量封顶提高 ★★★
             const types = [
-                { hpBase: 30, hpMax: 300, speedMin: 1.0, speedMax: 1.5, size: 12, label: '小', rewardBase: 8, rewardCap: 25 },
-                { hpBase: 60, hpMax: 500, speedMin: 0.7, speedMax: 1.1, size: 18, label: '中', rewardBase: 15, rewardCap: 45 },
-                { hpBase: 120, hpMax: 800, speedMin: 0.5, speedMax: 0.8, size: 24, label: '大', rewardBase: 28, rewardCap: 80 }
+                { hpBase: 30, hpMax: 500, speedMin: 1.0, speedMax: 1.5, size: 12, label: '小', rewardBase: 6, rewardCap: 20 },
+                { hpBase: 60, hpMax: 1000, speedMin: 0.7, speedMax: 1.1, size: 18, label: '中', rewardBase: 12, rewardCap: 36 },
+                { hpBase: 120, hpMax: 1800, speedMin: 0.5, speedMax: 0.8, size: 24, label: '大', rewardBase: 22, rewardCap: 64 }
             ];
 
             let idx = 0;
@@ -453,32 +457,33 @@
 
             const t = types[idx % types.length];
             const rawHp = t.hpBase + Math.random() * (t.hpMax - t.hpBase);
-            let hp = Math.floor(rawHp * Math.min(hpMult, 10));
+            let hp = Math.floor(rawHp * Math.min(hpMult, 16.67));
             hp = Math.min(hp, t.hpMax);
 
+            // ★★★ 速度恢复正常 ★★★
             const speed = t.speedMin + Math.random() * (t.speedMax - t.speedMin);
 
-            // ★★★ 波次加成（调低，让25波出重机枪，35波出激光炮）★★★
+            // ★★★ 赏金下调20% ★★★
             let waveBonus = 0;
-            if (wave > 5) waveBonus = Math.floor((wave - 5) * 1.5);
-            if (wave > 10) waveBonus = Math.floor((wave - 5) * 2.5);
-            if (wave > 15) waveBonus = Math.floor((wave - 5) * 4);
-            if (wave > 20) waveBonus = Math.floor((wave - 5) * 6);
-            if (wave > 30) waveBonus = Math.floor((wave - 5) * 9);
-            waveBonus = Math.min(waveBonus, 1200);
+            if (wave > 5) waveBonus = Math.floor((wave - 5) * 1.2);
+            if (wave > 10) waveBonus = Math.floor((wave - 5) * 2.0);
+            if (wave > 15) waveBonus = Math.floor((wave - 5) * 3.2);
+            if (wave > 20) waveBonus = Math.floor((wave - 5) * 4.8);
+            if (wave > 30) waveBonus = Math.floor((wave - 5) * 7.2);
+            waveBonus = Math.min(waveBonus, 960);
 
             const hpRatio = (hp - t.hpBase) / (t.hpMax - t.hpBase + 1);
-            const hpBonus = Math.floor(hpRatio * 10);
+            const hpBonus = Math.floor(hpRatio * 8);
             const speedRatio = (speed - t.speedMin) / (t.speedMax - t.speedMin + 0.01);
-            const speedBonus = Math.floor(speedRatio * 4);
+            const speedBonus = Math.floor(speedRatio * 3);
 
             let reward = t.rewardBase + hpBonus + speedBonus + waveBonus;
 
             let dynamicCap = t.rewardCap;
-            if (wave > 10) dynamicCap = Math.min(t.rewardCap + wave * 1.5, 100);
-            if (wave > 20) dynamicCap = Math.min(t.rewardCap + wave * 3, 250);
-            if (wave > 30) dynamicCap = Math.min(t.rewardCap + wave * 6, 500);
-            if (wave > 40) dynamicCap = Math.min(t.rewardCap + wave * 12, 1000);
+            if (wave > 10) dynamicCap = Math.min(t.rewardCap + wave * 1.2, 80);
+            if (wave > 20) dynamicCap = Math.min(t.rewardCap + wave * 2.4, 200);
+            if (wave > 30) dynamicCap = Math.min(t.rewardCap + wave * 4.8, 400);
+            if (wave > 40) dynamicCap = Math.min(t.rewardCap + wave * 9.6, 800);
 
             reward = Math.min(reward, dynamicCap);
             reward = Math.max(reward, t.rewardBase);
@@ -878,9 +883,6 @@
             }
         }
 
-        // ============================================================
-        // 波次管理：前期怪物数量少，后期逐步增加
-        // ============================================================
         function startWave() {
             if (gameOver || !gameStarted) return;
             wave++;
