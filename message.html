@@ -1,256 +1,82 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>留言板</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #f0f2f5;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            padding: 40px 20px;
-        }
-        .container {
-            max-width: 720px;
-            width: 100%;
-        }
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 28px;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        .header h1 {
-            font-size: 28px;
-            color: #1a1a2e;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .header h1 span {
-            background: #4a6cf7;
-            color: #fff;
-            font-size: 14px;
-            padding: 2px 14px;
-            border-radius: 30px;
-            font-weight: 500;
-        }
-        .back-link {
-            color: #4a6cf7;
-            text-decoration: none;
-            font-weight: 500;
-            font-size: 15px;
-            padding: 6px 14px;
-            border-radius: 8px;
-            transition: background 0.2s;
-        }
-        .back-link:hover {
-            background: #eef2ff;
-        }
-        .form-card {
-            background: #ffffff;
-            border-radius: 20px;
-            padding: 28px 24px;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
-            margin-bottom: 32px;
-        }
-        .form-card input,
-        .form-card textarea {
-            width: 100%;
-            padding: 14px 18px;
-            border: 2px solid #e8ecf4;
-            border-radius: 14px;
-            font-size: 15px;
-            font-family: inherit;
-            transition: 0.25s;
-            background: #fafbff;
-            outline: none;
-            margin-bottom: 14px;
-        }
-        .form-card input:focus,
-        .form-card textarea:focus {
-            border-color: #4a6cf7;
-            box-shadow: 0 0 0 4px rgba(74, 108, 247, 0.12);
-            background: #fff;
-        }
-        .form-card textarea {
-            min-height: 100px;
-            resize: vertical;
-        }
-        .form-card button {
-            background: #4a6cf7;
-            color: #fff;
-            border: none;
-            padding: 14px;
-            border-radius: 14px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: 0.25s;
-            width: 100%;
-        }
-        .form-card button:hover {
-            background: #3a56d4;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(74, 108, 247, 0.3);
-        }
-        .form-card button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        #status {
-            margin-top: 14px;
-            font-size: 14px;
-            text-align: center;
-            min-height: 22px;
-        }
-        .msg-item {
-            background: #fff;
-            border-radius: 16px;
-            padding: 20px 24px;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
-            margin-bottom: 14px;
-            border-left: 4px solid #4a6cf7;
-            transition: 0.2s;
-        }
-        .msg-item:hover {
-            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
-        }
-        .msg-item .meta {
-            display: flex;
-            justify-content: space-between;
-            font-size: 13px;
-            color: #8892a8;
-            margin-bottom: 8px;
-        }
-        .msg-item .meta .name {
-            font-weight: 600;
-            color: #1a1a2e;
-        }
-        .msg-item .content {
-            font-size: 16px;
-            line-height: 1.7;
-            color: #2d3748;
-            word-break: break-word;
-        }
-        .empty-tip {
-            text-align: center;
-            color: #8892a8;
-            padding: 50px 0;
-            font-size: 16px;
-        }
-        .loading {
-            text-align: center;
-            color: #8892a8;
-            padding: 30px 0;
-        }
-        #msgCount {
-            font-size: 14px;
-            color: #8892a8;
-            margin-bottom: 16px;
-        }
-        @media (max-width: 500px) {
-            .header h1 {
-                font-size: 22px;
-            }
-            .form-card {
-                padding: 20px 16px;
-            }
-            .msg-item {
-                padding: 16px 18px;
-            }
-        }
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; }
+        button { background: #4a6cf7; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; }
+        button:hover { background: #3a56d4; }
+        .msg { background: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #4a6cf7; }
+        .msg .name { font-weight: bold; color: #333; }
+        .msg .time { float: right; color: #999; font-size: 12px; }
+        .msg .content { margin-top: 6px; color: #555; }
+        #status { color: #4a6cf7; margin-top: 10px; text-align: center; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- 头部 -->
-        <div class="header">
-            <h1>📝 留言板 <span>Beta</span></h1>
-            <a href="/" class="back-link">← 回到主站</a>
-        </div>
+    <h1>📝 留言板</h1>
+    <a href="/" style="color: #4a6cf7; text-decoration: none;">← 回到主站</a>
 
-        <!-- 发表表单 -->
-        <div class="form-card">
-            <input type="text" id="nickname" placeholder="你的昵称（可选）" maxlength="20" />
-            <textarea id="messageInput" placeholder="说点什么吧…（必填）" maxlength="500"></textarea>
-            <button id="submitBtn">💬 发表留言</button>
-            <div id="status"></div>
-        </div>
-
-        <!-- 留言列表 -->
-        <div id="msgCount"></div>
-        <div id="messageList">
-            <div class="loading">⏳ 加载中…</div>
-        </div>
+    <div class="card">
+        <input type="text" id="nickname" placeholder="你的昵称（可选）" maxlength="20">
+        <textarea id="content" placeholder="说点什么吧…（必填）" rows="3" maxlength="500"></textarea>
+        <button id="submitBtn">💬 发表留言</button>
+        <div id="status"></div>
     </div>
 
+    <div id="list"></div>
+
     <script>
-        // ============================================================
-        //  👇 你的 Supabase 配置（已填好，不用改）
-        // ============================================================
+        // ===== Supabase 配置 =====
         const SUPABASE_URL = "https://mwvtulqyxplfzmqkjqun.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dnR1bHF5eHBsZnptcWtqcXVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NzQxNjAsImV4cCI6MjA5ODA1MDE2MH0.tNGPUHqdMsF-zygs5JiiX2gVnbrY-B0vYJoxzVY_ZtQ";
-        // ============================================================
+        // =========================
 
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        const messageList = document.getElementById('messageList');
-        const msgCount = document.getElementById('msgCount');
+        const list = document.getElementById('list');
         const nicknameInput = document.getElementById('nickname');
-        const messageInput = document.getElementById('messageInput');
+        const contentInput = document.getElementById('content');
         const submitBtn = document.getElementById('submitBtn');
         const statusDiv = document.getElementById('status');
 
-        // ---------- 加载留言 ----------
+        // 加载留言
         async function loadMessages() {
             const { data, error } = await supabase
                 .from('messages')
                 .select('*')
-                .order('created_at', { ascending: false })
-                .limit(100);
+                .order('created_at', { ascending: false });
 
             if (error) {
-                messageList.innerHTML = `<div class="empty-tip">⚠️ 加载失败，请刷新重试</div>`;
+                list.innerHTML = `<p style="color:red;">❌ 加载失败: ${error.message}</p>`;
                 console.error('加载错误:', error);
                 return;
             }
 
             if (!data || data.length === 0) {
-                messageList.innerHTML = `<div class="empty-tip">🛋️ 还没有留言，快来抢沙发吧！</div>`;
-                msgCount.textContent = '';
+                list.innerHTML = `<p style="color:#999; text-align:center;">🛋️ 还没有留言，快来抢沙发吧！</p>`;
                 return;
             }
 
-            msgCount.textContent = `共 ${data.length} 条留言`;
-            messageList.innerHTML = data.map(msg => `
-                <div class="msg-item">
-                    <div class="meta">
+            list.innerHTML = data.map(msg => `
+                <div class="msg">
+                    <div>
                         <span class="name">${escapeHtml(msg.nickname || '匿名')}</span>
-                        <span>${formatTime(msg.created_at)}</span>
+                        <span class="time">${formatTime(msg.created_at)}</span>
                     </div>
                     <div class="content">${escapeHtml(msg.content)}</div>
                 </div>
             `).join('');
         }
 
-        // ---------- 发表留言 ----------
+        // 发表留言
         async function postMessage() {
-            const content = messageInput.value.trim();
+            const content = contentInput.value.trim();
             if (!content) {
                 statusDiv.textContent = '⚠️ 请填写留言内容';
                 statusDiv.style.color = '#e53e3e';
@@ -278,14 +104,14 @@
                 return;
             }
 
-            messageInput.value = '';
+            contentInput.value = '';
             nicknameInput.value = '';
             statusDiv.textContent = '✅ 发表成功！';
             statusDiv.style.color = '#38a169';
             loadMessages();
         }
 
-        // ---------- 工具函数 ----------
+        // 工具函数
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
@@ -297,16 +123,15 @@
             return date.toLocaleString('zh-CN', { hour12: false });
         }
 
-        // ---------- 绑定事件 ----------
+        // 绑定事件
         submitBtn.addEventListener('click', postMessage);
-
-        messageInput.addEventListener('keydown', (e) => {
+        contentInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 submitBtn.click();
             }
         });
 
-        // ---------- 启动 ----------
+        // 启动
         loadMessages();
     </script>
 </body>
