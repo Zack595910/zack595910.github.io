@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KSD - 26Ver8.52 Developer Preview Premium Plus</title>
+<title>KSD - 26Ver9.43 Developer Preview Premium Plus | Core 8.0</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{
@@ -17,9 +17,12 @@ header{text-align:center;padding:60px 20px 40px;border-bottom:2px solid rgba(255
 .subtitle{font-size:18px;color:#aaa;margin-top:10px}
 .version-badge{display:inline-block;background:rgba(0,255,65,0.15);color:#00ff41;padding:6px 20px;border-radius:20px;margin-top:15px;font-size:14px;border:1px solid rgba(0,255,65,0.3)}
 .core-badge{display:inline-block;background:rgba(255,102,0,0.15);color:#ff6600;padding:4px 14px;border-radius:15px;margin-left:8px;font-size:13px;border:1px solid rgba(255,102,0,0.3)}
+.core-badge.new{background:rgba(0,200,255,0.2);color:#00ccff;border-color:rgba(0,200,255,0.5);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
 section{padding:40px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
 h2{font-size:28px;color:#00ccff;margin-bottom:20px;border-left:4px solid #00ccff;padding-left:15px}
 h3{font-size:18px;color:#ffcc00;margin:15px 0 8px}
+h4{font-size:15px;color:#00ff41;margin:12px 0 6px}
 p{font-size:13px;color:#ccc;margin:6px 0}
 .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:15px;margin-top:20px}
 .feature-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:20px;transition:all 0.3s}
@@ -27,14 +30,18 @@ p{font-size:13px;color:#ccc;margin:6px 0}
 .feature-card .icon{font-size:32px;margin-bottom:10px}
 .feature-card h3{font-size:16px;color:#ffcc00;margin-bottom:8px}
 .feature-card p{font-size:13px;color:#aaa}
+.feature-card.new-card{border-color:rgba(0,200,255,0.3);background:rgba(0,200,255,0.03)}
+.feature-card.new-card:hover{border-color:rgba(0,200,255,0.6)}
 .download-box{background:rgba(0,255,65,0.05);border:2px solid rgba(0,255,65,0.3);border-radius:16px;padding:30px;text-align:center;margin-top:20px}
 .download-box h3{font-size:22px;color:#00ff41;margin-bottom:10px}
-.download-btn{display:inline-block;background:#00ff41;color:#000;padding:14px 40px;border-radius:30px;font-size:18px;font-weight:bold;text-decoration:none;margin-top:15px;transition:all 0.3s}
+.download-btn{display:inline-block;background:#00ff41;color:#000;padding:14px 40px;border-radius:30px;font-size:18px;font-weight:bold;text-decoration:none;margin:8px 4px;transition:all 0.3s}
 .download-btn:hover{box-shadow:0 0 30px rgba(0,255,65,0.5);transform:scale(1.05)}
+.download-btn.orange{background:#f39c12}
+.download-btn.blue{background:#0078d4;color:#fff}
 .arch-diagram{background:rgba(0,0,0,0.3);border-radius:12px;padding:25px;font-family:'Consolas','Courier New',monospace;font-size:13px;line-height:2;overflow-x:auto;color:#aaa}
 .arch-diagram .hl{color:#00ff41}.arch-diagram .hl2{color:#ffcc00}.arch-diagram .hl3{color:#ff6600}
 .arch-diagram .line{padding-left:20px}.arch-diagram .arrow{color:#888}
-.arch-diagram .tree{padding-left:20px}
+.arch-diagram .tree{padding-left:20px}.arch-diagram .hl4{color:#00ccff}
 footer{text-align:center;padding:30px;color:#666;font-size:12px;border-top:1px solid rgba(255,255,255,0.05)}
 .changelog{list-style:none;padding:0}
 .changelog li{padding:8px 15px;margin:4px 0;background:rgba(255,255,255,0.03);border-radius:8px;border-left:3px solid rgba(0,255,65,0.3);font-size:13px}
@@ -50,6 +57,20 @@ code{background:rgba(255,255,255,0.1);padding:2px 8px;border-radius:4px;font-fam
 table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
 table th{background:rgba(0,255,65,0.1);color:#00ff41;padding:8px 12px;text-align:left;border:1px solid rgba(255,255,255,0.08)}
 table td{padding:8px 12px;border:1px solid rgba(255,255,255,0.05);color:#ccc}
+.quest-flow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;margin:15px 0;padding:15px;background:rgba(0,0,0,0.3);border-radius:10px}
+.quest-step{background:rgba(0,200,255,0.1);border:1px solid rgba(0,200,255,0.3);border-radius:8px;padding:10px 15px;text-align:center;min-width:80px}
+.quest-step .qs-icon{font-size:24px}
+.quest-step .qs-text{font-size:11px;color:#aaa;margin-top:4px}
+.quest-arrow{color:#00ccff;font-size:20px}
+.highlight-box{background:rgba(0,200,255,0.05);border:1px solid rgba(0,200,255,0.2);border-radius:10px;padding:18px;margin:12px 0}
+.highlight-box h4{color:#00ccff;margin-bottom:8px}
+.dialog-demo{background:rgba(0,0,0,0.5);border:2px solid #444;border-radius:10px;padding:20px;margin:15px 0;position:relative;min-height:250px}
+.dialog-bar{background:#0a0a0a;border:1px solid #444;border-radius:0;padding:15px 20px;margin-top:15px;position:relative}
+.dialog-name{background:#1a1a2e;border:2px solid #555;padding:4px 20px;position:absolute;top:-15px;left:25px;color:#ffcc00;font-weight:bold;font-size:14px;border-radius:4px}
+.dialog-text{color:#fff;font-size:13px;margin-top:8px;margin-bottom:8px}
+.dialog-choices{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.dialog-choice{background:#111122;border:2px solid #335577;padding:6px 25px;color:#ccc;font-size:12px;border-radius:6px;cursor:default;text-align:center;min-width:160px}
+.dialog-skip{position:absolute;top:8px;right:12px;background:#221111;border:1px solid #553333;color:#ff6666;padding:3px 14px;font-size:11px;border-radius:4px}
 
 #web-ksd{background:#ECE9D8;border-radius:8px;overflow:hidden;margin-top:10px;box-shadow:0 0 20px rgba(0,0,0,0.4)}
 #web-ksd-title{background:linear-gradient(180deg,#0054E3,#0039A6);color:#fff;padding:6px 12px;font-weight:bold;font-size:13px;display:flex;justify-content:space-between;align-items:center}
@@ -107,36 +128,388 @@ table td{padding:8px 12px;border:1px solid rgba(255,255,255,0.05);color:#ccc}
 
 <header>
     <div class="logo">KSD</div>
-    <div class="subtitle">冒险游戏框架 · 模块化 · 可扩展</div>
-    <div class="version-badge">26Ver8.52 Developer Preview Premium Plus</div>
-    <span class="core-badge">Core 7.0</span>
+    <div class="subtitle">模块化冒险游戏框架 · 沉浸式剧情对话 · 无限扩展</div>
+    <div class="version-badge">26Ver9.43 Developer Preview Premium Plus</div>
+    <span class="core-badge new">Core 8.0 全新发布</span>
 </header>
 
+<!-- ========== 一、项目概述 ========== -->
 <section>
-    <h2>📖 项目简介</h2>
-    <p>KSD 是一个基于 Python Tkinter 构建的模块化冒险游戏框架。自 Core 1.0 起经历七个架构版本迭代，现已发展为功能完善的游戏平台。</p>
-    <p>支持用户系统、背包系统、密钥管理、主题切换、Shell调试面板、模块动态加载等丰富功能。项目由 <strong>闪讯工作社 Snxth.</strong> 开发维护，使用 Python 标准库构建，无需第三方依赖。</p>
-    <p>数据存储在 <code>C:\Date\Snxth.\KSD Run Files\</code>，使用 INI 和 JSON 格式持久化。内置向导式任务编辑器，支持第三方模块导入和动态加载。</p>
+    <h2>一、项目概述</h2>
+    <table>
+        <tr><th style="width:120px">项目</th><th>详情</th></tr>
+        <tr><td>项目名称</td><td>KSD（KSD 冒险游戏）</td></tr>
+        <tr><td>开发团队</td><td>闪讯工作社 Snxth.</td></tr>
+        <tr><td>项目定位</td><td>基于 Python Tkinter 构建的高度开放、模块化冒险游戏框架</td></tr>
+        <tr><td>核心理念</td><td>不只是游戏，更是一个游戏开发平台。用户可以通过编写 INI 文件或 Python 脚本，自由创建剧情、任务、地图、NPC，实现无限扩展</td></tr>
+        <tr><td>当前版本</td><td><strong>KSD 26Ver9.43 Developer Preview Premium Plus</strong></td></tr>
+        <tr><td>架构版本</td><td><strong style="color:#00ccff">KSD Core 8.0</strong></td></tr>
+        <tr><td>技术栈</td><td>Python 3 + Tkinter（标准库，无需第三方依赖）</td></tr>
+        <tr><td>数据存储路径</td><td><code>C:\Date\Snxth.\KSD Run Files\</code></td></tr>
+    </table>
 </section>
 
+<!-- ========== 二、架构演变历史 ========== -->
 <section>
-    <h2>✨ 核心功能</h2>
+    <h2>二、架构演变历史</h2>
+    <table>
+        <tr><th>版本</th><th>发布日期</th><th>主要变化</th></tr>
+        <tr>
+            <td><strong style="color:#00ccff">Core 8.0</strong></td>
+            <td>2026年</td>
+            <td><strong>史上最大规模升级！</strong>剧情任务系统全面重构：全新沉浸式对话框引擎（半透明遮罩层+底部信息栏+NPC名字标签+右下选项按钮+右上跳过功能+点击继续引导）、任务持久化升级为JSON双文件（active_quests.json/completed_quests.json）、NPC智能标记系统（黄色 ! 可接 / 蓝色 ? 可交付）、启动自动恢复任务追踪、控制面板新增"任务日志"独立窗口（进行中/已完成双区展示）、任务完成自动删除.ini文件。架构版本号从Core 7.0跃升至Core 8.0。新增独立工具：ksdeditor.py v3.1任务剧情编辑器、KSD_maintainer.py v1.4运维小助手、KSD_reset.py恢复出厂设置工具（含任务进度清除）。主程序Shell日志显示Core 8.0标识，向导编辑器导出文件标记Core 8.0，INIEncoder默认标题更新</td>
+        </tr>
+        <tr>
+            <td>Core 7.0</td>
+            <td>2026年</td>
+            <td>主程序与核心模块分离为5个独立文件（user_config.py/game_loop.py/file_manager.py/screenshot.py/quest_engine.py），模块管理器内置进主代码，数据路径重构为 C:\Date\Snxth.\。新增：任务引擎（QuestEngine）、剧情系统（沉浸式对话界面）、INI编码器、任务持久化、NPC标记系统、Action指令系统、地图物体交互。支持多分支剧情、任务链、前置条件检查、自动进度追踪</td>
+        </tr>
+        <tr>
+            <td>Core 6.0</td>
+            <td>2026年</td>
+            <td>模块生命周期完善，新增向导式任务编辑器（4步引导创建INI任务文件），增加 is_key_frozen 冻结检测，load_module/unload_module 标准化流程</td>
+        </tr>
+        <tr>
+            <td>Core 5.0</td>
+            <td>2026年</td>
+            <td>引入 safe_after 自动追踪 after 循环 ID 防止残留，bind_key 自动管理按键绑定防止冲突，load_module 先销毁旧模块再加载新模块，unload_module 标准化卸载流程（清循环/解绑按键/重建画布）</td>
+        </tr>
+        <tr>
+            <td>Core 4.0</td>
+            <td>2026年</td>
+            <td>模块采用类封装方式，通过 self.game 访问主代码。增加 stop_game_loops 标记控制模块退出，使用 self.root.after 进行循环</td>
+        </tr>
+        <tr>
+            <td>Core 3.0</td>
+            <td>2026年</td>
+            <td>增加密钥系统（6种验证方式：明文/SHA256哈希/Base64/JSON/主密钥/双重加密，密钥冻结与日志），主题系统（经典Windows/深色模式/浅色模式），通知系统（顶部淡入淡出动画），Shell调试面板（彩色标签/时间戳/Clear清空），模块管理器（加载/导入/卸载）</td>
+        </tr>
+        <tr>
+            <td>Core 2.0</td>
+            <td>2026年</td>
+            <td>增加用户系统（注册/登录/记住密码/SHA256加密），背包系统（10种物品，容量50格，购买/出售/清空），管理员权限分离</td>
+        </tr>
+        <tr>
+            <td>Core 1.0</td>
+            <td>2026年初</td>
+            <td>最基础版本。WASD移动角色，收集金色经验球升级，最高5级。F12截图。模块通过 exec() 直接执行 Python 文件，无隔离机制，after 循环会残留</td>
+        </tr>
+    </table>
+</section>
+
+<!-- ========== 三、文件结构 ========== -->
+<section>
+    <h2>三、文件结构</h2>
+    <div class="arch-diagram">
+C:\Date\Snxth.\<br>
+│<br>
+├─ <span class="hl">KSD main\</span> <span class="arrow">← 主程序目录</span><br>
+<span class="tree">├─ <span class="hl2">main.py</span> <span class="arrow">← 主界面+菜单+关于+模块管理器+向导编辑器+通知系统+主题系统</span></span><br>
+<span class="tree">├─ <span class="hl2">Core Modules\</span> <span class="arrow">← 核心功能模块目录</span></span><br>
+<span class="tree">│  ├─ <span class="hl3">user_config.py</span> <span class="arrow">← 用户系统（注册/登录/记住密码/背包/金币/主题/存档/用户管理）</span></span><br>
+<span class="tree">│  ├─ <span class="hl3">game_loop.py</span> <span class="arrow">← 游戏主循环（WASD移动/经验球生成/碰撞检测/升级判定/初始任务）</span></span><br>
+<span class="tree">│  ├─ <span class="hl3">file_manager.py</span> <span class="arrow">← 文件管理（数据目录初始化/备份恢复/JSON+CSV导出/存档加载）</span></span><br>
+<span class="tree">│  ├─ <span class="hl3">screenshot.py</span> <span class="arrow">← 截图功能（F12触发/PostScript格式/自动计数）</span></span><br>
+<span class="tree">│  └─ <span class="hl3">quest_engine.py</span> <span class="arrow">← 任务引擎+剧情系统+INI编码器（Core 8.0重写）</span></span><br>
+<span class="tree">└─ <span class="hl2">Python Launcher\</span> <span class="arrow">← Thonny便携版（Python运行环境，免安装）</span></span><br>
+│<br>
+├─ <span class="hl">KSD Run Files\</span> <span class="arrow">← 运行时数据目录</span><br>
+<span class="tree">├─ <span class="hl3">Cache\</span> <span class="arrow">← 配置缓存</span></span><br>
+<span class="tree">│  ├─ theme_config.ini</span><br>
+<span class="tree">│  ├─ installed_modules.json</span><br>
+<span class="tree">│  ├─ <span class="hl4">completed_quests.json</span> <span class="arrow">← 已完成任务永久记录</span></span><br>
+<span class="tree">│  └─ <span class="hl4">active_quests.json</span> <span class="arrow">← 进行中任务进度</span></span><br>
+<span class="tree">├─ <span class="hl3">Keys\</span> <span class="arrow">← 密钥文件存储（JSON/KEY格式）</span></span><br>
+<span class="tree">├─ <span class="hl3">Users\</span> <span class="arrow">← 用户存档</span></span><br>
+<span class="tree">│  ├─ users.ini <span class="arrow">← 所有用户信息</span></span><br>
+<span class="tree">│  ├─ login_config.ini <span class="arrow">← 登录配置</span></span><br>
+<span class="tree">│  ├─ save_用户名.ini <span class="arrow">← 各用户游戏存档</span></span><br>
+<span class="tree">│  ├─ backpack_用户名.ini <span class="arrow">← 各用户背包数据</span></span><br>
+<span class="tree">│  └─ coins_用户名.ini <span class="arrow">← 各用户金币余额</span></span><br>
+<span class="tree">├─ <span class="hl3">External Modules\</span> <span class="arrow">← 第三方模块（.py/.ini任务文件）</span></span><br>
+<span class="tree">│  ├─ Quests\ <span class="arrow">← 任务文件专用目录</span></span><br>
+<span class="tree">│  │  └─ *.ini <span class="arrow">← 剧情/任务文件（完成自动删除）</span></span><br>
+<span class="tree">│  ├─ pipa_island_dx.py <span class="arrow">← 枇杷岛大世界模块</span></span><br>
+<span class="tree">│  └─ ksd_investigation.py <span class="arrow">← KSD大厦调查行动模块</span></span><br>
+<span class="tree">└─ <span class="hl3">Screenshots\</span> <span class="arrow">← 截图文件（.ps格式）</span></span><br>
+│<br>
+├─ backup\ <span class="arrow">← 备份文件夹（运维工具用）</span><br>
+├─ <span class="hl2">Run.bat</span> <span class="arrow">← 启动脚本</span><br>
+├─ <span class="hl2">ksdeditor.py</span> <span class="arrow">← 任务剧情编辑器 v3.1</span><br>
+├─ <span class="hl2">KSD_maintainer.py</span> <span class="arrow">← 运维小助手 v1.4</span><br>
+├─ <span class="hl2">KSD_reset.py</span> <span class="arrow">← 恢复出厂设置工具</span><br>
+└─ tafang.html <span class="arrow">← 路障塔防网页版</span>
+    </div>
+</section>
+
+<!-- ========== 四、核心功能详解 ========== -->
+<section>
+    <h2>四、核心功能详解</h2>
+
+    <h3>4.1 用户系统</h3>
+    <table>
+        <tr><th>功能</th><th>说明</th></tr>
+        <tr><td>注册</td><td>首次运行弹出注册窗口，输入用户名和密码</td></tr>
+        <tr><td>登录</td><td>输入用户名和密码，支持记住密码自动登录</td></tr>
+        <tr><td>密码加密</td><td>SHA256 哈希加密存储，明文不保存</td></tr>
+        <tr><td>管理员权限</td><td>通过密钥文件提升为管理员，享有免费背包、模块管理等特权</td></tr>
+        <tr><td>切换账户</td><td>退出登录后重新登录其他账户</td></tr>
+        <tr><td>独立存档</td><td>每个用户独立的等级、经验、背包、金币、任务进度数据</td></tr>
+    </table>
+
+    <h3>4.2 游戏主循环</h3>
+    <table>
+        <tr><th>功能</th><th>说明</th></tr>
+        <tr><td>移动方式</td><td>W/A/S/D 或 ↑/↓/←/→ 方向键</td></tr>
+        <tr><td>经验球</td><td>画布上随机生成金色圆形经验球，最多同时存在5个，每3秒自动补充</td></tr>
+        <tr><td>收集机制</td><td>玩家移动触碰经验球即可收集</td></tr>
+        <tr><td>升级系统</td><td>每球获得1经验+1金币，经验达到（等级×10）后升级，等级无上限</td></tr>
+        <tr><td>碰撞检测</td><td>实时检测玩家坐标与经验球坐标的距离</td></tr>
+    </table>
+
+    <h3>4.3 背包系统</h3>
+    <table>
+        <tr><th>物品</th><th>图标</th><th>价格</th><th>说明</th></tr>
+        <tr><td>木材</td><td>🪵</td><td>2金币</td><td>基础建材</td></tr>
+        <tr><td>石头</td><td>🪨</td><td>1金币</td><td>基础材料</td></tr>
+        <tr><td>铁锭</td><td>🔩</td><td>5金币</td><td>金属材料</td></tr>
+        <tr><td>金块</td><td>🪙</td><td>10金币</td><td>贵重材料</td></tr>
+        <tr><td>食物</td><td>🍞</td><td>3金币</td><td>恢复饥饿度</td></tr>
+        <tr><td>水</td><td>💧</td><td>2金币</td><td>恢复口渴度</td></tr>
+        <tr><td>药品</td><td>💊</td><td>8金币</td><td>恢复生命值</td></tr>
+        <tr><td>工具</td><td>🔧</td><td>6金币</td><td>修理装备</td></tr>
+        <tr><td>宝石</td><td>💎</td><td>20金币</td><td>稀有材料</td></tr>
+        <tr><td>卷轴</td><td>📜</td><td>15金币</td><td>魔法材料</td></tr>
+    </table>
+    <p>• <strong>容量上限：</strong>50格</p>
+    <p>• <strong>购买/出售：</strong>出售价格为购买价的半价</p>
+    <p>• <strong>管理员特权：</strong>免费获取所有物品</p>
+
+    <h3>4.4 密钥系统</h3>
+    <p><strong>6种验证方式：</strong></p>
+    <table>
+        <tr><th>方式</th><th>说明</th></tr>
+        <tr><td>明文密钥</td><td>直接输入预设密钥字符串</td></tr>
+        <tr><td>SHA256哈希</td><td>验证密钥的SHA256哈希值</td></tr>
+        <tr><td>Base64编码</td><td>解码后验证明文</td></tr>
+        <tr><td>JSON结构</td><td>JSON格式的密钥文件，支持过期时间、用户绑定</td></tr>
+        <tr><td>主密钥</td><td>超级管理员密钥，拥有最高权限</td></tr>
+        <tr><td>双重加密</td><td>Base64编码+SHA256校验</td></tr>
+    </table>
+    <p><strong>密钥管理功能：</strong></p>
+    <p>• 生成JSON密钥文件</p>
+    <p>• 生成加密密钥文件</p>
+    <p>• 导入密钥验证</p>
+    <p>• 密钥冻结（拉黑）</p>
+    <p>• 密钥使用日志（保留最近200条）</p>
+
+    <h3>4.5 主题系统</h3>
+    <table>
+        <tr><th>主题</th><th>背景色</th><th>画布</th><th>文字</th><th>Shell</th></tr>
+        <tr><td>经典Windows</td><td>SystemButtonFace</td><td>白色</td><td>黑色</td><td>深底绿字</td></tr>
+        <tr><td>深色模式</td><td>#2d2d2d</td><td>#1e1e1e</td><td>#cccccc</td><td>黑底绿字</td></tr>
+        <tr><td>浅色模式</td><td>#f0f0f0</td><td>#ffffff</td><td>#333333</td><td>浅灰底黑字</td></tr>
+    </table>
+
+    <h3>4.6 Shell调试面板</h3>
+    <p>• <strong>位置：</strong>窗口底部</p>
+    <p>• <strong>颜色：</strong>深色背景 + 绿色文字</p>
+    <p>• <strong>标签颜色：</strong></p>
+    <p style="padding-left:20px">· SYSTEM → 橙色</p>
+    <p style="padding-left:20px">· ERROR → 红色</p>
+    <p style="padding-left:20px">· WARNING → 黄色</p>
+    <p style="padding-left:20px">· INFO → 蓝色</p>
+    <p style="padding-left:20px">· SUCCESS → 绿色</p>
+    <p style="padding-left:20px">· CODE → 灰色</p>
+    <p>• 每条日志带时间戳</p>
+    <p>• Clear 按钮清空</p>
+
+    <h3>4.7 通知系统</h3>
+    <p>• 顶部黄色半透明标签</p>
+    <p>• 淡入淡出动画效果</p>
+    <p>• 默认持续3秒</p>
+    <p>• 用于升级提示、任务完成、物品获得等</p>
+
+    <h3>4.8 截图系统</h3>
+    <p>• F12 键触发</p>
+    <p>• 保存为 PostScript 格式（.ps）</p>
+    <p>• 存储路径：<code>C:\Date\Snxth.\KSD Run Files\Screenshots\</code></p>
+    <p>• 文件名含时间戳和序号</p>
+
+    <h3>4.9 模块管理器</h3>
+    <p>• 管理员专用（需密钥提升权限）</p>
+    <p>• 自动扫描 External Modules 文件夹</p>
+    <p>• 显示已安装模块列表（文件名+类型+名称）</p>
+    <p>• <strong>导入新模块：</strong>选择 .py/.ini 文件，复制到 External Modules</p>
+    <p>• <strong>加载选中模块：</strong>通过 exec() 动态执行</p>
+    <p>• <strong>卸载模块：</strong>从列表和文件夹中删除</p>
+    <p>• 模块信息持久化在 installed_modules.json</p>
+
+    <h3>4.10 向导式任务编辑器</h3>
+    <p>4步引导创建 INI 任务文件：</p>
+    <div class="step"><div class="step-num">1</div><div class="step-text"><strong>基本信息：</strong>任务名称、任务描述</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-text"><strong>显示内容：</strong>窗口标题、显示文字（支持多行）</div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-text"><strong>奖励设置：</strong>金币数量、经验数量</div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-text"><strong>生成文件：</strong>预览并保存为 .ini 文件</div></div>
+</section>
+
+<!-- ========== 五、任务引擎详解 ========== -->
+<section>
+    <h2>五、任务引擎详解（Core 8.0）</h2>
+
+    <h3>5.1 任务文件格式（.ini）</h3>
+    <div class="arch-diagram">
+<span class="hl">[Meta]</span>                              <span class="arrow">← 任务元信息</span>
+id=quest_001                        <span class="arrow">← 任务唯一ID</span>
+name=任务名称                        <span class="arrow">← 显示名称</span>
+type=main                           <span class="arrow">← main=主线, side=支线</span>
+version=1.0
+description=任务描述
+npc_name=NPC名字                    <span class="arrow">← 关联NPC</span>
+npc_id=npc_001                      <span class="arrow">← NPC唯一标识</span>
+
+<span class="hl">[Prerequisites]</span>                     <span class="arrow">← 前置条件（可选）</span>
+level_min=1                         <span class="arrow">← 最低等级</span>
+quests_before=quest_000             <span class="arrow">← 前置任务ID</span>
+
+<span class="hl">[Objectives]</span>                         <span class="arrow">← 任务目标</span>
+obj_0_type=collect                  <span class="arrow">← 类型: collect/reach/defeat/talk</span>
+obj_0_item=herb                     <span class="arrow">← 目标物品</span>
+obj_0_amount=5                      <span class="arrow">← 目标数量</span>
+obj_0_text=采集草药                  <span class="arrow">← 显示文字</span>
+
+<span class="hl">[Rewards]</span>                            <span class="arrow">← 任务奖励</span>
+coins=50                            <span class="arrow">← 金币</span>
+exp=30                              <span class="arrow">← 经验</span>
+items=medicine:2,scroll:1           <span class="arrow">← 物品:数量</span>
+
+<span class="hl">[Dialogs]</span>                            <span class="arrow">← 对话节点配置</span>
+start=node_start                    <span class="arrow">← 起始对话</span>
+progress=node_progress              <span class="arrow">← 进行中对话</span>
+complete=node_complete              <span class="arrow">← 完成对话</span>
+    </div>
+
+    <h3>5.2 Core 8.0 全新对话系统</h3>
+    <p>Core 8.0 对剧情对话系统进行了全面重写，打造了KSD独有的沉浸式对话体验。以下是完整的视觉布局：</p>
+
+    <div class="dialog-demo" style="min-height:280px">
+        <div style="position:absolute;top:8px;right:12px;background:#221111;border:1px solid #553333;color:#ff6666;padding:3px 14px;font-size:11px;border-radius:4px">跳过 ▸▸</div>
+        <div style="text-align:center;padding-top:50px">
+            <div style="width:70%;height:100px;margin:0 auto;background:rgba(0,0,0,0.3);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#666;font-size:12px">游戏画面区域（半透明遮罩覆盖）</div>
+        </div>
+        <div class="dialog-bar">
+            <div class="dialog-name">药师·白术</div>
+            <div class="dialog-text">旅行者，我需要5株草药来配制药剂。你能帮我去野外采集吗？这些草药通常生长在溪流附近，颜色偏紫，很容易辨认。</div>
+            <div class="dialog-choices">
+                <div class="dialog-choice">交给我吧</div>
+                <div class="dialog-choice" style="margin-top:4px">我再想想</div>
+            </div>
+            <div style="text-align:center;color:#666;font-size:10px;margin-top:8px">▼ 点击任意位置继续</div>
+        </div>
+    </div>
+
+    <div class="highlight-box">
+        <h4>🎭 对话界面完整设计</h4>
+        <p>• <strong>半透明遮罩层</strong> — 对话时覆盖整个画布，使用黑色+stipple纹理，营造专注的对话氛围</p>
+        <p>• <strong>底部信息栏</strong>（#0a0a0a底色，高200px）— 深黑色背景，浅灰色边框，承载所有对话元素</p>
+        <p>• <strong>NPC名字标签</strong> — 金黄色文字(#ffcc00)，深蓝背景(#1a1a2e)，突出显示在信息栏上方，精准标识说话者</p>
+        <p>• <strong>纯白对话文字</strong> — Segoe UI 12号字体，按50字符自动换行，清晰易读</p>
+        <p>• <strong>右下角选项按钮</strong> — 深蓝底色(#111122)，蓝灰边框(#335577)，悬停时高亮变色，支持多选项纵向排列</p>
+        <p>• <strong>右上角跳过按钮</strong> — 红色文字(#ff6666)，暗红底色(#221111)，一键结束当前对话</p>
+        <p>• <strong>底部继续提示</strong> — 灰色"▼ 点击任意位置继续"引导，无选项时自动显示</p>
+        <p>• <strong>奖励实时发放</strong> — 对话节点中可配置reward_coins和reward_exp，节点显示时自动发放到玩家账户</p>
+    </div>
+
+    <h3>5.3 NPC智能标记系统</h3>
+    <div class="quest-flow">
+        <div class="quest-step"><div class="qs-icon">❗</div><div class="qs-text">黄色感叹号<br>可接取新任务</div></div>
+        <div class="quest-arrow">→</div>
+        <div class="quest-step"><div class="qs-icon">🔄</div><div class="qs-text">进行中<br>无特殊标记</div></div>
+        <div class="quest-arrow">→</div>
+        <div class="quest-step"><div class="qs-icon">❓</div><div class="qs-text">蓝色问号<br>可交付任务</div></div>
+        <div class="quest-arrow">→</div>
+        <div class="quest-step"><div class="qs-icon">✅</div><div class="qs-text">已完成<br>标记消失</div></div>
+    </div>
+    <p>NPC头顶自动显示任务状态标记：<strong style="color:#ffcc00">黄色感叹号 !</strong> 表示可接取新任务，<strong style="color:#00ccff">蓝色问号 ?</strong> 表示任务已完成可交付。标记为圆形背景+文字的组合图形，与NPC名字文本分离绘制。玩家靠近NPC（60像素范围内）时自动触发交互，弹出对应的任务对话框。任务状态变更时标记动态刷新。</p>
+
+    <h3>5.4 任务持久化（JSON双文件）</h3>
+    <table>
+        <tr><th>文件</th><th>存储内容</th><th>更新时机</th></tr>
+        <tr><td><code>active_quests.json</code></td><td>进行中任务的完整进度（目标类型、物品名称、当前进度、目标数量、显示文字）</td><td>每次进度变更自动写入</td></tr>
+        <tr><td><code>completed_quests.json</code></td><td>已完成任务的永久记录（任务名称、完成时间戳、奖励明细）</td><td>任务交付时写入</td></tr>
+    </table>
+    <p>启动KSD时自动调用加载函数恢复数据，关闭时无需手动保存——所有进度实时持久化，断电不丢失。</p>
+
+    <h3>5.5 自动恢复任务追踪</h3>
+    <p>启动时自动检测活跃任务，恢复右上角浮动追踪面板。追踪面板以白色背景、黑色文字显示在窗口左上角，列出当前所有活跃任务的目标进度。可交付的任务会额外显示"✅ 可交付!"提示。NPC标记同步刷新。</p>
+
+    <h3>5.6 任务日志面板</h3>
+    <p>控制面板新增<strong>"任务日志"</strong>按钮，打开500×500独立窗口，分两个区域展示：</p>
+    <p>• <strong>进行中区域</strong> — 每个任务的目标进度+完成状态+可交付提示</p>
+    <p>• <strong>已完成区域</strong> — 任务名称+完成时间+奖励明细（金币/经验/物品）</p>
+    <p>窗口采用白色经典Windows风格，与整体界面统一。</p>
+
+    <h3>5.7 任务文件自动清理</h3>
+    <p>任务完成交付后，对应的 <code>.ini</code> 文件自动从 <code>External Modules\Quests\</code> 目录删除，避免重复加载和文件堆积。完成记录永久保留在 <code>completed_quests.json</code> 中。</p>
+
+    <h3>5.8 Action指令系统</h3>
+    <p>任务节点支持丰富的Action指令，每行一个，按顺序执行：</p>
+    <table>
+        <tr><th>指令</th><th>功能</th></tr>
+        <tr><td><code>accept_quest ID</code></td><td>接受任务</td></tr>
+        <tr><td><code>complete_quest ID</code></td><td>完成并发放奖励</td></tr>
+        <tr><td><code>close_dialog</code></td><td>关闭对话框</td></tr>
+        <tr><td><code>give_item 物品名 数量</code></td><td>给玩家物品</td></tr>
+        <tr><td><code>take_item 物品名 数量</code></td><td>拿走玩家物品</td></tr>
+        <tr><td><code>spawn_npc 名字 X Y</code></td><td>在画布生成NPC</td></tr>
+        <tr><td><code>remove_npc 名字</code></td><td>移除NPC</td></tr>
+        <tr><td><code>spawn_item 物品名 X Y</code></td><td>在地上生成物品</td></tr>
+        <tr><td><code>teleport X Y</code></td><td>传送玩家</td></tr>
+        <tr><td><code>set_weather rain/storm</code></td><td>设置天气效果</td></tr>
+        <tr><td><code>clear_weather</code></td><td>清除天气</td></tr>
+        <tr><td><code>show_effect sparkle X Y</code></td><td>显示特效</td></tr>
+        <tr><td><code>show_notification 文字 毫秒</code></td><td>显示通知</td></tr>
+        <tr><td><code>log 文字</code></td><td>写Shell日志</td></tr>
+        <tr><td><code>trigger_story 文件路径</code></td><td>触发另一个剧情</td></tr>
+    </table>
+
+    <h3>5.9 独立工具链</h3>
+    <table>
+        <tr><th>工具</th><th>版本</th><th>功能</th></tr>
+        <tr><td><strong>ksdeditor.py</strong></td><td>v3.1</td><td>图形化任务剧情编辑器。支持对话节点编辑（speaker/text/choices/next/end/action/奖励）、地图编辑器（建筑/NPC/物品放置+交互代码编写）、Python代码编辑区、Action指令系统。可导出为.ini任务文件或保存为.ksd项目文件。Core 8.0适配</td></tr>
+        <tr><td><strong>KSD_maintainer.py</strong></td><td>v1.4</td><td>运维小助手。全面诊断工具：目录结构检查、文件完整性校验（MD5）、权限检查、配置文件验证、备份状态检查、Python启动器检查、外部模块扫描、Shell日志分析、磁盘空间检查。支持一键修复和备份恢复。Core 8.0适配</td></tr>
+        <tr><td><strong>KSD_reset.py</strong></td><td>独立版</td><td>恢复出厂设置工具。双验证方式（确认文字/管理员密钥），清除所有用户数据（含任务进度JSON）并重建目录。提供先备份再重置的安全选项。Core 8.0适配，新增任务数据清除说明</td></tr>
+    </table>
+</section>
+
+<!-- ========== 六、核心功能卡片 ========== -->
+<section>
+    <h2>六、全部功能一览</h2>
     <div class="features">
         <div class="feature-card"><div class="icon">🎮</div><h3>经典玩法</h3><p>WASD控制角色移动，收集金色经验球升级，每球+1金币。等级无上限，经验球每3秒自动补充，画布始终保持5个球。升级通知、经验进度条实时显示。</p></div>
-        <div class="feature-card"><div class="icon">👤</div><h3>用户系统</h3><p>注册/登录/记住密码/退出登录。密码SHA256加密存储。管理员权限分离。每个用户独立存档（等级/背包/金币），支持切换账户。</p></div>
+        <div class="feature-card new-card"><div class="icon">📜</div><h3>沉浸式剧情对话</h3><p>全新对话引擎：半透明遮罩+底部信息栏+NPC名字标签+白色对话文字+右下选项按钮+右上跳过功能。支持多分支对话、选项跳转、节点编辑、奖励实时发放。</p></div>
+        <div class="feature-card new-card"><div class="icon">🗺️</div><h3>NPC任务标记</h3><p>NPC头顶显示 <strong style="color:#ffcc00">!</strong>（黄色可接任务）和 <strong style="color:#00ccff">?</strong>（蓝色可交付任务）。玩家靠近60px自动弹出对话触发任务。任务完成后标记自动更新消失。</p></div>
+        <div class="feature-card new-card"><div class="icon">💾</div><h3>任务持久化</h3><p>活跃任务进度保存在 <code>active_quests.json</code>，已完成任务记录在 <code>completed_quests.json</code>。启动时自动恢复未完成任务的追踪状态，进度实时写入磁盘不丢失。</p></div>
+        <div class="feature-card new-card"><div class="icon">📋</div><h3>任务日志面板</h3><p>控制面板新增"任务日志"按钮，500×500独立窗口显示进行中任务（含进度详情+可交付提示）和已完成任务（含完成时间和奖励记录）。Windows经典白色风格。</p></div>
+        <div class="feature-card new-card"><div class="icon">🗑️</div><h3>任务文件自动清理</h3><p>任务完成交付后，对应的.ini文件自动从Quests目录删除，避免重复加载。完成记录永久保留，可随时在任务日志中查看历史。</p></div>
+        <div class="feature-card"><div class="icon">👤</div><h3>用户系统</h3><p>注册/登录/记住密码/退出登录。密码SHA256加密存储。管理员权限分离。每个用户独立存档（等级/背包/金币/任务进度），支持切换账户。</p></div>
         <div class="feature-card"><div class="icon">🎒</div><h3>背包系统</h3><p>10种物品：木材/石头/铁锭/金块/食物/水/药品/工具/宝石/卷轴。容量50格。支持购买/出售（半价回收）/清空。管理员免费获取。</p></div>
-        <div class="feature-card"><div class="icon">🔑</div><h3>密钥系统</h3><p>6种验证方式：明文密钥/SHA256哈希/Base64编码/JSON结构/主密钥/加密双重验证。支持密钥冻结、使用日志（保留200条）、密钥生成（JSON/加密/主密钥格式）。</p></div>
+        <div class="feature-card"><div class="icon">🔑</div><h3>密钥系统</h3><p>6种验证方式：明文密钥/SHA256哈希/Base64编码/JSON结构/主密钥/双重加密。支持密钥冻结、使用日志（保留200条）、密钥生成（JSON/加密/主密钥格式）。</p></div>
         <div class="feature-card"><div class="icon">🎨</div><h3>主题切换</h3><p>三种主题：经典Windows（SystemButtonFace）、深色模式（深灰背景浅色文字）、浅色模式（浅灰背景深色文字）。实时切换，影响画布/信息栏/Shell面板。</p></div>
         <div class="feature-card"><div class="icon">💻</div><h3>Shell面板</h3><p>底部终端风格日志窗口，深色背景绿色文字。6种彩色标签：SYSTEM(橙)/ERROR(红)/WARNING(黄)/INFO(蓝)/SUCCESS(绿)/CODE(灰)。每条日志带时间戳，支持Clear清空。</p></div>
-        <div class="feature-card"><div class="icon">📦</div><h3>模块管理</h3><p>内置模块管理器（需管理员权限）。扫描External Modules文件夹，显示已安装模块列表。支持导入新模块（复制到文件夹）、加载选中模块（exec执行）、卸载模块（删除文件）。模块信息持久化在installed_modules.json。</p></div>
-        <div class="feature-card"><div class="icon">📝</div><h3>任务编辑器</h3><p>4步向导式创建INI任务文件：基本信息→显示内容→奖励设置→生成文件。步骤指示器显示进度（蓝色当前/绿色完成/灰色未到）。生成文件带注释头，支持预览后保存并导入测试。</p></div>
+        <div class="feature-card"><div class="icon">📦</div><h3>模块管理</h3><p>内置模块管理器（需管理员权限）。扫描External Modules文件夹，显示已安装模块列表。支持导入新模块、加载选中模块（exec执行）、卸载模块。模块信息持久化在installed_modules.json。</p></div>
+        <div class="feature-card"><div class="icon">📝</div><h3>向导式任务编辑器</h3><p>4步引导创建INI任务文件：基本信息→显示内容→奖励设置→生成文件。步骤指示器显示进度（蓝色当前/绿色完成/灰色未到）。生成文件带注释头，支持预览后保存并导入测试。</p></div>
+        <div class="feature-card new-card"><div class="icon">✏️</div><h3>任务剧情编辑器</h3><p>独立图形化编辑器ksdeditor.py v3.1。对话节点编辑、地图编辑器（建筑/NPC/物品+交互代码）、Python代码编辑区、Action指令系统。导出.ini或保存.ksd项目文件。Core 8.0完全适配。</p></div>
+        <div class="feature-card new-card"><div class="icon">🛠️</div><h3>运维小助手</h3><p>KSD_maintainer.py v1.4。全面诊断：目录结构/文件MD5/权限/配置/备份/Python启动器/外部模块/Shell日志/磁盘空间。一键修复+备份恢复。Core 8.0适配。</p></div>
+        <div class="feature-card new-card"><div class="icon">🔄</div><h3>恢复出厂设置</h3><p>KSD_reset.py独立工具。双验证（确认文字/管理员密钥），清除所有用户数据含任务进度JSON并重建目录。先备份再重置安全选项。Core 8.0新增任务数据清除。</p></div>
         <div class="feature-card"><div class="icon">📷</div><h3>截图系统</h3><p>F12一键截图，保存为PostScript格式。文件名包含时间戳和序号，存入Screenshots文件夹。截图计数自动递增。</p></div>
         <div class="feature-card"><div class="icon">💾</div><h3>备份恢复</h3><p>完整数据备份（复制整个data文件夹到指定位置）和恢复功能。支持JSON格式（完整结构化数据）和CSV格式（表格形式）导出。导出后自动打开文件夹。</p></div>
     </div>
 </section>
 
+<!-- ========== 七、操作指南 ========== -->
 <section>
-    <h2>📋 操作指南</h2>
+    <h2>七、操作指南</h2>
     <h3>🎮 游戏操作</h3>
     <div class="step"><div class="step-num">1</div><div class="step-text">使用 <code>W A S D</code> 或 <code>↑ ↓ ← →</code> 方向键控制角色在画布区域移动</div></div>
     <div class="step"><div class="step-num">2</div><div class="step-text">移动角色触碰画布中的金色圆形经验球即可收集，每球获得 <strong>1经验 + 1金币</strong></div></div>
@@ -144,75 +517,70 @@ table td{padding:8px 12px;border:1px solid rgba(255,255,255,0.05);color:#ccc}
     <div class="step"><div class="step-num">4</div><div class="step-text">画布中始终维持最多5个经验球，每3秒自动补充一个</div></div>
     <div class="step"><div class="step-num">5</div><div class="step-text">按 <code>F12</code> 键截取当前画布画面，保存到 <code>Screenshots</code> 文件夹</div></div>
 
+    <h3>📜 任务系统使用</h3>
+    <div class="step"><div class="step-num">1</div><div class="step-text">将任务 <code>.ini</code> 文件放入 <code>External Modules\Quests\</code> 目录，KSD会自动扫描并识别</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-text">游戏中靠近带 <strong style="color:#ffcc00">!</strong> 标记的NPC，弹出对话框接受任务</div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-text">完成任务目标后，靠近带 <strong style="color:#00ccff">?</strong> 标记的NPC交付任务领取奖励</div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-text">打开 <code>控制面板 → 任务日志</code> 查看进行中和已完成的任务详情</div></div>
+    <div class="step"><div class="step-num">5</div><div class="step-text">任务完成后，对应的.ini文件会自动从Quests目录删除，但完成记录永久保留</div></div>
+    <div class="tip">💡 任务进度自动保存到 <code>Cache/active_quests.json</code>，关闭KSD后重新打开会自动恢复未完成任务的追踪状态。</div>
+
     <h3>📦 模块导入步骤</h3>
     <div class="step"><div class="step-num">1</div><div class="step-text">打开菜单栏 <code>控制面板 → 配置与功能</code>（需要管理员权限，首次使用需导入密钥）</div></div>
-    <div class="step"><div class="step-num">2</div><div class="step-text">点击 <strong>"导入新模块"</strong> 按钮，在文件选择框中选择 <code>.py</code> 或 <code>.ini</code> 格式的模块文件</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-text">点击 <strong>"导入新文件"</strong> 按钮，在文件选择框中选择 <code>.py</code> 或 <code>.ini</code> 格式的模块文件</div></div>
     <div class="step"><div class="step-num">3</div><div class="step-text">模块自动复制到 <code>External Modules</code> 文件夹，并出现在已安装模块列表中</div></div>
-    <div class="step"><div class="step-num">4</div><div class="step-text">在列表中 <strong>选中模块</strong>，点击 <strong>"加载选中模块"</strong> 即可运行该模块</div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-text">在列表中 <strong>选中模块</strong>，点击 <strong>"加载选中"</strong> 即可运行该模块</div></div>
     <div class="step"><div class="step-num">5</div><div class="step-text">模块运行中可通过 <code>游戏选项 → 退出当前任务</code> 返回主界面，或通过模块管理器 <strong>"卸载选中"</strong> 删除</div></div>
-    <div class="tip">💡 提示：模块信息保存在 <code>Cache\installed_modules.json</code>，每次打开管理器会自动扫描同步文件夹。模块通过全局变量 <code>game</code> 访问主程序功能。</div>
+    <div class="tip">💡 模块信息保存在 <code>Cache\installed_modules.json</code>，每次打开管理器会自动扫描同步文件夹。模块通过全局变量 <code>game</code> 访问主程序功能。</div>
 
     <h3>🔑 获取管理员权限</h3>
     <div class="step"><div class="step-num">1</div><div class="step-text">打开 <code>控制面板 → 配置与功能 → 密钥管理 → 导入密钥</code></div></div>
-    <div class="step"><div class="step-num">2</div><div class="step-text">选择密钥文件或输入密钥内容（如 <code>SNXTH-ADMIN-2024</code>）</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-text">选择密钥文件或输入密钥内容（如 <code>SNXTH-ADMIN-2026</code>）</div></div>
     <div class="step"><div class="step-num">3</div><div class="step-text">验证通过后立即提升为管理员，信息栏显示 [管理员] 标识</div></div>
     <div class="step"><div class="step-num">4</div><div class="step-text">管理员可在密钥管理面板生成新密钥（JSON/加密/主密钥格式）分享给其他用户</div></div>
 </section>
 
+<!-- ========== 八、数据流 ========== -->
 <section>
-    <h2>🏗️ 技术架构</h2>
-    <h3>📁 完整文件结构</h3>
-    <div class="arch-diagram">
-C:\Date\Snxth.\<br>
-├─ <span class="hl">KSD main\</span> <span class="arrow">← 主程序目录</span><br>
-<span class="tree">├─ <span class="hl2">main.py</span> <span class="arrow">← 主界面+菜单+关于+模块管理器+向导编辑器+通知系统+主题系统</span></span><br>
-<span class="tree">├─ <span class="hl2">Core Modules\</span> <span class="arrow">← 核心功能模块目录</span></span><br>
-<span class="tree">│  ├─ <span class="hl3">user_config.py</span> <span class="arrow">← 用户系统(注册/登录/记住密码/背包/金币/主题/存档/用户管理)</span></span><br>
-<span class="tree">│  ├─ <span class="hl3">game_loop.py</span> <span class="arrow">← 游戏主循环(WASD移动/经验球生成/碰撞检测/升级判定/初始任务)</span></span><br>
-<span class="tree">│  ├─ <span class="hl3">file_manager.py</span> <span class="arrow">← 文件管理(数据目录初始化/备份恢复/JSON+CSV导出/存档加载)</span></span><br>
-<span class="tree">│  └─ <span class="hl3">screenshot.py</span> <span class="arrow">← 截图功能(F12触发/PostScript格式/自动计数)</span></span><br>
-<span class="tree">└─ <span class="hl2">Python Launcher\</span> <span class="arrow">← Thonny便携版(Python运行环境，免安装)</span></span><br>
-├─ <span class="hl">KSD Run Files\</span> <span class="arrow">← 运行时数据目录</span><br>
-<span class="tree">├─ <span class="hl3">Cache\</span> <span class="arrow">← 配置缓存(主题配置theme_config.ini/模块列表installed_modules.json)</span></span><br>
-<span class="tree">├─ <span class="hl3">Keys\</span> <span class="arrow">← 密钥文件存储(JSON/KEY格式)</span></span><br>
-<span class="tree">├─ <span class="hl3">Users\</span> <span class="arrow">← 用户存档(users.ini/login_config.ini/各用户save_/backpack_/coins_的INI文件)</span></span><br>
-<span class="tree">├─ <span class="hl3">External Modules\</span> <span class="arrow">← 第三方模块(.py/.ini任务文件，模块管理器扫描此目录)</span></span><br>
-<span class="tree">└─ <span class="hl3">Screenshots\</span> <span class="arrow">← 截图文件(.ps格式，文件名含时间戳和序号)</span></span><br>
-└─ <span class="hl2">Run.bat</span> <span class="arrow">← 启动脚本(调用Python Launcher\python.exe执行main.py)</span>
-    </div>
-
-    <h3>🔄 数据流</h3>
+    <h2>八、数据流</h2>
     <div class="arch-diagram">
 <span class="hl">Run.bat</span> → 启动 <span class="hl2">Python Launcher\python.exe</span><br>
 <span class="line">→ 执行 <span class="hl2">main.py</span>（初始化KSDMain类）</span><br>
 <span class="line">→ 创建数据目录 → 初始化各模块实例</span><br>
 <span class="line">→ 调用 <span class="hl3">user_config.check_login()</span>（用户登录/注册）</span><br>
+<span class="line">→ 调用 <span class="hl4">quest_engine._load_persistence()</span>（恢复任务进度）</span><br>
 <span class="line">→ 调用 <span class="hl3">game_loop.setup_canvas()</span>（构建画布/WASD绑定）</span><br>
 <span class="line">→ 构建UI（菜单栏/信息栏/Shell面板/通知系统/主题应用）</span><br>
-<span class="line">→ 启动游戏主循环（移动检测/碰撞检测/升级判定/经验球生成）</span><br>
+<span class="line">→ 启动游戏主循环 + NPC检测循环（300ms间隔）+ 任务追踪恢复</span><br>
 <span class="line">→ 用户操作 → 菜单事件 → 调用各模块方法</span><br>
+<span class="line">→ 靠近NPC → 自动检测（60px范围）→ 弹出对话界面</span><br>
 <span class="line">→ 模块加载 → <code>exec()</code> 动态执行第三方代码 → 通过全局变量 <code>game</code> 访问主程序</span><br>
 <span class="line">→ 数据读写 → <code>configparser</code> 操作 INI 文件 / <code>json</code> 操作 JSON 文件</span>
     </div>
+</section>
 
-    <h3>🛠️ 技术栈</h3>
+<!-- ========== 九、技术栈 ========== -->
+<section>
+    <h2>九、技术栈</h2>
     <table>
         <tr><th>技术</th><th>用途</th></tr>
         <tr><td>🐍 Python 3</td><td>主编程语言，标准库无第三方依赖</td></tr>
         <tr><td>🖼️ Tkinter</td><td>GUI图形界面，窗口/画布/菜单/对话框</td></tr>
-        <tr><td>📦 configparser</td><td>INI配置文件读写（用户存档/背包/主题配置）</td></tr>
+        <tr><td>📦 configparser</td><td>INI配置文件读写（用户存档/背包/主题配置/任务定义）</td></tr>
         <tr><td>🔐 hashlib SHA256</td><td>密码哈希加密存储</td></tr>
-        <tr><td>📋 json</td><td>模块列表持久化/密钥文件/数据导出</td></tr>
+        <tr><td>📋 json</td><td>模块列表/任务持久化/密钥文件/数据导出</td></tr>
         <tr><td>📊 csv</td><td>CSV格式数据导出</td></tr>
         <tr><td>🎨 base64</td><td>密钥编码/解码验证</td></tr>
         <tr><td>📁 os / shutil</td><td>文件系统操作/文件夹创建/文件复制/备份恢复</td></tr>
     </table>
 </section>
 
+<!-- ========== 十、更新日志 ========== -->
 <section>
-    <h2>📝 更新日志</h2>
+    <h2>十、更新日志</h2>
     <ul class="changelog">
-        <li><span class="ver">Core 7.0</span> 主程序与核心模块分离为5个独立文件，模块管理器内置进主代码，数据路径重构为C:\Date\Snxth.\，新增向导式任务编辑器(4步引导)，支持自定义难度，文件菜单/游戏选项/控制面板/任务/关于菜单完整重构。模块信息持久化JSON存储，外部模块文件夹自动扫描同步。</li>
+        <li><span class="ver">Core 8.0</span> <strong>史上最大规模升级！</strong>全新沉浸式对话引擎（半透明遮罩+底部信息栏+NPC名字标签+选项按钮+跳过功能+点击继续）、任务持久化JSON双文件、NPC智能标记系统（! / ?）、启动自动恢复任务追踪、任务日志面板、任务文件自动清理。架构版本号跃升至Core 8.0。独立工具v3.1/v1.4同步更新。版本号升级为26Ver9.43 Developer Preview Premium Plus。</li>
+        <li><span class="ver">Core 7.0</span> 主程序与核心模块分离为5个独立文件，模块管理器内置进主代码，数据路径重构为C:\Date\Snxth.\，新增向导式任务编辑器(4步引导)，支持自定义难度，文件菜单/游戏选项/控制面板/任务/关于菜单完整重构。模块信息持久化JSON存储，外部模块文件夹自动扫描同步。新增剧情任务系统（QuestEngine+StorySystem+INIEncoder）。</li>
         <li><span class="ver">Core 6.0</span> 模块生命周期完善，新增向导式任务编辑器，safe_after自动追踪after循环ID，bind_key自动管理按键绑定，增加is_key_frozen冻结检测，load_module/unload_module标准化流程。</li>
         <li><span class="ver">Core 5.0</span> 引入safe_after自动追踪循环防止残留，bind_key自动管理按键绑定防止冲突，load_module先销毁旧模块再加载新模块，unload_module标准化卸载流程（清循环/解绑按键/重建画布）。</li>
         <li><span class="ver">Core 4.0</span> 模块采用类封装方式，通过self.game访问主代码，增加stop_game_loops标记控制模块退出，使用self.root.after进行循环。</li>
@@ -222,21 +590,26 @@ C:\Date\Snxth.\<br>
     </ul>
 </section>
 
+<!-- ========== 十一、FAQ ========== -->
 <section>
-    <h2>❓ 常见问题 FAQ</h2>
-    <div class="faq-item"><div class="q">Q: 游戏数据存储在哪里？</div><div class="a">所有数据存储在 <code>C:\Date\Snxth.\KSD Run Files\</code> 目录下。用户信息在 <code>Users\users.ini</code>，各用户背包/金币/存档为独立INI文件，模块信息在 <code>Cache\installed_modules.json</code>，密钥在 <code>Keys\</code> 文件夹。</div></div>
+    <h2>十一、常见问题 FAQ</h2>
+    <div class="faq-item"><div class="q">Q: 游戏数据存储在哪里？</div><div class="a">所有数据存储在 <code>C:\Date\Snxth.\KSD Run Files\</code> 目录下。用户信息在 <code>Users\users.ini</code>，各用户背包/金币/存档为独立INI文件，模块信息在 <code>Cache\installed_modules.json</code>，任务进度在 <code>Cache\active_quests.json</code> 和 <code>Cache\completed_quests.json</code>，密钥在 <code>Keys\</code> 文件夹。</div></div>
+    <div class="faq-item"><div class="q">Q: 任务系统怎么使用？</div><div class="a">将任务 <code>.ini</code> 文件放入 <code>External Modules\Quests\</code> 目录，KSD启动时自动扫描。游戏中靠近带 <strong style="color:#ffcc00">!</strong> 标记的NPC接受任务，完成任务后靠近带 <strong style="color:#00ccff">?</strong> 标记的NPC交付。可在 <code>控制面板 → 任务日志</code> 查看所有任务状态。任务进度自动保存，关闭后重新打开自动恢复。</div></div>
+    <div class="faq-item"><div class="q">Q: 任务编辑器怎么用？</div><div class="a">方式1：使用KSD内置的 <code>文件 → 向导式任务编辑器</code>（4步引导创建简单任务）。方式2：运行独立的 <code>ksdeditor.py</code> 图形化编辑器，支持对话节点编辑、地图编辑、Python代码编辑、导出为.ini文件或保存为.ksd项目文件。</div></div>
     <div class="faq-item"><div class="q">Q: 忘记密码怎么办？</div><div class="a">密码使用SHA256加密存储，无法逆向解密。管理员可以在 <code>用户选项</code> 中删除该用户重新注册。或者直接编辑 <code>Users\users.ini</code> 文件，删除对应用户的整个区块（从 [用户名] 到下一个 [ 之前的内容）。</div></div>
-    <div class="faq-item"><div class="q">Q: 如何安装第三方模块？</div><div class="a">打开 <code>控制面板 → 配置与功能</code>（需管理员权限，首次使用需导入密钥如 SNXTH-ADMIN-2024），点击 <strong>"导入新模块"</strong>，选择 <code>.py</code> 或 <code>.ini</code> 文件。模块会自动复制到 <code>External Modules</code> 文件夹并出现在列表中。</div></div>
-    <div class="faq-item"><div class="q">Q: 模块加载后无法正常使用怎么办？</div><div class="a">请确认模块文件是 KSD Core 7.0 兼容格式。模块需通过全局变量 <code>game</code> 访问主程序功能（如 game.add_coins()、game.shell_log()、game.user.backpack 等）。如果模块是旧版（Core 5.0及以前）格式，需手动改写为Core 7.0兼容格式。</div></div>
-    <div class="faq-item"><div class="q">Q: 如何备份我的游戏进度？</div><div class="a">方法1：打开菜单 <code>文件 → 备份数据</code>，选择目标文件夹即可完整备份整个KSD Run Files。方法2：手动复制 <code>C:\Date\Snxth.\KSD Run Files\</code> 整个文件夹到安全位置。恢复时使用 <code>文件 → 恢复数据</code> 或手动复制回原位。</div></div>
-    <div class="faq-item"><div class="q">Q: 如何成为管理员？</div><div class="a">在 <code>控制面板 → 配置与功能 → 密钥管理</code> 中导入有效密钥。内置密钥包括：SNXTH-ADMIN-2024（明文）、SNXTH-ADMIN-2024-MASTER-KEY-FLASH-STUDIO（主密钥）、FLASH-STUDIO-MASTER。管理员可以生成新密钥分享给其他用户。</div></div>
+    <div class="faq-item"><div class="q">Q: 如何安装第三方模块？</div><div class="a">打开 <code>控制面板 → 配置与功能</code>（需管理员权限，首次使用需导入密钥如 SNXTH-ADMIN-2026），点击 <strong>"导入新文件"</strong>，选择 <code>.py</code> 或 <code>.ini</code> 文件。模块会自动复制到 <code>External Modules</code> 文件夹并出现在列表中。</div></div>
+    <div class="faq-item"><div class="q">Q: 模块加载后无法正常使用怎么办？</div><div class="a">请确认模块文件是 KSD Core 8.0 兼容格式。模块需通过全局变量 <code>game</code> 访问主程序功能（如 game.add_coins()、game.shell_log()、game.user.backpack 等）。如果模块是旧版格式，需手动改写为Core 8.0兼容格式。</div></div>
+    <div class="faq-item"><div class="q">Q: 如何备份我的游戏进度？</div><div class="a">方法1：打开菜单 <code>文件 → 备份数据</code>，选择目标文件夹即可完整备份整个KSD Run Files。方法2：运行 <code>KSD_maintainer.py</code> 运维小助手，点击"创建备份"。方法3：手动复制 <code>C:\Date\Snxth.\KSD Run Files\</code> 整个文件夹到安全位置。恢复时使用对应方法还原。</div></div>
+    <div class="faq-item"><div class="q">Q: 如何成为管理员？</div><div class="a">在 <code>控制面板 → 配置与功能 → 密钥管理</code> 中导入有效密钥。内置密钥包括：SNXTH-ADMIN-2026（明文）、SNXTH-ADMIN-2026-MASTER-KEY-FLASH-STUDIO（主密钥）、FLASH-STUDIO-MASTER。管理员可以生成新密钥分享给其他用户。</div></div>
+    <div class="faq-item"><div class="q">Q: 如何恢复出厂设置？</div><div class="a">运行 <code>KSD_reset.py</code> 独立工具（可放在任意位置）。支持两种验证方式：输入"确认重置"或导入管理员密钥文件。建议先点击"先备份再重置"安全操作。清除范围包括所有用户数据、任务进度、存档、密钥、截图，保留主程序和外部模块。</div></div>
     <div class="faq-item"><div class="q">Q: 游戏窗口太小/太大怎么办？</div><div class="a">KSD窗口固定为800×650像素，如需调整可在 <code>main.py</code> 中找到 <code>self.root.geometry("800x650")</code> 修改数值。画布为800×450，Shell面板高度100px。修改后需同步调整画布创建参数。</div></div>
 </section>
 
+<!-- ========== 网页版KSD ========== -->
 <section>
     <h2>🎮 网页版 KSD <span style="font-size:14px;color:#FFD700;font-weight:normal">— 极限精简版 · 等级无上限</span></h2>
     <div id="web-ksd">
-        <div id="web-ksd-title">🟢 KSD - 26Ver8.52<span id="web-ksd-badge">极限精简版</span></div>
+        <div id="web-ksd-title">🟢 KSD - 26Ver9.43<span id="web-ksd-badge">极限精简版</span></div>
         <div id="game-area"><div class="hint-text" style="left:10px;top:5px">WASD/摇杆移动 · 收集金色球</div><div id="player">玩家</div><div id="stick"><div class="k"></div></div></div>
         <div id="game-info"><span>等级: <b id="glvl">1</b></span><span>经验: <b id="gexp">0/10</b></span><span style="color:#D4A017">金币: <b id="gcoin">0</b></span></div>
         <div id="game-tools"><button class="tbtn" onclick="bpUI()">背包</button><button class="tbtn" onclick="stUI()">设置</button></div>
@@ -244,6 +617,7 @@ C:\Date\Snxth.\<br>
     </div>
 </section>
 
+<!-- ========== 扫雷 ========== -->
 <section>
     <h2>💣 经典扫雷 <span style="font-size:14px;color:#aaccff;font-weight:normal">— Windows Vista Aero</span></h2>
     <div id="ms-game">
@@ -256,13 +630,19 @@ C:\Date\Snxth.\<br>
     </div>
 </section>
 
+<!-- ========== 下载 ========== -->
 <section>
     <div class="download-box">
         <h3>📥 下载 KSD 完整版</h3>
-        <p>26Ver8.52 · Core 7.0</p>
+        <p>26Ver9.43 · Core 8.0 · 沉浸式剧情对话系统</p>
         <a href="https://github.com/Zack595910/KSD-" class="download-btn">下载 KSD.ZIP</a>
         <br>
-        <a href="tafang.html" class="download-btn" style="background:#f39c12;margin-top:8px">🏰 路障塔防小游戏</a>
+        <a href="tafang.html" class="download-btn orange">🏰 路障塔防小游戏</a>
+        <br>
+        <span style="color:#aaa;font-size:12px;display:block;margin-top:10px">🛠️ 独立工具（右键另存为）：</span>
+        <a href="ksdeditor.py" class="download-btn blue" style="font-size:13px;padding:10px 20px">✏️ 任务剧情编辑器 v3.1</a>
+        <a href="KSD_maintainer.py" class="download-btn blue" style="font-size:13px;padding:10px 20px">🛠️ 运维小助手 v1.4</a>
+        <a href="KSD_reset.py" class="download-btn blue" style="font-size:13px;padding:10px 20px">🔄 恢复出厂设置</a>
     </div>
     <div style="text-align:center;margin-top:15px;padding:12px;background:rgba(0,180,255,0.08);border-radius:10px;border:1px solid rgba(0,180,255,0.2)">
         <span style="color:#00b4ff;font-size:14px;">💬 KSD官方QQ交流群：</span>
@@ -271,7 +651,7 @@ C:\Date\Snxth.\<br>
         <span style="color:#aaa;font-size:11px;">欢迎加入交流反馈！</span>
     </div>
 </section>
-<footer><p>Copyright © 2024 闪讯工作社 Snxth. | KSD 26Ver8.52 Developer Preview Premium Plus · Core 7.0</p></footer>
+<footer><p>Copyright © 2024-2026 闪讯工作社 Snxth. | KSD 26Ver9.43 Developer Preview Premium Plus · Core 8.0 · 沉浸式剧情对话系统</p></footer>
 </div>
 
 <script>
