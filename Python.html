@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thonny - Python IDE</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI','Microsoft YaHei',sans-serif;height:100vh;display:flex;flex-direction:column;background:#2d2d2d;overflow:hidden}
+    .toolbar{background:#3c3c3c;padding:6px 10px;display:flex;gap:6px;border-bottom:1px solid #555;align-items:center;flex-wrap:wrap}
+    .toolbar button{background:#4a4a4a;border:1px solid #666;color:#ddd;padding:5px 14px;border-radius:3px;cursor:pointer;font-size:12px;white-space:nowrap}
+    .toolbar button:hover{background:#5a5a5a}
+    .run-btn{background:#2d7a3a!important;color:white!important;font-weight:bold}
+    .run-btn.running{background:#d4840b!important;animation:pulse 1s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.7}}
+    .stop-btn{background:#a13b3b!important;color:white!important}
+    .main{flex:1;display:flex;flex-direction:column;min-height:0}
+    .editor-wrap{flex:1;display:flex;background:#1e1e1e;min-height:0}
+    #editor{flex:1;background:#1e1e1e;color:#d4d4d4;border:none;padding:10px;font-family:'Consolas',monospace;font-size:13px;line-height:20px;resize:none;outline:none;tab-size:4;overflow:auto}
+    .shell{background:#1a1a1a;border-top:2px solid #444;height:180px;display:flex;flex-direction:column}
+    .shell-head{background:#3a3a3a;color:#ccc;padding:3px 10px;font-size:11px;font-weight:bold;display:flex;justify-content:space-between}
+    #output{flex:1;color:#a9b7c6;padding:5px 10px;font-family:'Consolas',monospace;font-size:12px;overflow-y:auto;white-space:pre-wrap}
+    .shell-input{display:flex;background:#1e1e1e;padding:3px 8px;border-top:1px solid #333}
+    .shell-prompt{color:#6a9955;font-family:'Consolas',monospace;font-size:12px;padding:3px 0}
+    #shellInput{flex:1;background:transparent;border:none;color:#d4d4d4;font-family:'Consolas',monospace;font-size:12px;outline:none;margin-left:6px}
+    .status{background:#007acc;color:white;padding:2px 10px;font-size:10px;display:flex;justify-content:space-between;align-items:center}
+    .running-indicator{display:none;color:#ffa000;animation:blink 0.8s infinite}
+    .running-indicator.active{display:inline}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+    .loading-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center}
+    .loading-box{background:#2d2d2d;padding:30px;border-radius:12px;text-align:center;border:1px solid #555;min-width:400px}
+    .progress-bar{width:100%;height:10px;background:#444;border-radius:5px;overflow:hidden;margin:10px 0}
+    .progress-fill{height:100%;background:linear-gradient(90deg,#007acc,#00a8ff);width:0%;transition:width 0.3s;border-radius:5px}
+    .loading-text{color:#aaa;font-size:12px;margin-top:8px}
+    .loading-stats{color:#888;font-size:11px;margin-top:4px;display:flex;justify-content:space-between}
+    .tk-win{position:fixed;background:#f0f0f0;border-radius:6px 6px 0 0;box-shadow:0 4px 20px rgba(0,0,0,0.5);min-width:200px;z-index:9999;display:flex;flex-direction:column;overflow:hidden;border:1px solid #999}
+    .tk-titlebar{background:#0078d4;color:white;padding:0 8px;height:30px;display:flex;align-items:center;user-select:none;flex-shrink:0;gap:6px}
+    .tk-title-text{flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .tk-ctrl-btn{width:40px;height:30px;border:none;background:transparent;color:white;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .tk-ctrl-btn:hover{background:rgba(255,255,255,0.2)}
+    .tk-close:hover{background:#c42b1c!important}
+    .tk-body{flex:1;background:white;padding:10px;overflow:auto;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+    .tk-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center}
+    .tk-modal-box{background:white;padding:20px 30px;border-radius:8px;min-width:300px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.3)}
+    .tk-modal-box h3{margin-bottom:10px}
+    .tk-modal-box button{margin:5px;padding:6px 20px;cursor:pointer}
+    .tk-canvas{border:1px solid #ccc;background:white}
+    .tk-listbox{border:1px solid #999;background:white;overflow-y:auto;min-height:80px;font-size:12px;padding:4px}
+    .tk-listbox-item{padding:2px 6px;cursor:pointer}
+    .tk-listbox-item:hover{background:#0078d4;color:white}
+    .tk-menu-bar{background:#f0f0f0;border-bottom:1px solid #ccc;padding:2px 0;display:flex;font-size:12px}
+    .tk-menu-item{padding:4px 12px;cursor:pointer;position:relative}
+    .tk-menu-item:hover{background:#0078d4;color:white}
+    .tk-dropdown{display:none;position:absolute;top:100%;left:0;background:white;border:1px solid #ccc;min-width:150px;z-index:10001;box-shadow:0 4px 10px rgba(0,0,0,0.2)}
+    .tk-menu-item:hover .tk-dropdown{display:block}
+    .tk-dropdown div{padding:6px 16px;cursor:pointer;color:#333;font-size:12px}
+    .tk-dropdown div:hover{background:#0078d4;color:white}
+    .tk-scrolledtext{border:1px solid #999;font-family:'Consolas',monospace;font-size:11px;overflow:auto;background:#1a1a1a;color:#00ff00;padding:5px;min-height:80px;white-space:pre-wrap}
+    .tk-frame{border:1px solid #ccc;padding:8px;background:#fafafa;display:flex;flex-direction:column;gap:4px}
+  </style>
+</head>
+<body>
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-box">
+      <h3 style="color:#ddd;margin-bottom:15px">🐍 正在加载Python环境</h3>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="loading-text" id="loadingText">正在检测缓存...</div>
+      <div class="loading-stats"><span id="loadingPercent">0%</span><span id="loadingSpeed">0 KB/s</span><span id="loadingSize">0 / 15 MB</span></div>
+    </div>
+  </div>
+  <div class="toolbar">
+    <button onclick="newFile()">📄 新建</button>
+    <button onclick="saveFile()">💾 保存</button>
+    <button class="run-btn" id="runBtn" onclick="runCode()">▶ 运行 (F5)</button>
+    <button class="stop-btn" id="stopBtn" onclick="stopCode()" disabled>⏹ 停止</button>
+    <span style="flex:1"></span>
+    <span style="color:#aaa;font-size:11px" id="pyVersion">加载中...</span>
+  </div>
+  <div class="main">
+    <div class="editor-wrap">
+      <textarea id="editor" spellcheck="false">import tkinter as tk
+from tkinter import messagebox, Menu, scrolledtext
+
+root = tk.Tk()
+root.title("完整测试")
+root.geometry("500x400")
+
+def show_msg():
+    messagebox.showinfo("提示", "这是消息框!")
+
+label = tk.Label(root, text="Hello Tkinter!", font=("Arial", 16))
+label.pack()
+
+button = tk.Button(root, text="弹出消息", command=show_msg)
+button.pack()
+
+entry = tk.Entry(root)
+entry.pack()
+
+canvas = tk.Canvas(root, width=200, height=100)
+canvas.pack()
+canvas.create_text(100, 50, text="Canvas works!")
+
+menubar = Menu(root)
+file_menu = Menu(menubar, tearoff=0)
+file_menu.add_command(label="打开")
+file_menu.add_command(label="保存")
+menubar.add_cascade(label="文件", menu=file_menu)
+root.config(menu=menubar)
+
+root.mainloop()</textarea>
+    </div>
+    <div class="shell">
+      <div class="shell-head"><span>Shell</span><span onclick="clearOutput()" style="cursor:pointer">🗑 清空</span></div>
+      <div id="output"></div>
+      <div class="shell-input">
+        <span class="shell-prompt">>>></span>
+        <input type="text" id="shellInput" placeholder="输入Python命令...">
+      </div>
+    </div>
+  </div>
+  <div class="status">
+    <span><span class="running-indicator" id="runningIndicator">●</span><span id="statusText">加载中...</span></span>
+    <span id="execTime"></span>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+  <script>
+    // ============ 全局状态 ============
+    const editor=document.getElementById('editor');
+    const output=document.getElementById('output');
+    const shellInput=document.getElementById('shellInput');
+    const statusText=document.getElementById('statusText');
+    const execTime=document.getElementById('execTime');
+    const pyVersion=document.getElementById('pyVersion');
+    const runBtn=document.getElementById('runBtn');
+    const stopBtn=document.getElementById('stopBtn');
+    const runningIndicator=document.getElementById('runningIndicator');
+    const loadingOverlay=document.getElementById('loadingOverlay');
+    const progressFill=document.getElementById('progressFill');
+    const loadingText=document.getElementById('loadingText');
+    const loadingPercent=document.getElementById('loadingPercent');
+    const loadingSpeed=document.getElementById('loadingSpeed');
+    const loadingSize=document.getElementById('loadingSize');
+
+    let pyodide=null,isRunning=false,tkWins=[],winZ=9999;
+    const TOTAL_SIZE_MB=15;
+
+    function setRunning(r){isRunning=r;runBtn.classList.toggle('running',r);runBtn.disabled=r;stopBtn.disabled=!r;runningIndicator.classList.toggle('active',r);if(r){statusText.textContent='运行中...';execTime.textContent=''}}
+    editor.addEventListener('keydown',e=>{if(e.key==='F5'&&!isRunning){e.preventDefault();runCode()}if(e.ctrlKey&&e.key==='s'){e.preventDefault();saveFile()}});
+    function appendOut(t){output.textContent+=t+'\n';output.scrollTop=output.scrollHeight}
+    function clearOutput(){output.textContent=''}
+    function closeAllTk(){tkWins.forEach(w=>w.el.remove());tkWins=[]}
+
+    // 字符串转义（防止JS语法错误）
+    function esc(s){return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\n/g,'\\n')}
+
+    // ============ Tk组件模拟 ============
+    function showModal(title,msg,buttons,cb){
+      const overlay=document.createElement('div');overlay.className='tk-modal';
+      const box=document.createElement('div');box.className='tk-modal-box';
+      box.innerHTML='<h3>'+title+'</h3><p>'+msg+'</p>';
+      const bf=document.createElement('div');
+      buttons.forEach((b,i)=>{const btn=document.createElement('button');btn.textContent=b;btn.onclick=()=>{overlay.remove();if(cb)cb(i)};bf.appendChild(btn)});
+      box.appendChild(bf);overlay.appendChild(box);document.body.appendChild(overlay);
+    }
+
+    function tkWindow(title,w,h){
+      const el=document.createElement('div');el.className='tk-win';
+      el.style.width=(w||300)+'px';el.style.height=(h||200)+'px';
+      el.style.left=(80+tkWins.length*40)+'px';el.style.top=(60+tkWins.length*40)+'px';el.style.zIndex=++winZ;
+      const tb=document.createElement('div');tb.className='tk-titlebar';
+      const tt=document.createElement('span');tt.className='tk-title-text';tt.textContent=title||'Tk';
+      const bc=document.createElement('div');bc.style.display='flex';
+      const min=document.createElement('button');min.className='tk-ctrl-btn';min.textContent='—';min.onclick=e=>{e.stopPropagation();el.style.display='none'};
+      let maxed=false,prev={};
+      const max=document.createElement('button');max.className='tk-ctrl-btn';max.textContent='□';max.onclick=e=>{e.stopPropagation();if(!maxed){prev={w:el.style.width,h:el.style.height,l:el.style.left,t:el.style.top};el.style.width='100vw';el.style.height='100vh';el.style.left='0';el.style.top='0';max.textContent='❐';maxed=true}else{el.style.width=prev.w;el.style.height=prev.h;el.style.left=prev.l;el.style.top=prev.t;max.textContent='□';maxed=false}};
+      const cls=document.createElement('button');cls.className='tk-ctrl-btn tk-close';cls.textContent='✕';cls.onclick=e=>{e.stopPropagation();el.remove();tkWins=tkWins.filter(w=>w!==wo)};
+      bc.append(min,max,cls);tb.append(tt,bc);
+      const body=document.createElement('div');body.className='tk-body';
+      const mb=document.createElement('div');mb.className='tk-menu-bar';
+      el.append(tb,mb,body);document.body.appendChild(el);
+      const wo={el,body,mb,title:tt};tkWins.push(wo);
+      let drag=false,dx,dy;
+      tb.addEventListener('mousedown',e=>{if(e.target.tagName==='BUTTON'||maxed)return;drag=true;dx=e.clientX-el.offsetLeft;dy=e.clientY-el.offsetTop;el.style.zIndex=++winZ});
+      document.addEventListener('mousemove',e=>{if(!drag)return;el.style.left=(e.clientX-dx)+'px';el.style.top=(e.clientY-dy)+'px'});
+      document.addEventListener('mouseup',()=>drag=false);
+      return{title:t=>tt.textContent=t,geometry:g=>{const m=g.match(/(\d+)x(\d+)/);if(m){el.style.width=m[1]+'px';el.style.height=m[2]+'px'}},config:()=>{},_body:body,_mb:mb};
+    }
+    function tkLabel(p,t,f){const el=document.createElement('div');el.textContent=t||'';if(f){const ps=f.replace(/[\(\)'"]/g,'').split(',');if(ps[0])el.style.fontFamily=ps[0].trim();if(ps[1])el.style.fontSize=ps[1].trim()+'px'}if(p&&p._body)p._body.appendChild(el);return{pack:()=>{},config:o=>{if(o&&o.text)el.textContent=o.text}};}
+    function tkButton(p,t,c){const el=document.createElement('button');el.textContent=t||'Button';el.onclick=()=>{if(c)c()};if(p&&p._body)p._body.appendChild(el);return{pack:()=>{}};}
+    function tkEntry(p){const el=document.createElement('input');el.type='text';if(p&&p._body)p._body.appendChild(el);return{pack:()=>{},get:()=>el.value};}
+    function tkCanvas(p,w,h){const el=document.createElement('canvas');el.className='tk-canvas';el.width=w||400;el.height=h||300;const ct=el.getContext('2d');if(p&&p._body)p._body.appendChild(el);return{pack:()=>{},create_text:(x,y,text,opt)=>{ct.font=(opt&&opt.font)||'14px sans-serif';ct.fillStyle=(opt&&opt.fill)||'black';ct.fillText(text,x,y)},create_oval:(x1,y1,x2,y2,o)=>{ct.fillStyle=(o&&o.fill)||'red';ct.beginPath();ct.ellipse((x1+x2)/2,(y1+y2)/2,(x2-x1)/2,(y2-y1)/2,0,0,Math.PI*2);ct.fill()},delete:()=>{},coords:()=>{}};}
+    function tkListbox(p){const el=document.createElement('div');el.className='tk-listbox';if(p&&p._body)p._body.appendChild(el);let items=[],sel=-1;const render=()=>{el.innerHTML='';items.forEach((t,i)=>{const d=document.createElement('div');d.className='tk-listbox-item'+(i===sel?' selected':'');d.textContent=t;d.onclick=()=>{sel=i;render()};el.appendChild(d)})};return{insert:(pos,text)=>{items.push(text);render()},delete:()=>{items=[];render()},curselection:()=>sel>=0?[sel]:[],get:(i)=>items[i]||'',size:()=>items.length,pack:()=>{}};}
+    function tkScrolledtext(p,h){const el=document.createElement('div');el.className='tk-scrolledtext';el.style.height=(h||100)+'px';if(p&&p._body)p._body.appendChild(el);return{insert:(pos,text)=>{el.textContent+=text},see:()=>{el.scrollTop=el.scrollHeight},config:()=>{},pack:()=>{},delete:()=>{el.textContent=''},get:()=>el.textContent};}
+    function tkMenu(win){return{add_command:o=>{const d=document.createElement('div');d.textContent=o.label||'';if(o.command)d.onclick=()=>o.command();if(win&&win._mb)win._mb.appendChild(d)},add_separator:()=>{},add_cascade:o=>{const mi=document.createElement('div');mi.className='tk-menu-item';mi.textContent=o.label||'';const dd=document.createElement('div');dd.className='tk-dropdown';mi.appendChild(dd);if(win&&win._mb)win._mb.appendChild(mi);return{add_command:o2=>{const d=document.createElement('div');d.textContent=o2.label||'';if(o2.command)d.onclick=()=>o2.command();dd.appendChild(d)},add_separator:()=>{dd.appendChild(document.createElement('hr'))}}},tearoff:0};}
+    function tkFrame(p){const el=document.createElement('div');el.className='tk-frame';if(p&&p._body)p._body.appendChild(el);return{pack:()=>{},_body:el};}
+
+    // ============ Python -> JS 转换 ============
+    function convertPy(code){
+      const lines=code.split('\n');
+      let js='';
+      let i=0;
+      while(i<lines.length){
+        const line=lines[i];
+        const t=line.trim();
+        if(!t||t.startsWith('#')){i++;continue}
+        if(/^(import|from)\s+tkinter/.test(t)){i++;continue}
+        if(/^(import|from)/.test(t)){js+='//'+esc(t)+'\n';i++;continue}
+        // 函数定义
+        if(t.startsWith('def ')&&t.endsWith(':')){
+          const fn=t.slice(4,-1).split('(')[0].trim();
+          js+='function '+fn+'(){\n';
+          i++;
+          while(i<lines.length){
+            const fl=lines[i];
+            const ft=fl.trim();
+            if(!ft){js+='\n';i++;continue}
+            if(fl.length>0&&fl[0]!==' '&&fl[0]!=='\t')break;
+            let jl='';
+            const mm=ft.match(/messagebox\.showinfo\(\s*["'](.+?)["']\s*,\s*["'](.+?)["']\s*\)/);
+            if(mm)jl='showModal("'+esc(mm[1])+'","'+esc(mm[2])+'",["OK"]);';
+            else if(ft.startsWith('print('))jl='ao('+ft.slice(6,-1)+');';
+            else jl='//'+esc(ft);
+            js+='  '+jl+'\n';
+            i++;
+          }
+          js+='}\n';
+          continue;
+        }
+        // 主代码
+        let m,jsLine='';
+        if((m=t.match(/^(\w+)\s*=\s*tk\.Tk\(\)/)))jsLine='var '+m[1]+'=Tk();';
+        else if((m=t.match(/^(\w+)\.title\(\s*["'](.+?)["']\s*\)/)))jsLine=m[1]+'.title("'+esc(m[2])+'");';
+        else if((m=t.match(/^(\w+)\.geometry\(\s*["'](.+?)["']\s*\)/)))jsLine=m[1]+'.geometry("'+esc(m[2])+'");';
+        else if((m=t.match(/^(\w+)\.config\(menu=(\w+)\)/)))jsLine='//menu';
+        else if((m=t.match(/^(\w+)\s*=\s*tk\.Label\(\s*(\w+)\s*,\s*text\s*=\s*["'](.+?)["'](?:\s*,\s*font\s*=\s*\((.+?)\))?\s*\)/))){const f=m[4]?'"'+esc(m[4].replace(/['"]/g,''))+'"':'null';jsLine='var '+m[1]+'=Lbl('+m[2]+',"'+esc(m[3])+'",'+f+');';}
+        else if((m=t.match(/^(\w+)\s*=\s*tk\.Button\(\s*(\w+)\s*,\s*text\s*=\s*["'](.+?)["'](?:\s*,\s*command\s*=\s*(\w+))?\s*\)/)))jsLine='var '+m[1]+'=Btn('+m[2]+',"'+esc(m[3])+'",'+(m[4]||'null')+');';
+        else if((m=t.match(/^(\w+)\s*=\s*tk\.Entry\(\s*(\w+)\s*\)/)))jsLine='var '+m[1]+'=Ent('+m[2]+');';
+        else if((m=t.match(/^(\w+)\s*=\s*tk\.Canvas\(\s*(\w+)\s*,\s*width\s*=\s*(\d+)\s*,\s*height\s*=\s*(\d+)\s*\)/)))jsLine='var '+m[1]+'=Cvs('+m[2]+','+m[3]+','+m[4]+');';
+        else if((m=t.match(/^(\w+)\s*=\s*tk\.Listbox\(\s*(\w+)\s*\)/)))jsLine='var '+m[1]+'=Lb('+m[2]+');';
+        else if((m=t.match(/^(\w+)\s*=\s*scrolledtext\.ScrolledText\(\s*(\w+)\s*,\s*height\s*=\s*(\d+)\s*\)/)))jsLine='var '+m[1]+'=St('+m[2]+','+m[3]+');';
+        else if((m=t.match(/^(\w+)\s*=\s*Menu\(\s*(\w+)\s*\)/)))jsLine='var '+m[1]+'=Mnu('+m[2]+');';
+        else if((m=t.match(/^(\w+)\s*=\s*tk\.Frame\(\s*(\w+)\s*\)/)))jsLine='var '+m[1]+'=Frm('+m[2]+');';
+        else if((m=t.match(/^(\w+)\.pack\(/)))jsLine=m[1]+'.pack();';
+        else if((m=t.match(/^(\w+)\.mainloop\(\)/)))jsLine='//mainloop';
+        else if((m=t.match(/messagebox\.showinfo\(\s*["'](.+?)["']\s*,\s*["'](.+?)["']\s*\)/)))jsLine='showModal("'+esc(m[1])+'","'+esc(m[2])+'",["OK"]);';
+        else if((m=t.match(/messagebox\.askyesno\(\s*["'](.+?)["']\s*,\s*["'](.+?)["']\s*\)/)))jsLine='showModal("'+esc(m[1])+'","'+esc(m[2])+'",["Yes","No"]);';
+        else if(t.startsWith('print('))jsLine='ao('+t.slice(6,-1)+');';
+        else jsLine='//'+esc(t);
+        js+=jsLine+'\n';
+        i++;
+      }
+      return js;
+    }
+
+    function formatSpeed(bps){if(bps<1024)return bps.toFixed(0)+' B/s';if(bps<1048576)return(bps/1024).toFixed(1)+' KB/s';return(bps/1048576).toFixed(2)+' MB/s'}
+    async function checkCache(){try{const c=await caches.open('pyodide-cache');const k=await c.keys();return k.filter(x=>x.url.includes('pyodide')).length>10}catch{return false}}
+
+    async function loadPyodideEnv(){
+      loadingText.textContent='正在检测缓存...';loadingPercent.textContent='0%';loadingSpeed.textContent='0 KB/s';loadingSize.textContent='0 / '+TOTAL_SIZE_MB+' MB';
+      const cached=await checkCache();
+      if(cached){loadingText.textContent='检测到缓存，正在初始化...';progressFill.style.width='50%';loadingPercent.textContent='50%';loadingSpeed.textContent='从缓存加载';loadingSize.textContent='使用本地缓存';await new Promise(r=>setTimeout(r,300))}
+      else{loadingText.textContent='首次加载，正在下载Python环境...'}
+      let st=Date.now();
+      const iv=setInterval(()=>{const c=parseFloat(progressFill.style.width)||(cached?50:0);if(c<90){const np=cached?Math.min(c+5,90):Math.min(c+2,90);progressFill.style.width=np+'%';loadingPercent.textContent=np+'%';const el=(Date.now()-st)/1000;const ld=(np/100)*TOTAL_SIZE_MB;loadingSize.textContent=ld.toFixed(1)+' / '+TOTAL_SIZE_MB+' MB';if(!cached&&el>0)loadingSpeed.textContent=formatSpeed((ld*1048576)/el)}},500);
+      try{pyodide=await loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/'})}catch(e){clearInterval(iv);loadingText.textContent='加载失败';return}
+      clearInterval(iv);progressFill.style.width='100%';loadingPercent.textContent='100%';loadingSpeed.textContent='完成';loadingSize.textContent=TOTAL_SIZE_MB+' / '+TOTAL_SIZE_MB+' MB';loadingText.textContent='加载完成！';
+      setTimeout(()=>loadingOverlay.style.display='none',500);
+      const v=pyodide.runPython('import sys;sys.version').split('\n')[0];pyVersion.textContent='Python '+v;statusText.textContent='就绪';
+      appendOut(v);appendOut('所有标准库+Tk组件模拟已就绪\n');
+    }
+
+    async function runCode(){
+      if(!pyodide||isRunning)return;const code=editor.value;if(!code.trim())return;
+      setRunning(true);closeAllTk();appendOut('\n>>> [运行] '+new Date().toLocaleTimeString());
+      const st=performance.now();
+      try{
+        pyodide.setStdout({batched:t=>appendOut(t)});
+        pyodide.setStderr({batched:t=>appendOut('ERR: '+t)});
+        if(/tkinter|tk\.Tk|tk\.Label|tk\.Button|\.mainloop/.test(code)){
+          const c=code.replace(/\.mainloop\(\)/g,'#mainloop');
+          try{await pyodide.runPythonAsync(c)}catch(e){if(!e.message.includes('tkinter')&&!e.message.includes('Tk')&&!e.message.includes('messagebox'))appendOut('ERR: '+e.message)}
+          const jsCode=convertPy(code);
+          if(jsCode.trim()){
+            try{new Function('Tk','Lbl','Btn','Ent','Cvs','Lb','St','Mnu','Frm','showModal','ao',jsCode)(tkWindow,tkLabel,tkButton,tkEntry,tkCanvas,tkListbox,tkScrolledtext,tkMenu,tkFrame,showModal,appendOut)}
+            catch(e2){appendOut('JS ERR: '+e2.message)}
+          }
+          statusText.textContent='完成(Tk窗口已显示)';
+        }else{await pyodide.runPythonAsync(code);statusText.textContent='完成'}
+        execTime.textContent='耗时:'+((performance.now()-st)/1000).toFixed(3)+'s';
+      }catch(e){appendOut('ERR: '+e.message);statusText.textContent='错误'}
+      setRunning(false);
+    }
+
+    function stopCode(){closeAllTk();appendOut('\n>>> [已停止]');statusText.textContent='已停止';execTime.textContent='';setRunning(false)}
+
+    shellInput.addEventListener('keydown',async e=>{
+      if(e.key==='Enter'&&!isRunning){const code=shellInput.value.trim();if(code&&pyodide){appendOut('>>> '+code);const st=performance.now();try{pyodide.setStdout({batched:t=>appendOut(t)});const r=await pyodide.runPythonAsync(code);if(r!==undefined)appendOut(String(r));execTime.textContent='耗时:'+((performance.now()-st)/1000).toFixed(3)+'s'}catch(err){appendOut('ERR: '+err.message)}}shellInput.value=''}
+    });
+
+    function saveFile(){const b=new Blob([editor.value],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='script.py';a.click();statusText.textContent='已保存'}
+    function newFile(){editor.value='';statusText.textContent='新建文件'}
+
+    loadPyodideEnv();
+  </script>
+</body>
+</html>
