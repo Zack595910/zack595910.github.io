@@ -745,6 +745,8 @@ function msCellRightClick(x,y,e){if(e)e.preventDefault();if(window.innerWidth>=7
 function msMob(a){if(ms.sx===-1||ms.sy===-1)return;if(a==='dig')msReveal(ms.sx,ms.sy);else if(a==='flag')msToggleFlag(ms.sx,ms.sy);ms.sx=-1;ms.sy=-1;msRender()}
 function msRender(){var b=document.getElementById('ms-board');b.style.gridTemplateColumns='repeat('+ms.W+',30px)';b.innerHTML='';for(var y=0;y<ms.H;y++){for(var x=0;x<ms.W;x++){var c=document.createElement('div');c.className='ms-cell';if(ms.sx===x&&ms.sy===y)c.classList.add('ms-sel');(function(cx,cy){c.addEventListener('click',function(e){msCellClick(cx,cy)});c.addEventListener('contextmenu',function(e){msCellRightClick(cx,cy,e)})})(x,y);if(ms.rev[y][x]){c.classList.add('ms-open');if(ms.board[y][x]===-1){c.textContent='💣';c.classList.add('ms-mine')}else if(ms.board[y][x]>0){c.textContent=ms.board[y][x];c.classList.add('ms-c'+ms.board[y][x])}}else if(ms.flg[y][x]){c.textContent='🚩'}b.appendChild(c)}}}
 msNewGame();
+
+
 </script>
 </body>
 </html>
