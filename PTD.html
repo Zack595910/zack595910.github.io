@@ -1,0 +1,2167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>tkemu - Windows 桌面模拟器</title>
+<!--
+╔══════════════════════════════════════════════════════════╗
+║                    tkemu v1.0.0                          ║
+║        浏览器中的 Windows 桌面 + Python 环境              ║
+║        基于 Pyodide 0.25.0  |  tkinter 完整模拟           ║
+║        闪讯工作社 Snxth.  |  MIT License                 ║
+╚══════════════════════════════════════════════════════════╝
+-->
+<style>
+:root {
+    --win-bg: #0078D4;
+    --win-bg-gradient-start: #0078D4;
+    --win-bg-gradient-end: #004E8C;
+    --win-taskbar: #111111;
+    --win-taskbar-hover: rgba(255,255,255,0.08);
+    --win-taskbar-active: rgba(255,255,255,0.15);
+    --win-title-active: #0078D4;
+    --win-title-inactive: #333333;
+    --win-title-text-active: #ffffff;
+    --win-title-text-inactive: #cccccc;
+    --win-border: #1a1a1a;
+    --win-body: #ffffff;
+    --win-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    --win-accent: #0078D4;
+    --win-accent-light: #3A8CFF;
+    --win-danger: #E81123;
+    --win-text: #1a1a1a;
+    --win-text-secondary: #666666;
+    --win-hover: rgba(0,0,0,0.04);
+    --win-radius: 8px;
+    --win-radius-sm: 4px;
+    --font-ui: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    --font-mono: 'Cascadia Code', 'Consolas', 'Courier New', 'SF Mono', monospace;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--win-text);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+    -webkit-touch-callout: none;
+}
+
+#desktop {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 48px;
+    background: linear-gradient(135deg, var(--win-bg-gradient-start) 0%, var(--win-bg-gradient-end) 100%);
+    overflow: hidden;
+    z-index: 0;
+}
+
+.desktop-icon {
+    position: absolute;
+    width: 80px;
+    text-align: center;
+    cursor: pointer;
+    padding: 8px 4px;
+    border-radius: var(--win-radius-sm);
+    color: #fff;
+    font-size: 12px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    transition: background 0.1s;
+}
+.desktop-icon:hover { background: rgba(255,255,255,0.2); }
+.desktop-icon:active { background: rgba(255,255,255,0.3); }
+.desktop-icon .icon-img {
+    width: 48px; height: 48px;
+    margin: 0 auto 4px;
+    font-size: 36px;
+    line-height: 48px;
+    pointer-events: none;
+}
+.desktop-icon div:last-child {
+    word-wrap: break-word;
+    line-height: 1.3;
+}
+
+.window {
+    position: absolute;
+    background: var(--win-body);
+    border: 1px solid var(--win-border);
+    border-radius: var(--win-radius) var(--win-radius) 0 0;
+    box-shadow: var(--win-shadow);
+    display: flex;
+    flex-direction: column;
+    min-width: 300px;
+    min-height: 200px;
+    z-index: 1;
+    overflow: hidden;
+    animation: windowOpen 0.2s ease-out;
+}
+@keyframes windowOpen {
+    from { opacity:0; transform:scale(0.95); }
+    to { opacity:1; transform:scale(1); }
+}
+.window.focused { z-index: 100 !important; }
+.window.maximized {
+    top: 0 !important; left: 0 !important;
+    width: 100% !important; height: calc(100% - 48px) !important;
+    border-radius: 0 !important;
+    animation: none;
+}
+
+.window-titlebar {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    background: var(--win-title-inactive);
+    color: var(--win-title-text-inactive);
+    padding: 0 8px;
+    cursor: default;
+    font-size: 13px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+.window.focused .window-titlebar {
+    background: var(--win-title-active);
+    color: var(--win-title-text-active);
+}
+.window-titlebar .title-icon { font-size: 16px; margin-right: 8px; flex-shrink: 0; }
+.window-titlebar .title-text {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.window-titlebar .title-buttons {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.title-btn {
+    width: 36px; height: 28px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: var(--win-radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.1s;
+}
+.title-btn:hover { background: rgba(255,255,255,0.15); }
+.title-btn:active { background: rgba(255,255,255,0.25); }
+.title-btn.btn-close:hover { background: var(--win-danger); color: #fff; }
+
+.window-body {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+    background: #1e1e1e;
+    display: flex;
+    flex-direction: column;
+}
+
+#taskbar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 48px;
+    background: var(--win-taskbar);
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    z-index: 1000;
+    gap: 4px;
+    box-shadow: 0 -1px 4px rgba(0,0,0,0.3);
+}
+.taskbar-btn {
+    height: 40px;
+    min-width: 40px;
+    padding: 0 12px;
+    border: none;
+    background: transparent;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: var(--win-radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    transition: background 0.1s;
+    font-family: var(--font-ui);
+}
+.taskbar-btn:hover { background: var(--win-taskbar-hover); }
+.taskbar-btn.active {
+    background: var(--win-taskbar-active);
+    border-bottom: 2px solid var(--win-accent);
+}
+.taskbar-btn .tb-icon { font-size: 18px; flex-shrink: 0; }
+#start-btn { font-weight: 600; margin-right: 4px; }
+
+#clock {
+    margin-left: auto;
+    color: #fff;
+    font-size: 12px;
+    padding: 0 12px;
+    text-align: right;
+    line-height: 1.3;
+    flex-shrink: 0;
+    cursor: default;
+}
+
+#start-menu {
+    position: absolute;
+    bottom: 48px;
+    left: 0;
+    width: 320px;
+    background: #1f1f1f;
+    border: 1px solid #333;
+    border-radius: var(--win-radius) var(--win-radius) 0 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+    display: none;
+    z-index: 999;
+    padding: 8px 0;
+    color: #fff;
+    font-size: 13px;
+}
+#start-menu.open { display: block; }
+.start-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.start-menu-item:hover { background: rgba(255,255,255,0.08); }
+.start-menu-item .sm-icon { font-size: 20px; width: 24px; text-align: center; flex-shrink: 0; }
+
+#editor-input {
+    width: 100%; height: 100%;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border: none;
+    resize: none;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 16px;
+    tab-size: 4;
+    outline: none;
+    flex: 1;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: #2d2d2d;
+    border-bottom: 1px solid #3d3d3d;
+    flex-shrink: 0;
+}
+.editor-toolbar button {
+    background: #3d3d3d;
+    color: #ccc;
+    border: none;
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: var(--win-radius-sm);
+    cursor: pointer;
+    font-family: var(--font-ui);
+    transition: background 0.1s;
+}
+.editor-toolbar button:hover { background: #4d4d4d; }
+.editor-toolbar button.run-btn { background: #107C10; color: #fff; }
+.editor-toolbar button.run-btn:hover { background: #0e6a0e; }
+.editor-toolbar span { color: #888; font-size: 12px; }
+
+.shell-container { display: flex; flex-direction: column; height: 100%; }
+.shell-output {
+    flex: 1;
+    background: #0c0c0c;
+    color: #ccc;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 12px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+.shell-input-line {
+    display: flex;
+    align-items: center;
+    background: #141414;
+    padding: 4px 12px;
+    border-top: 1px solid #333;
+    flex-shrink: 0;
+}
+.shell-input-line .prompt {
+    color: #4EC9B0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    margin-right: 8px;
+    white-space: nowrap;
+}
+.shell-input-line input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    outline: none;
+    caret-color: #fff;
+}
+.shell-error { color: #f44747; }
+.shell-info { color: #6A9955; }
+.shell-result { color: #CE9178; }
+.shell-warning { color: #CCA700; }
+
+.file-list {
+    width: 100%; height: 100%;
+    background: #1e1e1e;
+    color: #ccc;
+    overflow-y: auto;
+    font-size: 13px;
+}
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: background 0.08s;
+}
+.file-item:hover { background: rgba(255,255,255,0.06); }
+.file-item .fi-icon { font-size: 18px; flex-shrink: 0; }
+
+.install-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7);
+    z-index: 10000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(2px);
+}
+.install-dialog {
+    background: #1f1f1f;
+    border: 1px solid #444;
+    border-radius: var(--win-radius);
+    padding: 30px;
+    width: 420px;
+    color: #fff;
+    text-align: center;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+}
+.install-dialog h3 { color: var(--win-accent); margin-bottom: 8px; font-size: 18px; font-weight: 600; }
+.install-dialog .install-icon { font-size: 48px; margin-bottom: 15px; }
+.install-progress-bar {
+    width: 100%; height: 8px;
+    background: #333;
+    border-radius: 4px;
+    margin: 15px 0;
+    overflow: hidden;
+}
+.install-progress-fill {
+    height: 100%;
+    background: var(--win-accent);
+    border-radius: 4px;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+.install-stats {
+    font-size: 12px;
+    color: #888;
+    display: flex;
+    justify-content: space-between;
+    margin: 8px 0;
+}
+.install-log {
+    background: #0c0c0c;
+    color: #6A9955;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 10px;
+    border-radius: var(--win-radius-sm);
+    text-align: left;
+    max-height: 120px;
+    overflow-y: auto;
+    margin-top: 10px;
+    line-height: 1.5;
+}
+.install-btn {
+    margin-top: 15px;
+    padding: 8px 24px;
+    background: var(--win-accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--win-radius-sm);
+    font-size: 14px;
+    cursor: pointer;
+    font-family: var(--font-ui);
+    transition: background 0.15s;
+}
+.install-btn:hover:not(:disabled) { background: var(--win-accent-light); }
+.install-btn:disabled { background: #555; cursor: not-allowed; }
+
+.about-content {
+    padding: 40px 30px;
+    text-align: center;
+    color: #ccc;
+    background: #1e1e1e;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.about-content .about-logo {
+    font-size: 72px;
+    margin-bottom: 10px;
+    animation: aboutPulse 3s ease-in-out infinite;
+}
+@keyframes aboutPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+}
+.about-content h2 { color: #fff; font-size: 20px; font-weight: 600; margin-bottom: 2px; }
+.about-content .about-ver { color: #888; font-size: 13px; margin-bottom: 20px; }
+.about-content .about-divider { width: 60%; height: 1px; background: #333; margin: 10px 0; }
+.about-content .about-info { font-size: 13px; line-height: 2; color: #aaa; text-align: left; width: 100%; max-width: 320px; }
+.about-content .about-info .info-row { display: flex; justify-content: space-between; padding: 2px 0; }
+.about-content .about-info .info-label { color: #888; }
+.about-content .about-info .info-value { color: #fff; font-weight: 500; }
+.about-content .about-footer { margin-top: 20px; font-size: 11px; color: #555; line-height: 1.6; }
+
+.tk-canvas-wrap {
+    width: 100%; height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #000;
+}
+.tk-canvas-wrap canvas { display: block; }
+
+.tk-widget-wrap {
+    width: 100%; height: 100%;
+    background: #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 16px;
+    overflow-y: auto;
+}
+
+#tk-panel-wrap {
+    width: 100%; height: 100%;
+    background: #f0f0f0;
+    overflow: auto;
+    font-size: 12px;
+    font-family: var(--font-ui);
+}
+#tk-panel-wrap .tk-notebook { display: flex; flex-direction: column; height: 100%; }
+#tk-panel-wrap .tk-tabs {
+    display: flex;
+    border-bottom: 1px solid #999;
+    background: #d0d0d0;
+    flex-shrink: 0;
+    overflow-x: auto;
+}
+#tk-panel-wrap .tk-tab {
+    padding: 6px 16px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    font-size: 12px;
+    white-space: nowrap;
+    transition: background 0.1s;
+}
+#tk-panel-wrap .tk-tab:hover { background: rgba(0,0,0,0.05); }
+#tk-panel-wrap .tk-tab.active {
+    background: #f0f0f0;
+    border-color: #999;
+    border-bottom-color: #f0f0f0;
+    margin-bottom: -1px;
+    font-weight: bold;
+}
+#tk-panel-wrap .tk-tab-body { flex: 1; padding: 12px; overflow: auto; }
+#tk-panel-wrap .tk-listbox {
+    background: #fff;
+    border: 1px solid #999;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    min-height: 80px;
+}
+#tk-panel-wrap .tk-listbox-item {
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: background 0.08s;
+}
+#tk-panel-wrap .tk-listbox-item:hover { background: #0078d7; color: #fff; }
+#tk-panel-wrap .tk-listbox-item.selected { background: #0078d7; color: #fff; }
+#tk-panel-wrap button.tk-btn {
+    padding: 6px 20px;
+    background: #e0e0e0;
+    border: 1px solid #999;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--font-ui);
+    margin: 2px;
+    transition: background 0.1s;
+}
+#tk-panel-wrap button.tk-btn:hover { background: #d0d0d0; }
+#tk-panel-wrap button.tk-btn:active { background: #c0c0c0; }
+#tk-panel-wrap label { font-size: 12px; padding: 2px 0; }
+#tk-panel-wrap input[type="text"] {
+    padding: 4px 8px;
+    border: 1px solid #999;
+    border-radius: 2px;
+    font-size: 12px;
+    font-family: var(--font-ui);
+    outline: none;
+}
+#tk-panel-wrap input[type="text"]:focus {
+    border-color: var(--win-accent);
+    box-shadow: 0 0 0 1px var(--win-accent);
+}
+#tk-panel-wrap .tk-label { font-size: 12px; padding: 4px 0; }
+#tk-panel-wrap .tk-frame {
+    border: 1px solid #ccc;
+    padding: 8px;
+    margin: 4px 0;
+    border-radius: 2px;
+}
+
+.tk-msgbox-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 20000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.tk-msgbox {
+    background: #f0f0f0;
+    border: 2px solid #999;
+    border-radius: 6px;
+    padding: 24px;
+    min-width: 280px;
+    text-align: center;
+    box-shadow: 3px 3px 15px rgba(0,0,0,0.4);
+    font-family: var(--font-ui);
+    font-size: 13px;
+}
+.tk-msgbox .tk-msg-icon { font-size: 36px; margin-bottom: 10px; }
+.tk-msgbox .tk-msg-text { margin-bottom: 16px; line-height: 1.5; }
+.tk-msgbox button {
+    padding: 6px 24px;
+    background: #e0e0e0;
+    border: 1px solid #999;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--font-ui);
+    margin: 0 4px;
+    transition: background 0.1s;
+}
+.tk-msgbox button:hover { background: #d0d0d0; }
+.tk-msgbox button:active { background: #c0c0c0; }
+.tk-msgbox input[type="text"] {
+    width: 100%;
+    padding: 6px;
+    margin-bottom: 12px;
+    border: 1px solid #999;
+    border-radius: 3px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    outline: none;
+}
+
+.context-menu {
+    position: absolute;
+    background: #2d2d2d;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 4px 0;
+    z-index: 2000;
+    display: none;
+    min-width: 180px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    font-size: 13px;
+}
+.context-menu.open { display: block; }
+.context-menu-item {
+    padding: 8px 20px;
+    cursor: pointer;
+    color: #ddd;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.08s;
+}
+.context-menu-item:hover { background: rgba(255,255,255,0.08); }
+
+#toast {
+    position: fixed;
+    bottom: 60px;
+    right: 20px;
+    background: #333;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: var(--win-radius-sm);
+    font-size: 13px;
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+
+@media (max-width: 768px) {
+    .window { min-width: 260px; min-height: 150px; }
+    #start-menu { width: 100%; left: 0; }
+    .install-dialog { width: 90%; padding: 20px; }
+    .desktop-icon { width: 70px; }
+    .desktop-icon .icon-img { width: 40px; height: 40px; font-size: 28px; line-height: 40px; }
+}
+</style>
+</head>
+<body>
+
+<div id="desktop">
+    <div class="desktop-icon" style="top:20px;left:20px" ondblclick="openEditor()" title="代码编辑器 - 编写和运行 Python 代码"><div class="icon-img">📝</div><div>代码编辑器</div></div>
+    <div class="desktop-icon" style="top:120px;left:20px" ondblclick="openShell()" title="Python Shell - 交互式 Python 命令行"><div class="icon-img">⬛</div><div>Python Shell</div></div>
+    <div class="desktop-icon" style="top:220px;left:20px" ondblclick="openFiles()" title="文件管理 - 管理虚拟文件系统中的文件"><div class="icon-img">📁</div><div>文件管理</div></div>
+    <div class="desktop-icon" style="top:320px;left:20px" ondblclick="runKSD()" title="KSD 3D Edition - 3D 游戏引擎"><div class="icon-img">🎮</div><div>KSD 3D</div></div>
+    <div class="desktop-icon" style="top:20px;right:20px" ondblclick="openAbout()" title="关于系统 - 查看版本和系统信息"><div class="icon-img">ℹ️</div><div>关于系统</div></div>
+</div>
+
+<div id="taskbar">
+    <button class="taskbar-btn" id="start-btn" onclick="toggleStartMenu()" title="开始菜单">⊞ 开始</button>
+    <div id="taskbar-windows"></div>
+    <div id="clock"></div>
+</div>
+
+<div id="start-menu">
+    <div class="start-menu-item" onclick="openEditor();toggleStartMenu()"><span class="sm-icon">📝</span>代码编辑器</div>
+    <div class="start-menu-item" onclick="openShell();toggleStartMenu()"><span class="sm-icon">⬛</span>Python Shell</div>
+    <div class="start-menu-item" onclick="openFiles();toggleStartMenu()"><span class="sm-icon">📁</span>文件管理</div>
+    <div class="start-menu-item" onclick="runKSD();toggleStartMenu()"><span class="sm-icon">🎮</span>KSD 3D</div>
+    <div class="start-menu-item" onclick="openAbout();toggleStartMenu()"><span class="sm-icon">ℹ️</span>关于系统</div>
+    <div style="border-top:1px solid #333;margin:4px 0"></div>
+    <div class="start-menu-item" onclick="checkPythonEnv()"><span class="sm-icon">🔍</span>检查 Python 环境</div>
+    <div class="start-menu-item" onclick="resetAll()"><span class="sm-icon">🔄</span>重置系统</div>
+</div>
+
+<div class="context-menu" id="context-menu">
+    <div class="context-menu-item" onclick="openEditor();hideContextMenu()"><span>📝</span>新建代码文件</div>
+    <div class="context-menu-item" onclick="openShell();hideContextMenu()"><span>⬛</span>打开 Python Shell</div>
+    <div class="context-menu-item" onclick="openFiles();hideContextMenu()"><span>📁</span>打开文件管理</div>
+    <div class="context-menu-item" onclick="openAbout();hideContextMenu()"><span>ℹ️</span>关于系统</div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+//  tkemu v1.0.0 - 主程序
+//  ═══════════════════════════════════════════════════════════════════════
+
+const APP_VERSION = '1.0.0';
+const APP_NAME = 'tkemu';
+const APP_FULL_NAME = 'tkemu - Windows 桌面模拟器';
+const APP_COPYRIGHT = '闪讯工作社 Snxth.';
+const APP_YEAR = '2026';
+const PYODIDE_VERSION = '0.25.0';
+
+// ═══════════════════ 全局状态 ═══════════════════
+let windowZIndex = 10;
+let openWindows = {};
+let activeWindowId = null;
+let startMenuOpen = false;
+let pyodide = null;
+let pyodideReady = false;
+let _tkMsgResolve = null;
+let _tkEntryValues = {};
+let _tkListboxSel = {};
+let _tkPanelTabs = [];
+let _tkPanelActiveTab = 0;
+let shellHistory = [];
+let shellHistoryIdx = -1;
+
+// ═══════════════════ 虚拟文件系统 ═══════════════════
+const VirtualFS = {
+    _key: 'tkemu_fs_v2',
+
+    init() {
+        if (!localStorage.getItem(this._key)) {
+            const defaultFiles = {
+                'main.py': '# -*- coding: utf-8 -*-\n# 欢迎使用 tkemu\n# 在编辑器中编写 Python 代码，点击"运行"即可执行\n# 也可以在 Python Shell 中交互式运行\n\nprint("Hello, tkemu!")\n\n# 示例：创建一个 tkinter 窗口\n# import tkinter as tk\n# root = tk.Tk()\n# root.title("我的窗口")\n# root.geometry("400x300")\n# label = tk.Label(root, text="你好，世界！")\n# label.pack()\n# root.mainloop()\n',
+                'README.txt': '══════════════════════════════════\n  tkemu - 浏览器中的 Windows 桌面\n   Python + tkinter 模拟环境\n══════════════════════════════════\n\n版本: ' + APP_VERSION + '\nPython 运行时: Pyodide ' + PYODIDE_VERSION + '\n\n功能列表:\n  📝 代码编辑器 - 编写和运行 Python\n  ⬛ Python Shell - 交互式命令行\n  📁 文件管理 - 虚拟文件系统\n  🎮 KSD 3D - 游戏引擎\n  ℹ️ 关于系统 - 版本信息\n\n快捷键:\n  Ctrl+S - 保存文件\n  F5 - 运行代码\n\n技术支持: ' + APP_COPYRIGHT + '\n',
+            };
+            localStorage.setItem(this._key, JSON.stringify(defaultFiles));
+        }
+    },
+
+    listFiles() {
+        try {
+            return JSON.parse(localStorage.getItem(this._key) || '{}');
+        } catch (e) {
+            return {};
+        }
+    },
+
+    readFile(path) {
+        const files = this.listFiles();
+        return files[path] || null;
+    },
+
+    writeFile(path, content) {
+        const files = this.listFiles();
+        files[path] = content;
+        localStorage.setItem(this._key, JSON.stringify(files));
+    },
+
+    deleteFile(path) {
+        const files = this.listFiles();
+        delete files[path];
+        localStorage.setItem(this._key, JSON.stringify(files));
+    },
+
+    getAllContent() {
+        return this.listFiles();
+    }
+};
+
+// ═══════════════════ 窗口管理器 ═══════════════════
+function createWindow(id, title, icon, width, height, top, left, bodyHTML) {
+    if (openWindows[id]) {
+        focusWindow(id);
+        return openWindows[id].el;
+    }
+
+    const win = document.createElement('div');
+    win.className = 'window focused';
+    win.id = 'win-' + id;
+    win.style.width = width + 'px';
+    win.style.height = height + 'px';
+    win.style.top = (top || 60 + Object.keys(openWindows).length * 25) + 'px';
+    win.style.left = (left || 80 + Object.keys(openWindows).length * 30) + 'px';
+    win.style.zIndex = ++windowZIndex;
+
+    win.innerHTML = '' +
+        '<div class="window-titlebar" onpointerdown="startDrag(event,\'' + id + '\')" ondblclick="toggleMaximize(\'' + id + '\')">' +
+        '  <span class="title-icon">' + icon + '</span>' +
+        '  <span class="title-text">' + escapeHTML(title) + '</span>' +
+        '  <div class="title-buttons">' +
+        '    <button class="title-btn" onclick="minimizeWindow(\'' + id + '\')" title="最小化">─</button>' +
+        '    <button class="title-btn" onclick="toggleMaximize(\'' + id + '\')" title="最大化">□</button>' +
+        '    <button class="title-btn btn-close" onclick="closeWindow(\'' + id + '\')" title="关闭">✕</button>' +
+        '  </div>' +
+        '</div>' +
+        '<div class="window-body">' + bodyHTML + '</div>';
+
+    document.getElementById('desktop').appendChild(win);
+
+    openWindows[id] = {
+        el: win,
+        title: title,
+        icon: icon,
+        minimized: false,
+        maximized: false,
+        origX: left || 80,
+        origY: top || 60,
+        origW: width,
+        origH: height
+    };
+
+    focusWindow(id);
+    updateTaskbar();
+    return win;
+}
+
+function focusWindow(id) {
+    if (!openWindows[id]) return;
+    if (activeWindowId === id) return;
+
+    activeWindowId = id;
+    const win = openWindows[id].el;
+    win.style.zIndex = ++windowZIndex;
+
+    Object.values(openWindows).forEach(function (w) {
+        w.el.classList.remove('focused');
+    });
+    win.classList.add('focused');
+
+    if (openWindows[id].minimized) {
+        restoreWindow(id);
+    }
+
+    updateTaskbar();
+}
+
+function minimizeWindow(id) {
+    if (!openWindows[id]) return;
+    openWindows[id].el.style.display = 'none';
+    openWindows[id].minimized = true;
+    if (activeWindowId === id) {
+        activeWindowId = null;
+    }
+    updateTaskbar();
+}
+
+function restoreWindow(id) {
+    if (!openWindows[id]) return;
+    openWindows[id].el.style.display = 'flex';
+    openWindows[id].minimized = false;
+    focusWindow(id);
+}
+
+function toggleMaximize(id) {
+    if (!openWindows[id]) return;
+    var w = openWindows[id];
+    if (w.maximized) {
+        w.el.classList.remove('maximized');
+        w.el.style.top = w.origY + 'px';
+        w.el.style.left = w.origX + 'px';
+        w.el.style.width = w.origW + 'px';
+        w.el.style.height = w.origH + 'px';
+        w.maximized = false;
+    } else {
+        w.el.classList.add('maximized');
+        w.maximized = true;
+    }
+}
+
+function closeWindow(id) {
+    if (!openWindows[id]) return;
+    openWindows[id].el.remove();
+    delete openWindows[id];
+    if (activeWindowId === id) {
+        activeWindowId = null;
+        var keys = Object.keys(openWindows);
+        if (keys.length > 0) {
+            focusWindow(keys[keys.length - 1]);
+        }
+    }
+    updateTaskbar();
+}
+
+// 窗口拖动
+var dragInfo = null;
+
+function startDrag(e, id) {
+    if (!openWindows[id] || openWindows[id].maximized) return;
+    var win = openWindows[id].el;
+    dragInfo = {
+        id: id,
+        startX: e.clientX,
+        startY: e.clientY,
+        origLeft: win.offsetLeft,
+        origTop: win.offsetTop
+    };
+    e.preventDefault();
+}
+
+document.addEventListener('pointermove', function (e) {
+    if (!dragInfo) return;
+    var w = openWindows[dragInfo.id];
+    if (!w) { dragInfo = null; return; }
+    w.el.style.left = Math.max(-100, dragInfo.origLeft + e.clientX - dragInfo.startX) + 'px';
+    w.el.style.top = Math.max(0, dragInfo.origTop + e.clientY - dragInfo.startY) + 'px';
+});
+
+document.addEventListener('pointerup', function () {
+    dragInfo = null;
+});
+
+// ═══════════════════ 任务栏 ═══════════════════
+function updateTaskbar() {
+    var container = document.getElementById('taskbar-windows');
+    container.innerHTML = '';
+
+    Object.entries(openWindows).forEach(function (entry) {
+        var id = entry[0];
+        var w = entry[1];
+
+        var btn = document.createElement('button');
+        btn.className = 'taskbar-btn' + (id === activeWindowId ? ' active' : '');
+        btn.innerHTML = '<span class="tb-icon">' + w.icon + '</span>' + w.title;
+        btn.title = w.title;
+        btn.onclick = function () {
+            if (id === activeWindowId && !w.minimized) {
+                minimizeWindow(id);
+            } else {
+                restoreWindow(id);
+                focusWindow(id);
+            }
+        };
+        container.appendChild(btn);
+    });
+}
+
+// ═══════════════════ 时钟 ═══════════════════
+function updateClock() {
+    var now = new Date();
+    var time = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    var date = now.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });
+    document.getElementById('clock').innerHTML = time + '<br><span style="font-size:11px">' + date + '</span>';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ═══════════════════ 开始菜单 ═══════════════════
+function toggleStartMenu() {
+    startMenuOpen = !startMenuOpen;
+    document.getElementById('start-menu').classList.toggle('open', startMenuOpen);
+}
+
+document.addEventListener('click', function (e) {
+    if (startMenuOpen && !e.target.closest('#start-menu') && !e.target.closest('#start-btn')) {
+        startMenuOpen = false;
+        document.getElementById('start-menu').classList.remove('open');
+    }
+});
+
+// ═══════════════════ 右键菜单 ═══════════════════
+document.getElementById('desktop').addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+    var menu = document.getElementById('context-menu');
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    menu.classList.add('open');
+});
+
+document.addEventListener('click', function () {
+    document.getElementById('context-menu').classList.remove('open');
+});
+
+function hideContextMenu() {
+    document.getElementById('context-menu').classList.remove('open');
+}
+
+// ═══════════════════ 代码编辑器 ═══════════════════
+function openEditor(filePath) {
+    var title = filePath ? '编辑: ' + filePath : '代码编辑器';
+    var content = '';
+    if (filePath) {
+        content = VirtualFS.readFile(filePath) || '';
+    } else {
+        content = VirtualFS.readFile('main.py') || '';
+    }
+
+    var bodyHTML = '' +
+        '<div class="editor-toolbar">' +
+        '  <button onclick="saveFile()" title="保存文件 (Ctrl+S)">💾 保存</button>' +
+        '  <button class="run-btn" onclick="runEditorCode()" title="运行代码 (F5)">▶ 运行</button>' +
+        '  <span id="editor-filename">' + (filePath || 'main.py') + '</span>' +
+        '</div>' +
+        '<textarea id="editor-input" spellcheck="false" placeholder="# 在此编写 Python 代码..."></textarea>';
+
+    createWindow('editor', title, '📝', 700, 500, 80, 100, bodyHTML);
+
+    setTimeout(function () {
+        var ta = document.getElementById('editor-input');
+        if (ta) {
+            ta.value = content;
+            ta.dataset.filepath = filePath || 'main.py';
+            ta.focus();
+            // Ctrl+S 保存
+            ta.addEventListener('keydown', function (e) {
+                if (e.ctrlKey && e.key === 's') {
+                    e.preventDefault();
+                    saveFile();
+                }
+                if (e.key === 'F5') {
+                    e.preventDefault();
+                    runEditorCode();
+                }
+            });
+        }
+    }, 100);
+}
+
+function saveFile() {
+    var ta = document.getElementById('editor-input');
+    if (!ta) return;
+    var path = ta.dataset.filepath || 'main.py';
+    VirtualFS.writeFile(path, ta.value);
+    showToast('✅ 已保存: ' + path);
+    refreshFiles();
+}
+
+// ═══════════════════ Python Shell ═══════════════════
+function openShell() {
+    var bodyHTML = '' +
+        '<div class="shell-container">' +
+        '  <div class="shell-output" id="shell-output">' +
+        '    <div class="shell-info">🐍 tkemu Python Shell 就绪</div>' +
+        '    <div class="shell-info">   Pyodide ' + PYODIDE_VERSION + ' | 输入 Python 代码后按 Enter 执行</div>' +
+        '    <div class="shell-info">   输入 clear 清屏 | 上下箭头浏览历史</div>' +
+        '    <div class="shell-info">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>' +
+        '  </div>' +
+        '  <div class="shell-input-line">' +
+        '    <span class="prompt">&gt;&gt;&gt;&nbsp;</span>' +
+        '    <input type="text" id="shell-input" placeholder="输入 Python 代码..." autofocus>' +
+        '  </div>' +
+        '</div>';
+
+    createWindow('shell', 'Python Shell', '⬛', 650, 450, 120, 140, bodyHTML);
+
+    setTimeout(function () {
+        var inp = document.getElementById('shell-input');
+        if (inp) {
+            inp.focus();
+            inp.addEventListener('keydown', handleShellKey);
+        }
+    }, 200);
+}
+
+function handleShellKey(e) {
+    if (e.key === 'Enter') {
+        var code = e.target.value.trim();
+        if (!code) return;
+        shellHistory.push(code);
+        shellHistoryIdx = shellHistory.length;
+        e.target.value = '';
+        shellPrint('>>> ' + code, '');
+        executeShellCode(code);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (shellHistoryIdx > 0) {
+            shellHistoryIdx--;
+            e.target.value = shellHistory[shellHistoryIdx];
+        }
+    } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (shellHistoryIdx < shellHistory.length - 1) {
+            shellHistoryIdx++;
+            e.target.value = shellHistory[shellHistoryIdx];
+        } else {
+            shellHistoryIdx = shellHistory.length;
+            e.target.value = '';
+        }
+    }
+}
+
+function shellPrint(text, className) {
+    var output = document.getElementById('shell-output');
+    if (!output) return;
+    var cls = className ? ' class="shell-' + className + '"' : '';
+    output.innerHTML += '<div' + cls + '>' + escapeHTML(text) + '</div>';
+    output.scrollTop = output.scrollHeight;
+}
+
+// ═══════════════════ Python 环境检查 + 运行 ═══════════════════
+async function ensurePythonReady() {
+    if (!pyodideReady) {
+        var ok = await checkPythonEnv();
+        if (!ok) {
+            throw new Error('Python 环境未就绪，请先安装');
+        }
+    }
+    // 每次运行前重新注入 tkinter 模拟层
+    injectTkinterEmulator();
+}
+
+async function runEditorCode() {
+    var ta = document.getElementById('editor-input');
+    if (!ta || !ta.value.trim()) {
+        showToast('⚠️ 请先输入代码');
+        return;
+    }
+
+    try {
+        await ensurePythonReady();
+    } catch (e) {
+        showToast('❌ ' + e.message);
+        return;
+    }
+
+    if (!openWindows['shell']) {
+        openShell();
+    }
+    focusWindow('shell');
+    shellPrint('▶ 正在执行编辑器代码...', 'info');
+
+    // 重定向 stdout/stderr
+    pyodide.runPython('' +
+        'import sys\n' +
+        'from js import shellPrint as _sp\n' +
+        'class _ShellWriter:\n' +
+        '    def write(self, s):\n' +
+        '        if s.strip():\n' +
+        '            _sp(s.rstrip(), "")\n' +
+        '    def flush(self): pass\n' +
+        'sys.stdout = _ShellWriter()\n' +
+        'sys.stderr = _ShellWriter()\n'
+    );
+
+    try {
+        await pyodide.runPythonAsync(ta.value);
+        shellPrint('▶ 执行完毕', 'info');
+    } catch (e) {
+        shellPrint('❌ 错误: ' + e.message, 'error');
+    }
+}
+
+async function executeShellCode(code) {
+    if (code === 'clear') {
+        var output = document.getElementById('shell-output');
+        if (output) output.innerHTML = '';
+        return;
+    }
+
+    try {
+        await ensurePythonReady();
+    } catch (e) {
+        shellPrint('❌ ' + e.message, 'error');
+        return;
+    }
+
+    // 重定向 stdout/stderr
+    pyodide.runPython('' +
+        'import sys\n' +
+        'from js import shellPrint as _sp\n' +
+        'class _ShellWriter:\n' +
+        '    def write(self, s):\n' +
+        '        if s.strip():\n' +
+        '            _sp(s.rstrip(), "")\n' +
+        '    def flush(self): pass\n' +
+        'sys.stdout = _ShellWriter()\n' +
+        'sys.stderr = _ShellWriter()\n'
+    );
+
+    try {
+        var result = pyodide.runPython(code);
+        if (result !== undefined && result !== null) {
+            shellPrint(repr(result), 'result');
+        }
+    } catch (e) {
+        shellPrint('❌ ' + e.message, 'error');
+    }
+}
+
+// ═══════════════════ 文件管理器 ═══════════════════
+function openFiles() {
+    var files = VirtualFS.listFiles();
+    var names = Object.keys(files).sort();
+    var html = '<div class="file-list">';
+
+    if (names.length === 0) {
+        html += '<div style="padding:20px;color:#888;text-align:center;">📂 暂无文件</div>';
+    } else {
+        names.forEach(function (name) {
+            var isPython = name.endsWith('.py');
+            html += '' +
+                '<div class="file-item" ondblclick="openEditor(\'' + escapeAttr(name) + '\')" title="双击打开">' +
+                '  <span class="fi-icon">' + (isPython ? '📄' : '📃') + '</span>' +
+                '  <span style="flex:1">' + escapeHTML(name) + '</span>' +
+                '  <button onclick="event.stopPropagation();deleteFile(\'' + escapeAttr(name) + '\')" ' +
+                '          style="background:none;border:none;cursor:pointer;font-size:14px;" title="删除文件">🗑</button>' +
+                '</div>';
+        });
+    }
+
+    html += '</div>';
+    createWindow('files', '文件管理', '📁', 500, 400, 100, 120, html);
+}
+
+function deleteFile(path) {
+    if (confirm('确定要删除 "' + path + '" 吗？\n此操作不可恢复。')) {
+        VirtualFS.deleteFile(path);
+        closeWindow('files');
+        openFiles();
+        showToast('🗑 已删除: ' + path);
+    }
+}
+
+function refreshFiles() {
+    if (!openWindows['files']) return;
+    var el = openWindows['files'].el.querySelector('.file-list');
+    if (!el) return;
+
+    var files = VirtualFS.listFiles();
+    var names = Object.keys(files).sort();
+    var html = '';
+
+    if (names.length === 0) {
+        html = '<div style="padding:20px;color:#888;text-align:center;">📂 暂无文件</div>';
+    } else {
+        names.forEach(function (name) {
+            var isPython = name.endsWith('.py');
+            html += '' +
+                '<div class="file-item" ondblclick="openEditor(\'' + escapeAttr(name) + '\')">' +
+                '  <span class="fi-icon">' + (isPython ? '📄' : '📃') + '</span>' +
+                '  <span style="flex:1">' + escapeHTML(name) + '</span>' +
+                '  <button onclick="event.stopPropagation();deleteFile(\'' + escapeAttr(name) + '\')" ' +
+                '          style="background:none;border:none;cursor:pointer;font-size:14px;">🗑</button>' +
+                '</div>';
+        });
+    }
+
+    el.innerHTML = html;
+}
+
+// ═══════════════════ 关于系统 ═══════════════════
+function openAbout() {
+    var pythonVersion = '未安装';
+    if (pyodideReady) {
+        try {
+            pythonVersion = pyodide.runPython('import sys; sys.version.split("\\n")[0]');
+        } catch (e) {
+            pythonVersion = '获取失败';
+        }
+    }
+
+    var userAgent = navigator.userAgent;
+    var browserName = '未知浏览器';
+    if (userAgent.indexOf('Chrome') > -1) browserName = 'Google Chrome';
+    else if (userAgent.indexOf('Safari') > -1) browserName = 'Apple Safari';
+    else if (userAgent.indexOf('Firefox') > -1) browserName = 'Mozilla Firefox';
+    else if (userAgent.indexOf('Edge') > -1) browserName = 'Microsoft Edge';
+
+    var platformName = navigator.platform || '未知平台';
+    var language = navigator.language || '未知';
+
+    var bodyHTML = '' +
+        '<div class="about-content">' +
+        '  <div class="about-logo">🖥️</div>' +
+        '  <h2>' + APP_FULL_NAME + '</h2>' +
+        '  <div class="about-ver">版本 ' + APP_VERSION + ' (Build 2026.0803)</div>' +
+        '  <div class="about-divider"></div>' +
+        '  <div class="about-info">' +
+        '    <div class="info-row"><span class="info-label">🌐 应用程序版本</span><span class="info-value">' + APP_VERSION + '</span></div>' +
+        '    <div class="info-row"><span class="info-label">🐍 Python 运行时</span><span class="info-value">Pyodide ' + PYODIDE_VERSION + '</span></div>' +
+        '    <div class="info-row"><span class="info-label">📦 Python 版本</span><span class="info-value">' + escapeHTML(pythonVersion) + '</span></div>' +
+        '    <div class="info-row"><span class="info-label">💻 浏览器</span><span class="info-value">' + browserName + '</span></div>' +
+        '    <div class="info-row"><span class="info-label">🖥️ 平台</span><span class="info-value">' + platformName + '</span></div>' +
+        '    <div class="info-row"><span class="info-label">🌍 语言</span><span class="info-value">' + language + '</span></div>' +
+        '    <div class="info-row"><span class="info-label">📐 分辨率</span><span class="info-value">' + window.innerWidth + '×' + window.innerHeight + '</span></div>' +
+        '    <div class="info-row"><span class="info-label">🕐 运行时间</span><span class="info-value" id="about-uptime">计算中...</span></div>' +
+        '  </div>' +
+        '  <div class="about-divider"></div>' +
+        '  <div class="about-footer">' +
+        '    © ' + APP_YEAR + ' ' + APP_COPYRIGHT + '<br>' +
+        '    基于 Pyodide 技术构建<br>' +
+        '    tkinter 窗口由 HTML/CSS/JS 模拟<br>' +
+        '    MIT License - 开源免费<br>' +
+        '  </div>' +
+        '</div>';
+
+    createWindow('about', '关于系统', 'ℹ️', 460, 500, 130, 180, bodyHTML);
+
+    // 计算运行时间
+    setTimeout(function () {
+        var startTime = Date.now();
+        var uptimeEl = document.getElementById('about-uptime');
+        if (uptimeEl) {
+            setInterval(function () {
+                var elapsed = Math.floor((Date.now() - startTime) / 1000);
+                var mins = Math.floor(elapsed / 60);
+                var secs = elapsed % 60;
+                uptimeEl.textContent = mins + ' 分 ' + secs + ' 秒';
+            }, 1000);
+        }
+    }, 100);
+}
+
+// ═══════════════════ Python 环境检测 + 安装弹窗 ═══════════════════
+async function checkPythonEnv() {
+    if (pyodideReady) return true;
+    return new Promise(function (resolve) {
+        showInstallDialog(resolve);
+    });
+}
+
+function showInstallDialog(onComplete) {
+    // 移除旧弹窗
+    var old = document.querySelector('.install-overlay');
+    if (old) old.remove();
+
+    var overlay = document.createElement('div');
+    overlay.className = 'install-overlay';
+
+    overlay.innerHTML = '' +
+        '<div class="install-dialog">' +
+        '  <div class="install-icon">🐍</div>' +
+        '  <h3>Python 环境安装</h3>' +
+        '  <p style="color:#aaa;font-size:13px;">检测到 Python 环境未安装</p>' +
+        '  <p style="color:#888;font-size:12px;">Pyodide ' + PYODIDE_VERSION + ' | 预计大小: 10-15 MB</p>' +
+        '  <p style="color:#888;font-size:11px;">正在从 CDN 下载所需文件...</p>' +
+        '  <div class="install-progress-bar">' +
+        '    <div class="install-progress-fill" id="install-progress-fill"></div>' +
+        '  </div>' +
+        '  <div class="install-stats">' +
+        '    <span id="install-percent">0%</span>' +
+        '    <span id="install-speed">--</span>' +
+        '    <span id="install-size">0 / 0 MB</span>' +
+        '  </div>' +
+        '  <div class="install-log" id="install-log">' +
+        '    <div>🔄 开始下载...</div>' +
+        '  </div>' +
+        '  <button class="install-btn" id="install-btn" disabled>安装中...</button>' +
+        '</div>';
+
+    document.body.appendChild(overlay);
+
+    var progressFill = overlay.querySelector('#install-progress-fill');
+    var percentEl = overlay.querySelector('#install-percent');
+    var speedEl = overlay.querySelector('#install-speed');
+    var sizeEl = overlay.querySelector('#install-size');
+    var logEl = overlay.querySelector('#install-log');
+    var btn = overlay.querySelector('#install-btn');
+    var lastBytes = 0;
+    var lastTime = Date.now();
+    var startTime = Date.now();
+
+    function log(msg) {
+        var time = new Date().toLocaleTimeString();
+        logEl.innerHTML += '<div>[' + time + '] ' + msg + '</div>';
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    log('正在连接 Pyodide CDN...');
+    log('URL: cdn.jsdelivr.net/pyodide/v' + PYODIDE_VERSION + '/full/');
+
+    loadPyodide({
+        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/',
+        onprogress: function (e) {
+            if (e && e.total) {
+                var pct = Math.round(e.loaded / e.total * 100);
+                var now = Date.now();
+                var timeDiff = (now - lastTime) / 1000;
+                var bytesDiff = e.loaded - lastBytes;
+                var speed = bytesDiff / timeDiff;
+                var speedStr;
+                if (speed > 1048576) {
+                    speedStr = (speed / 1048576).toFixed(2) + ' MB/s';
+                } else if (speed > 1024) {
+                    speedStr = (speed / 1024).toFixed(1) + ' KB/s';
+                } else {
+                    speedStr = Math.round(speed) + ' B/s';
+                }
+
+                progressFill.style.width = pct + '%';
+                percentEl.textContent = pct + '%';
+                speedEl.textContent = speedStr;
+                sizeEl.textContent = (e.loaded / 1048576).toFixed(1) + ' / ' + (e.total / 1048576).toFixed(1) + ' MB';
+
+                lastBytes = e.loaded;
+                lastTime = now;
+
+                if (pct % 15 === 0 && pct > 0 && pct < 100) {
+                    log('📥 下载进度: ' + pct + '% (' + (e.loaded / 1048576).toFixed(1) + ' MB) - ' + speedStr);
+                }
+            }
+        }
+    }).then(function (result) {
+        pyodide = result;
+        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        log('✅ 下载完成，耗时 ' + elapsed + ' 秒');
+        log('🔄 正在初始化 Python 解释器...');
+
+        // 注入 tkinter 模拟层
+        injectTkinterEmulator();
+        pyodideReady = true;
+
+        progressFill.style.width = '100%';
+        percentEl.textContent = '100%';
+        btn.textContent = '✅ 安装完成 - 点击关闭';
+        btn.disabled = false;
+        btn.onclick = function () {
+            overlay.remove();
+            onComplete(true);
+            showToast('🎉 Python 环境就绪！双击桌面图标开始使用');
+        };
+
+        log('✅ Python 环境安装完成！');
+        log('📦 已加载模块: tkinter (模拟), sys, json, math, random, time');
+        log('💡 提示: 在编辑器中编写代码，点击运行即可执行');
+
+    }).catch(function (err) {
+        log('❌ 安装失败: ' + err.message);
+        log('💡 请检查网络连接后重试');
+        btn.textContent = '❌ 安装失败 - 点击重试';
+        btn.disabled = false;
+        btn.onclick = function () {
+            overlay.remove();
+            checkPythonEnv().then(onComplete);
+        };
+    });
+}
+
+// ═══════════════════ tkinter 完整模拟层 ═══════════════════
+function injectTkinterEmulator() {
+    if (!pyodide) return;
+
+    pyodide.runPython('' +
+'import sys, json as _json\n' +
+'\n' +
+'class TkEmulator:\n' +
+'    """tkinter 完整模拟器 - 支持 KSD 项目所需的所有组件"""\n' +
+'    _widgets = {}\n' +
+'    _next_id = 0\n' +
+'    _callbacks = {}\n' +
+'    _variables = {}\n' +
+'\n' +
+'    @classmethod\n' +
+'    def _gid(cls, p="w"):\n' +
+'        cls._next_id += 1\n' +
+'        return f"{p}_{cls._next_id}"\n' +
+'\n' +
+'    @classmethod\n' +
+'    def _reg(cls, w):\n' +
+'        cls._widgets[w._id] = w\n' +
+'        return w._id\n' +
+'\n' +
+'    @classmethod\n' +
+'    def _set_cb(cls, cid, fn):\n' +
+'        if fn:\n' +
+'            cls._callbacks[cid] = fn\n' +
+'\n' +
+'    @classmethod\n' +
+'    def _call_cb(cls, cid):\n' +
+'        if cid in cls._callbacks:\n' +
+'            try:\n' +
+'                cls._callbacks[cid]()\n' +
+'            except Exception as e:\n' +
+'                from js import shellPrint\n' +
+'                shellPrint(f"回调错误: {e}", "error")\n' +
+'\n' +
+'    # ═══ Tk - 主窗口 ═══\n' +
+'    class Tk:\n' +
+'        def __init__(self, **kw):\n' +
+'            self._id = TkEmulator._gid("tk")\n' +
+'            self.title_str = "tkinter"\n' +
+'            self.width = 800\n' +
+'            self.height = 600\n' +
+'            self.children = []\n' +
+'            self._config = {"bg": "#f0f0f0"}\n' +
+'            self._protocol_handlers = {}\n' +
+'            TkEmulator._reg(self)\n' +
+'            from js import createWindow\n' +
+'            createWindow("tkapp", self.title_str, "🖥️", self.width+16, self.height+40, 60, 80,\n' +
+'                \'<div class="tk-widget-wrap" id="tk-body-wrap"></div>\')\n' +
+'\n' +
+'        def title(self, s=None):\n' +
+'            if s is not None:\n' +
+'                self.title_str = s\n' +
+'                from js import updateWindowTitle\n' +
+'                updateWindowTitle("tkapp", s)\n' +
+'            return self.title_str\n' +
+'\n' +
+'        def geometry(self, s=None):\n' +
+'            if s is not None:\n' +
+'                p = s.replace(" ", "").split("x")\n' +
+'                if len(p) >= 2:\n' +
+'                    self.width = int(p[0])\n' +
+'                    h = p[1].split("+")[0] if "+" in p[1] else p[1]\n' +
+'                    self.height = int(h)\n' +
+'            return f"{self.width}x{self.height}"\n' +
+'\n' +
+'        def mainloop(self): pass\n' +
+'        def bind(self, e, cb): pass\n' +
+'        def after(self, ms, cb):\n' +
+'            from js import setTimeout\n' +
+'            from pyodide.ffi import create_proxy\n' +
+'            setTimeout(create_proxy(cb), ms)\n' +
+'        def destroy(self):\n' +
+'            from js import closeWindow\n' +
+'            closeWindow("tkapp")\n' +
+'        def config(self, **kw): self._config.update(kw)\n' +
+'        configure = config\n' +
+'        def pack(self, **kw): pass\n' +
+'        def grid(self, **kw): pass\n' +
+'        def place(self, **kw): pass\n' +
+'        def protocol(self, name, handler):\n' +
+'            self._protocol_handlers[name] = handler\n' +
+'        def quit(self): self.destroy()\n' +
+'        def focus_set(self): pass\n' +
+'        def resizable(self, w, h): pass\n' +
+'        def minsize(self, w, h): pass\n' +
+'        def maxsize(self, w, h): pass\n' +
+'\n' +
+'    # ═══ Toplevel - 子窗口 ═══\n' +
+'    class Toplevel:\n' +
+'        def __init__(self, master=None, **kw):\n' +
+'            self._id = TkEmulator._gid("tl")\n' +
+'            self.title_str = "Toplevel"\n' +
+'            self.width = 550\n' +
+'            self.height = 520\n' +
+'            self.children = []\n' +
+'            self._config = {"bg": "#f0f0f0"}\n' +
+'            TkEmulator._reg(self)\n' +
+'            from js import createWindow, tkInitPanel\n' +
+'            createWindow("tkpanel", self.title_str, "⚙️", self.width, self.height, 100, 150,\n' +
+'                \'<div id="tk-panel-wrap"></div>\')\n' +
+'            tkInitPanel()\n' +
+'\n' +
+'        def title(self, s=None):\n' +
+'            if s is not None:\n' +
+'                self.title_str = s\n' +
+'                from js import updateWindowTitle\n' +
+'                updateWindowTitle("tkpanel", s)\n' +
+'            return self.title_str\n' +
+'        def geometry(self, s=None):\n' +
+'            if s is not None:\n' +
+'                p = s.replace(" ", "").split("x")\n' +
+'                if len(p) >= 2:\n' +
+'                    self.width = int(p[0])\n' +
+'                    h = p[1].split("+")[0] if "+" in p[1] else p[1]\n' +
+'                    self.height = int(h)\n' +
+'        def destroy(self):\n' +
+'            from js import closeWindow\n' +
+'            closeWindow("tkpanel")\n' +
+'        def config(self, **kw): pass\n' +
+'        configure = config\n' +
+'        def pack(self, **kw): pass\n' +
+'        def grid(self, **kw): pass\n' +
+'        def resizable(self, w, h): pass\n' +
+'        def focus_set(self): pass\n' +
+'        def protocol(self, n, h): pass\n' +
+'\n' +
+'    # ═══ Label ═══\n' +
+'    class Label:\n' +
+'        def __init__(self, master=None, text="", font=None, fg=None, bg=None, **kw):\n' +
+'            self._id = TkEmulator._gid("lbl")\n' +
+'            self.text = str(text)\n' +
+'            self.fg = fg or "black"\n' +
+'            self.bg = bg or ""\n' +
+'            self.font_size = font[1] if isinstance(font, tuple) else 12\n' +
+'            self.master = master\n' +
+'            if master: master.children.append(self)\n' +
+'            TkEmulator._reg(self)\n' +
+'            self._render()\n' +
+'\n' +
+'        def _serialize(self):\n' +
+'            return {"id":self._id,"type":"label","text":self.text,"fg":self.fg,"bg":self.bg,"fontSize":self.font_size}\n' +
+'\n' +
+'        def _render(self):\n' +
+'            from js import tkSyncAll\n' +
+'            tkSyncAll(_json.dumps([self._serialize()]))\n' +
+'\n' +
+'        def config(self, text=None, **kw):\n' +
+'            if text is not None: self.text = str(text)\n' +
+'            self._render()\n' +
+'        configure = config\n' +
+'        def pack(self, **kw): pass\n' +
+'        def grid(self, **kw): pass\n' +
+'        def place(self, **kw): pass\n' +
+'\n' +
+'    # ═══ Button ═══\n' +
+'    class Button:\n' +
+'        def __init__(self, master=None, text="", command=None, font=None, fg=None, bg=None, **kw):\n' +
+'            self._id = TkEmulator._gid("btn")\n' +
+'            self.text = str(text)\n' +
+'            self.fg = fg or "black"\n' +
+'            self.bg = bg or "#e0e0e0"\n' +
+'            self.font_size = font[1] if isinstance(font, tuple) else 12\n' +
+'            self.master = master\n' +
+'            if master: master.children.append(self)\n' +
+'            TkEmulator._reg(self)\n' +
+'            TkEmulator._set_cb(self._id, command)\n' +
+'            self._render()\n' +
+'\n' +
+'        def _serialize(self):\n' +
+'            return {"id":self._id,"type":"button","text":self.text,"fg":self.fg,"bg":self.bg,"fontSize":self.font_size,"hasCb":TkEmulator._callbacks.get(self._id) is not None}\n' +
+'\n' +
+'        def _render(self):\n' +
+'            from js import tkSyncAll\n' +
+'            tkSyncAll(_json.dumps([self._serialize()]))\n' +
+'\n' +
+'        def config(self, text=None, command=None, **kw):\n' +
+'            if text is not None: self.text = str(text)\n' +
+'            if command is not None: TkEmulator._set_cb(self._id, command)\n' +
+'            self._render()\n' +
+'        configure = config\n' +
+'        def pack(self, **kw): pass\n' +
+'        def grid(self, **kw): pass\n' +
+'        def place(self, **kw): pass\n' +
+'\n' +
+'    # ═══ Entry ═══\n' +
+'    class Entry:\n' +
+'        def __init__(self, master=None, width=20, font=None, **kw):\n' +
+'            self._id = TkEmulator._gid("ent")\n' +
+'            self._value = ""\n' +
+'            self.width = width\n' +
+'            self.font_size = font[1] if isinstance(font, tuple) else 12\n' +
+'            self.master = master\n' +
+'            if master: master.children.append(self)\n' +
+'            TkEmulator._reg(self)\n' +
+'            self._render()\n' +
+'\n' +
+'        def _serialize(self):\n' +
+'            return {"id":self._id,"type":"entry","value":self._value,"width":self.width,"fontSize":self.font_size}\n' +
+'\n' +
+'        def _render(self):\n' +
+'            from js import tkSyncAll\n' +
+'            tkSyncAll(_json.dumps([self._serialize()]))\n' +
+'\n' +
+'        def get(self):\n' +
+'            from js import tkGetEntryValue\n' +
+'            v = tkGetEntryValue(self._id)\n' +
+'            if v is not None: self._value = v\n' +
+'            return self._value\n' +
+'\n' +
+'        def insert(self, idx, text):\n' +
+'            self._value += text\n' +
+'            self._render()\n' +
+'\n' +
+'        def delete(self, s, e=None):\n' +
+'            self._value = ""\n' +
+'            self._render()\n' +
+'\n' +
+'        def config(self, **kw): pass\n' +
+'        configure = config\n' +
+'        def pack(self, **kw): pass\n' +
+'        def grid(self, **kw): pass\n' +
+'\n' +
+'    # ═══ Frame ═══\n' +
+'    class Frame:\n' +
+'        def __init__(self, master=None, bg=None, **kw):\n' +
+'            self._id = TkEmulator._gid("frm")\n' +
+'            self.bg = bg or "#f0f0f0"\n' +
+'            self.children = []\n' +
+'            self.master = master\n' +
+'            if master: master.children.append(self)\n' +
+'            TkEmulator._reg(self)\n' +
+'\n' +
+'        def _serialize(self):\n' +
+'            return {"id":self._id,"type":"frame","bg":self.bg}\n' +
+'\n' +
+'        def config(self, **kw): pass\n' +
+'        configure = config\n' +
+'        def pack(self, **kw): pass\n' +
+'        def grid(self, **kw): pass\n' +
+'        def place(self, **kw): pass\n' +
+'\n' +
+'    # ═══ Canvas ═══\n' +
+'    class Canvas:\n' +
+'        def __init__(self, master=None, width=800, height=600, bg="black", **kw):\n' +
+'            self._id = TkEmulator._gid("cvs")\n' +
+'            self.width = width\n' +
+'            self.height = height\n' +
+'            self.bg = bg\n' +
+'            self.master = master\n' +
+'            TkEmulator._reg(self)\n' +
+'            from js import createWindow\n' +
+'            createWindow("tkapp", "tkinter", "🖥️", width+16, height+40, 60, 80,\n' +
+'                f\'<div class="tk-canvas-wrap"><canvas id="tk-canvas" width="{width}" height="{height}"></canvas></div>\')\n' +
+'\n' +
+'        def pack(self, **kw): pass\n' +
+'        def create_image(self, *a, **k): pass\n' +
+'        def delete(self, tag): pass\n' +
+'        def create_text(self, x, y, text="", fill="white", font=("Arial",12), anchor="nw", tags=""):\n' +
+'            from js import drawUIText\n' +
+'            fs = font[1] if isinstance(font, tuple) else 12\n' +
+'            drawUIText(x, y, text, fill, fs)\n' +
+'        def focus_set(self): pass\n' +
+'        def bind(self, e, cb): pass\n' +
+'        def event_generate(self, e, **kw): pass\n' +
+'\n' +
+'    # ═══ PhotoImage ═══\n' +
+'    class PhotoImage:\n' +
+'        def __init__(self, width=800, height=600):\n' +
+'            self.width = width\n' +
+'            self.height = height\n' +
+'\n' +
+'        def put(self, data, format="ppm"):\n' +
+'            from js import tkCanvasUpdate\n' +
+'            if format == "ppm":\n' +
+'                idx = data.find(b"\\n255\\n")\n' +
+'                if idx > 0:\n' +
+'                    tkCanvasUpdate(data[idx+5:], self.width, self.height)\n' +
+'\n' +
+'    # ═══ ttk.Notebook ═══\n' +
+'    class Notebook:\n' +
+'        def __init__(self, master=None, **kw):\n' +
+'            self._id = TkEmulator._gid("nb")\n' +
+'            self._tabs = []\n' +
+'            self.master = master\n' +
+'            if master: master.children.append(self)\n' +
+'            TkEmulator._reg(self)\n' +
+'\n' +
+'        def add(self, child, text=""):\n' +
+'            self._tabs.append({"child":child, "text":text})\n' +
+'            from js import tkNotebookAdd\n' +
+'            tkNotebookAdd(text)\n' +
+'\n' +
+'        def pack(self, **kw): pass\n' +
+'        def grid(self, **kw): pass\n' +
+'\n' +
+'    # ═══ Listbox ═══\n' +
+'    class Listbox:\n' +
+'        def __init__(self, master=None, bg="white", font=None, height=10, **kw):\n' +
+'            self._id = TkEmulator._gid("lb")\n' +
+'            self._items = []\n' +
+'            self.bg = bg\n' +
+'            self.font_size = font[1] if isinstance(font, tuple) else 12\n' +
+'            self.height = height\n' +
+'            self._sel = None\n' +
+'            self.master = master\n' +
+'            if master: master.children.append(self)\n' +
+'            TkEmulator._reg(self)\n' +
+'\n' +
+'        def insert(self, idx, text):\n' +
+'            if idx == "end" or idx >= len(self._items):\n' +
+'                self._items.append(str(text))\n' +
+'            else:\n' +
+'                self._items.insert(idx, str(text))\n' +
+'            self._render()\n' +
+'\n' +
+'        def delete(self, first, last=None):\n' +
+'            if last is None:\n' +
+'                self._items = self._items[:first]\n' +
+'            else:\n' +
+'                self._items = self._items[:first] + self._items[last:]\n' +
+'            self._render()\n' +
+'\n' +
+'        def curselection(self):\n' +
+'            from js import tkListboxSelection\n' +
+'            sel = tkListboxSelection(self._id)\n' +
+'            if sel is not None:\n' +
+'                self._sel = sel\n' +
+'            return (self._sel,) if self._sel is not None else ()\n' +
+'\n' +
+'        def size(self):\n' +
+'            return len(self._items)\n' +
+'\n' +
+'        def _serialize(self):\n' +
+'            return {"id":self._id,"type":"listbox","items":self._items,"bg":self.bg,"fontSize":self.font_size,"height":self.height}\n' +
+'\n' +
+'        def _render(self):\n' +
+'            from js import tkSyncAll\n' +
+'            tkSyncAll(_json.dumps([self._serialize()]))\n' +
+'\n' +
+'        def pack(self, **kw): pass\n' +
+'        def grid(self, **kw): pass\n' +
+'\n' +
+'    # ═══ StringVar ═══\n' +
+'    class StringVar:\n' +
+'        def __init__(self, value="", master=None):\n' +
+'            self._id = TkEmulator._gid("sv")\n' +
+'            self._value = str(value)\n' +
+'            TkEmulator._variables[self._id] = self\n' +
+'        def get(self): return self._value\n' +
+'        def set(self, v): self._value = str(v)\n' +
+'\n' +
+'    # ═══ IntVar ═══\n' +
+'    class IntVar:\n' +
+'        def __init__(self, value=0): self._value = int(value)\n' +
+'        def get(self): return self._value\n' +
+'        def set(self, v): self._value = int(v)\n' +
+'\n' +
+'    # ═══ BooleanVar ═══\n' +
+'    class BooleanVar:\n' +
+'        def __init__(self, value=False): self._value = bool(value)\n' +
+'        def get(self): return self._value\n' +
+'        def set(self, v): self._value = bool(v)\n' +
+'\n' +
+'    # ═══ messagebox ═══\n' +
+'    class messagebox:\n' +
+'        @staticmethod\n' +
+'        def showinfo(title="", message=""):\n' +
+'            from js import tkMsgBox\n' +
+'            tkMsgBox("info", title, message)\n' +
+'        @staticmethod\n' +
+'        def showwarning(title="", message=""):\n' +
+'            from js import tkMsgBox\n' +
+'            tkMsgBox("warning", title, message)\n' +
+'        @staticmethod\n' +
+'        def showerror(title="", message=""):\n' +
+'            from js import tkMsgBox\n' +
+'            tkMsgBox("error", title, message)\n' +
+'        @staticmethod\n' +
+'        def askyesno(title="", message=""):\n' +
+'            from js import tkMsgBox\n' +
+'            return tkMsgBox("yesno", title, message)\n' +
+'\n' +
+'    # ═══ simpledialog ═══\n' +
+'    class simpledialog:\n' +
+'        @staticmethod\n' +
+'        def askstring(title, prompt):\n' +
+'            from js import tkMsgBox\n' +
+'            return tkMsgBox("askstring", title, prompt)\n' +
+'\n' +
+'    # ═══ Menu ═══\n' +
+'    class Menu:\n' +
+'        def __init__(self, master=None, tearoff=0, **kw):\n' +
+'            self._items = []\n' +
+'            self.master = master\n' +
+'        def add_command(self, label="", command=None):\n' +
+'            self._items.append({"label":label, "command":command})\n' +
+'        def add_separator(self):\n' +
+'            self._items.append({"separator":True})\n' +
+'        def add_cascade(self, label="", menu=None): pass\n' +
+'\n' +
+'    # ═══ Scrollbar ═══\n' +
+'    class Scrollbar:\n' +
+'        def __init__(self, master=None, orient="vertical", **kw):\n' +
+'            self.master = master\n' +
+'            if master: master.children.append(self)\n' +
+'        def pack(self, **kw): pass\n' +
+'        def grid(self, **kw): pass\n' +
+'        def set(self, *a): pass\n' +
+'\n' +
+'# ═══════════════════════════════════════════\n' +
+'#  注入到 sys.modules\n' +
+'# ═══════════════════════════════════════════\n' +
+'_tk = type(sys)("tkinter")\n' +
+'_tk.Tk = TkEmulator.Tk\n' +
+'_tk.Toplevel = TkEmulator.Toplevel\n' +
+'_tk.Label = TkEmulator.Label\n' +
+'_tk.Button = TkEmulator.Button\n' +
+'_tk.Entry = TkEmulator.Entry\n' +
+'_tk.Frame = TkEmulator.Frame\n' +
+'_tk.Canvas = TkEmulator.Canvas\n' +
+'_tk.PhotoImage = TkEmulator.PhotoImage\n' +
+'_tk.StringVar = TkEmulator.StringVar\n' +
+'_tk.IntVar = TkEmulator.IntVar\n' +
+'_tk.BooleanVar = TkEmulator.BooleanVar\n' +
+'_tk.Listbox = TkEmulator.Listbox\n' +
+'_tk.Menu = TkEmulator.Menu\n' +
+'_tk.Scrollbar = TkEmulator.Scrollbar\n' +
+'_tk.messagebox = TkEmulator.messagebox\n' +
+'_tk.simpledialog = TkEmulator.simpledialog\n' +
+'\n' +
+'# tkinter 常量\n' +
+'_tk.W = "w"; _tk.E = "e"; _tk.N = "n"; _tk.S = "s"\n' +
+'_tk.NE = "ne"; _tk.NW = "nw"; _tk.SE = "se"; _tk.SW = "sw"\n' +
+'_tk.CENTER = "center"; _tk.LEFT = "left"; _tk.RIGHT = "right"\n' +
+'_tk.TOP = "top"; _tk.BOTTOM = "bottom"\n' +
+'_tk.HORIZONTAL = "horizontal"; _tk.VERTICAL = "vertical"\n' +
+'_tk.YES = "yes"; _tk.NO = "no"; _tk.BOTH = "both"\n' +
+'_tk.X = "x"; _tk.Y = "y"\n' +
+'_tk.END = "end"; _tk.ACTIVE = "active"; _tk.DISABLED = "disabled"\n' +
+'_tk.NORMAL = "normal"; _tk.HIDDEN = "hidden"\n' +
+'_tk.RAISED = "raised"; _tk.SUNKEN = "sunken"; _tk.FLAT = "flat"\n' +
+'_tk.GROOVE = "groove"; _tk.RIDGE = "ridge"; _tk.SOLID = "solid"\n' +
+'\n' +
+'sys.modules["tkinter"] = _tk\n' +
+'sys.modules["_tkinter"] = _tk\n' +
+'\n' +
+'# ttk 子模块\n' +
+'_ttk = type(sys)("tkinter.ttk")\n' +
+'_ttk.Notebook = TkEmulator.Notebook\n' +
+'_ttk.Button = TkEmulator.Button\n' +
+'_ttk.Label = TkEmulator.Label\n' +
+'_ttk.Entry = TkEmulator.Entry\n' +
+'_ttk.Frame = TkEmulator.Frame\n' +
+'_ttk.Combobox = TkEmulator.Entry\n' +
+'_ttk.Scrollbar = TkEmulator.Scrollbar\n' +
+'_ttk.Style = type("Style",(),{"configure":lambda s,*a,**k:None,"theme_use":lambda s,t:None})()\n' +
+'sys.modules["tkinter.ttk"] = _ttk\n' +
+'\n' +
+'del _tk, _ttk\n' +
+'print("[tkemu] tkinter 完整模拟层已注入")\n' +
+'print("[tkemu] 支持: Tk, Toplevel, Label, Button, Entry, Frame, Canvas, PhotoImage")\n' +
+'print("[tkemu] 支持: Listbox, Menu, Scrollbar, StringVar, IntVar, BooleanVar")\n' +
+'print("[tkemu] 支持: messagebox, simpledialog, ttk.Notebook, ttk.Style")\n'
+    );
+}
+
+// ═══════════════════ JS ↔ Python 桥接函数 ═══════════════════
+
+// Canvas 像素更新
+function tkCanvasUpdate(rgbBytes, width, height) {
+    var canvas = document.getElementById('tk-canvas');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var imgData = ctx.createImageData(width, height);
+    var arr = new Uint8ClampedArray(rgbBytes);
+    for (var i = 0; i < width * height; i++) {
+        var src = i * 3;
+        var dst = i * 4;
+        imgData.data[dst] = arr[src];
+        imgData.data[dst + 1] = arr[src + 1];
+        imgData.data[dst + 2] = arr[src + 2];
+        imgData.data[dst + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+}
+
+// Canvas 文字绘制
+function drawUIText(x, y, text, fill, size) {
+    var canvas = document.getElementById('tk-canvas');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = fill;
+    ctx.font = size + "px 'Segoe UI', 'Microsoft YaHei', sans-serif";
+    ctx.fillText(text, x, y);
+}
+
+// 更新窗口标题
+function updateWindowTitle(id, title) {
+    if (openWindows[id]) {
+        openWindows[id].title = title;
+        var titleEl = openWindows[id].el.querySelector('.title-text');
+        if (titleEl) titleEl.textContent = title;
+        updateTaskbar();
+    }
+}
+
+// 同步 tkinter 控件到 DOM
+function tkSyncAll(jsonStr) {
+    var wrap = document.getElementById('tk-body-wrap') || document.getElementById('tk-panel-wrap');
+    if (!wrap) return;
+
+    try {
+        var widgets = JSON.parse(jsonStr);
+        widgets.forEach(function (w) {
+            var el = document.getElementById(w.id);
+            if (!el) {
+                el = document.createElement('div');
+                el.id = w.id;
+                wrap.appendChild(el);
+            }
+
+            if (w.type === 'label') {
+                el.innerHTML = '<span style="color:' + w.fg + ';font-size:' + w.fontSize + 'px;' + (w.bg ? 'background:' + w.bg + ';' : '') + '">' + escapeHTML(w.text || '') + '</span>';
+            } else if (w.type === 'button') {
+                el.innerHTML = '<button class="tk-btn" style="font-size:' + w.fontSize + 'px" onclick="tkBtnClick(\'' + w.id + '\')">' + escapeHTML(w.text || '') + '</button>';
+            } else if (w.type === 'entry') {
+                el.innerHTML = '<input type="text" value="' + escapeHTML(w.value || '') + '" style="width:' + ((w.width || 20) * 8) + 'px;font-size:' + w.fontSize + 'px" onchange="tkEntryChange(\'' + w.id + '\',this.value)" oninput="tkEntryChange(\'' + w.id + '\',this.value)">';
+            } else if (w.type === 'frame') {
+                el.style.border = '1px solid #ccc';
+                el.style.padding = '8px';
+                el.style.background = w.bg || '#f0f0f0';
+            } else if (w.type === 'listbox') {
+                var h = '';
+                w.items.forEach(function (it, i) {
+                    h += '<div class="tk-listbox-item" onclick="tkListboxSelect(\'' + w.id + '\',' + i + ')">' + escapeHTML(it) + '</div>';
+                });
+                el.innerHTML = h;
+                el.style.maxHeight = ((w.height || 10) * 20) + 'px';
+            }
+        });
+    } catch (e) {
+        console.error('tkSyncAll error:', e);
+    }
+}
+
+// 按钮点击回调
+function tkBtnClick(id) {
+    if (pyodide) {
+        pyodide.runPython("TkEmulator._call_cb('" + id + "')");
+    }
+}
+
+// Entry 值跟踪
+function tkEntryChange(id, val) {
+    _tkEntryValues[id] = val;
+}
+function tkGetEntryValue(id) {
+    return _tkEntryValues[id] || '';
+}
+
+// Listbox 选择跟踪
+function tkListboxSelect(id, idx) {
+    _tkListboxSel[id] = idx;
+    // 高亮选中项
+    var el = document.getElementById(id);
+    if (el) {
+        var items = el.querySelectorAll('.tk-listbox-item');
+        items.forEach(function (item, i) {
+            item.classList.toggle('selected', i === idx);
+        });
+    }
+}
+function tkListboxSelection(id) {
+    return _tkListboxSel.hasOwnProperty(id) ? _tkListboxSel[id] : null;
+}
+
+// ═══════════════════ 控制面板 (Toplevel 模拟) ═══════════════════
+function tkInitPanel() {
+    var wrap = document.getElementById('tk-panel-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '' +
+        '<div class="tk-notebook">' +
+        '  <div class="tk-tabs" id="tk-panel-tabs"></div>' +
+        '  <div class="tk-tab-body" id="tk-panel-body"></div>' +
+        '</div>';
+    _tkPanelTabs = [];
+    _tkPanelActiveTab = 0;
+}
+
+function tkNotebookAdd(text) {
+    _tkPanelTabs.push({ text: text, content: '' });
+    var tabsEl = document.getElementById('tk-panel-tabs');
+    if (!tabsEl) return;
+    var idx = _tkPanelTabs.length - 1;
+    var tab = document.createElement('div');
+    tab.className = 'tk-tab' + (idx === 0 ? ' active' : '');
+    tab.textContent = text;
+    tab.onclick = function () { tkPanelSwitchTab(idx); };
+    tabsEl.appendChild(tab);
+}
+
+function tkPanelSwitchTab(idx) {
+    _tkPanelActiveTab = idx;
+    var tabs = document.querySelectorAll('#tk-panel-tabs .tk-tab');
+    tabs.forEach(function (t, i) {
+        t.classList.toggle('active', i === idx);
+    });
+}
+
+// ═══════════════════ messagebox 模拟 ═══════════════════
+function tkMsgBox(type, title, msg) {
+    var icons = { info: 'ℹ️', warning: '⚠️', error: '❌', yesno: '❓', askstring: '📝' };
+    var overlay = document.createElement('div');
+    overlay.className = 'tk-msgbox-overlay';
+
+    if (type === 'askstring') {
+        overlay.innerHTML = '' +
+            '<div class="tk-msgbox">' +
+            '  <div class="tk-msg-icon">' + (icons[type] || '') + '</div>' +
+            '  <div class="tk-msg-text"><b>' + escapeHTML(title) + '</b><br>' + escapeHTML(msg) + '</div>' +
+            '  <input type="text" id="tk-askstring-input" style="width:100%;padding:6px;margin-bottom:12px;border:1px solid #999;border-radius:3px" autofocus>' +
+            '  <div>' +
+            '    <button onclick="tkMsgClose(null)">取消</button>' +
+            '    <button onclick="tkMsgClose(document.getElementById(\'tk-askstring-input\').value)">确定</button>' +
+            '  </div>' +
+            '</div>';
+    } else {
+        overlay.innerHTML = '' +
+            '<div class="tk-msgbox">' +
+            '  <div class="tk-msg-icon">' + (icons[type] || '') + '</div>' +
+            '  <div class="tk-msg-text"><b>' + escapeHTML(title) + '</b><br>' + escapeHTML(msg) + '</div>' +
+            '  <div>' +
+            (type === 'yesno' ?
+                '<button onclick="tkMsgClose(true)">是</button><button onclick="tkMsgClose(false)">否</button>' :
+                '<button onclick="tkMsgClose(true)">确定</button>') +
+            '  </div>' +
+            '</div>';
+    }
+
+    document.body.appendChild(overlay);
+    return new Promise(function (resolve) {
+        _tkMsgResolve = resolve;
+    });
+}
+
+function tkMsgClose(val) {
+    var overlays = document.querySelectorAll('.tk-msgbox-overlay');
+    overlays.forEach(function (o) { o.remove(); });
+    if (_tkMsgResolve) {
+        _tkMsgResolve(val);
+        _tkMsgResolve = null;
+    }
+}
+
+// ═══════════════════ KSD 3D 启动 ═══════════════════
+async function runKSD() {
+    try {
+        await ensurePythonReady();
+    } catch (e) {
+        showToast('⚠️ 请先安装 Python 环境');
+        return;
+    }
+
+    if (!openWindows['shell']) openShell();
+    focusWindow('shell');
+    shellPrint('🎮 KSD 3D Edition 26Version 1.0', 'info');
+    shellPrint('   请将引擎代码保存到文件管理器后运行', 'info');
+    shellPrint('   支持: ksd_core.py, ksd_ui.py, nova_engine.py, main.py', 'info');
+}
+
+// ═══════════════════ 工具函数 ═══════════════════
+function escapeHTML(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function escapeAttr(str) {
+    return str.replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\\/g, '\\\\');
+}
+
+function showToast(msg) {
+    var toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(function () {
+        toast.style.opacity = '0';
+    }, 3000);
+}
+
+function resetAll() {
+    if (confirm('确定要重置整个系统吗？\n\n这将关闭所有窗口并清除所有文件。\n此操作不可恢复。')) {
+        localStorage.removeItem('tkemu_fs_v2');
+        VirtualFS.init();
+        var ids = Object.keys(openWindows);
+        ids.forEach(function (id) {
+            closeWindow(id);
+        });
+        showToast('🔄 系统已重置');
+    }
+}
+
+// ═══════════════════ 快捷键 ═══════════════════
+document.addEventListener('keydown', function (e) {
+    // Ctrl+Shift+E 打开编辑器
+    if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+        e.preventDefault();
+        openEditor();
+    }
+    // Ctrl+Shift+S 打开 Shell
+    if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        openShell();
+    }
+    // Ctrl+Shift+F 打开文件管理
+    if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        openFiles();
+    }
+});
+
+// ═══════════════════ 初始化 ═══════════════════
+console.log('╔══════════════════════════════════════╗');
+console.log('║  ' + APP_FULL_NAME + '  ║');
+console.log('║  版本: ' + APP_VERSION + '                        ║');
+console.log('║  Python: Pyodide ' + PYODIDE_VERSION + '              ║');
+console.log('║  ' + APP_COPYRIGHT + '           ║');
+console.log('╚══════════════════════════════════════╝');
+
+VirtualFS.init();
+
+// 延迟检查 Python 环境
+setTimeout(function () {
+    if (!pyodideReady) {
+        checkPythonEnv().then(function (ok) {
+            if (ok) {
+                showToast('🎉 Python 环境就绪！双击桌面图标开始使用');
+            }
+        });
+    }
+}, 1000);
+
+// 页面关闭前保存
+window.addEventListener('beforeunload', function () {
+    // localStorage 自动保存，无需额外操作
+});
+</script>
+
+</body>
+</html>
