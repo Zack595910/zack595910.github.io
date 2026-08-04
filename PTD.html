@@ -6,10 +6,16 @@
 <title>tkemu - Windows 桌面模拟器</title>
 <!--
 ╔══════════════════════════════════════════════════════════════╗
-║                    tkemu v1.1.1                              ║
+║                    tkemu v1.2.0                              ║
 ║    浏览器中的 Windows 桌面 + Python + tkinter 完整模拟        ║
 ║    基于 Pyodide 0.25.0  |  MIT License                       ║
 ║    闪讯工作社 Snxth.  |  2026                                ║
+║                                                              ║
+║    新增功能:                                                  ║
+║      💻 VS Code Web 网页版                                   ║
+║      📜 rf 脚本系统 (Run File)                               ║
+║      📌 任务栏固定槽位系统                                   ║
+║      🙈 文件隐藏删除(数据保留)                               ║
 ╚══════════════════════════════════════════════════════════════╝
 -->
 <style>
@@ -291,6 +297,13 @@ body {
     flex-direction: column;
 }
 
+/* iframe 全屏嵌入 */
+.window-body iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    菜单栏（编辑器用）
    ═══════════════════════════════════════════════════════════════ */
@@ -375,12 +388,12 @@ body {
     align-items: center;
     padding: 0 4px;
     z-index: 1000;
-    gap: 0;
+    gap: 2px;
     box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.3);
 }
 
-/* 任务栏按钮 */
-.taskbar-btn {
+/* 任务栏槽位按钮 - 固定框子，从左到右排列 */
+.taskbar-slot {
     height: 40px;
     min-width: 40px;
     max-width: 200px;
@@ -391,7 +404,7 @@ body {
     font-size: 12px;
     cursor: pointer;
     border-radius: var(--win-radius-sm);
-    display: flex;
+    display: none;
     align-items: center;
     gap: 6px;
     white-space: nowrap;
@@ -403,26 +416,42 @@ body {
     flex-grow: 0;
 }
 
-.taskbar-btn:hover {
+.taskbar-slot:hover {
     background: var(--win-taskbar-hover);
 }
 
-.taskbar-btn.active {
+.taskbar-slot.active {
     background: var(--win-taskbar-active);
     border-bottom: 2px solid var(--win-accent);
 }
 
-.taskbar-btn .tb-icon {
+.taskbar-slot .tb-icon {
     font-size: 16px;
     flex-shrink: 0;
 }
 
 /* 开始按钮 */
 #start-btn {
+    height: 40px;
+    min-width: 50px;
+    padding: 0 10px;
+    border: none;
+    background: transparent;
+    color: #ffffff;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: var(--win-radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-ui);
     font-weight: 600;
     margin-right: 4px;
     flex-shrink: 0;
-    min-width: 50px;
+}
+
+#start-btn:hover {
+    background: var(--win-taskbar-hover);
 }
 
 /* 时钟 */
@@ -626,10 +655,6 @@ body {
 
 .shell-result {
     color: #CE9178;
-}
-
-.shell-warning {
-    color: #CCA700;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -838,7 +863,7 @@ body {
     margin-bottom: 20px;
 }
 
-.about-content .about-divider {
+.about-divider {
     width: 60%;
     height: 1px;
     background: #333333;
@@ -869,7 +894,7 @@ body {
     font-weight: 500;
 }
 
-.about-content .about-footer {
+.about-footer {
     margin-top: 20px;
     font-size: 11px;
     color: #555555;
@@ -885,12 +910,11 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    background: #000000;
+    background: #000;
 }
 
 .tk-canvas-wrap canvas {
     display: block;
-    image-rendering: auto;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -929,7 +953,7 @@ body {
 
 #tk-panel-wrap .tk-tabs {
     display: flex;
-    border-bottom: 1px solid #999999;
+    border-bottom: 1px solid #999;
     background: #d0d0d0;
     flex-shrink: 0;
     overflow-x: auto;
@@ -941,7 +965,6 @@ body {
     border: 1px solid transparent;
     font-size: 12px;
     white-space: nowrap;
-    transition: background 0.1s ease;
 }
 
 #tk-panel-wrap .tk-tab:hover {
@@ -950,7 +973,7 @@ body {
 
 #tk-panel-wrap .tk-tab.active {
     background: #f0f0f0;
-    border-color: #999999;
+    border-color: #999;
     border-bottom-color: #f0f0f0;
     margin-bottom: -1px;
     font-weight: bold;
@@ -964,8 +987,8 @@ body {
 
 /* 模拟 Listbox */
 #tk-panel-wrap .tk-listbox {
-    background: #ffffff;
-    border: 1px solid #999999;
+    background: #fff;
+    border: 1px solid #999;
     overflow-y: auto;
     font-family: var(--font-mono);
     font-size: 12px;
@@ -975,51 +998,44 @@ body {
 #tk-panel-wrap .tk-listbox-item {
     padding: 4px 8px;
     cursor: pointer;
-    transition: background 0.08s ease;
 }
 
 #tk-panel-wrap .tk-listbox-item:hover {
     background: #0078d7;
-    color: #ffffff;
+    color: #fff;
 }
 
 #tk-panel-wrap .tk-listbox-item.selected {
     background: #0078d7;
-    color: #ffffff;
+    color: #fff;
 }
 
 /* 模拟 Button */
 #tk-panel-wrap button.tk-btn {
     padding: 6px 20px;
     background: #e0e0e0;
-    border: 1px solid #999999;
+    border: 1px solid #999;
     border-radius: 3px;
     cursor: pointer;
     font-size: 12px;
     font-family: var(--font-ui);
     margin: 2px;
-    transition: background 0.1s ease;
 }
 
 #tk-panel-wrap button.tk-btn:hover {
     background: #d0d0d0;
 }
 
-#tk-panel-wrap button.tk-btn:active {
-    background: #c0c0c0;
-}
-
 /* 模拟 Label */
 #tk-panel-wrap label {
     font-size: 12px;
     padding: 2px 0;
-    font-family: var(--font-ui);
 }
 
 /* 模拟 Entry */
 #tk-panel-wrap input[type="text"] {
     padding: 4px 8px;
-    border: 1px solid #999999;
+    border: 1px solid #999;
     border-radius: 2px;
     font-size: 12px;
     font-family: var(--font-ui);
@@ -1028,19 +1044,6 @@ body {
 
 #tk-panel-wrap input[type="text"]:focus {
     border-color: var(--win-accent);
-    box-shadow: 0 0 0 1px var(--win-accent);
-}
-
-#tk-panel-wrap .tk-label {
-    font-size: 12px;
-    padding: 4px 0;
-}
-
-#tk-panel-wrap .tk-frame {
-    border: 1px solid #cccccc;
-    padding: 8px;
-    margin: 4px 0;
-    border-radius: 2px;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1061,7 +1064,7 @@ body {
 
 .tk-msgbox {
     background: #f0f0f0;
-    border: 2px solid #999999;
+    border: 2px solid #999;
     border-radius: 6px;
     padding: 24px;
     min-width: 280px;
@@ -1078,38 +1081,21 @@ body {
 
 .tk-msgbox .tk-msg-text {
     margin-bottom: 16px;
-    line-height: 1.5;
 }
 
 .tk-msgbox button {
     padding: 6px 24px;
     background: #e0e0e0;
-    border: 1px solid #999999;
+    border: 1px solid #999;
     border-radius: 3px;
     cursor: pointer;
     font-size: 12px;
     font-family: var(--font-ui);
     margin: 0 4px;
-    transition: background 0.1s ease;
 }
 
 .tk-msgbox button:hover {
     background: #d0d0d0;
-}
-
-.tk-msgbox button:active {
-    background: #c0c0c0;
-}
-
-.tk-msgbox input[type="text"] {
-    width: 100%;
-    padding: 6px;
-    margin-bottom: 12px;
-    border: 1px solid #999999;
-    border-radius: 3px;
-    font-family: var(--font-ui);
-    font-size: 13px;
-    outline: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1118,7 +1104,7 @@ body {
 .context-menu {
     position: absolute;
     background: #2d2d2d;
-    border: 1px solid #444444;
+    border: 1px solid #444;
     border-radius: 6px;
     padding: 4px 0;
     z-index: 2000;
@@ -1135,11 +1121,10 @@ body {
 .context-menu-item {
     padding: 8px 20px;
     cursor: pointer;
-    color: #dddddd;
+    color: #ddd;
     display: flex;
     align-items: center;
     gap: 10px;
-    transition: background 0.08s ease;
 }
 
 .context-menu-item:hover {
@@ -1153,8 +1138,8 @@ body {
     position: fixed;
     bottom: 60px;
     right: 20px;
-    background: #333333;
-    color: #ffffff;
+    background: #333;
+    color: #fff;
     padding: 10px 20px;
     border-radius: var(--win-radius-sm);
     font-size: 13px;
@@ -1162,7 +1147,101 @@ body {
     opacity: 0;
     transition: opacity 0.3s ease;
     pointer-events: none;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   rf 脚本窗口内容样式
+   ═══════════════════════════════════════════════════════════════ */
+.rf-window-body {
+    background: #f0f0f0;
+    color: #1a1a1a;
+    padding: 16px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    overflow-y: auto;
+}
+
+.rf-window-body .rf-label {
+    padding: 4px 0;
+}
+
+.rf-window-body .rf-label.center {
+    text-align: center;
+}
+
+.rf-window-body button {
+    padding: 6px 20px;
+    background: #e0e0e0;
+    border: 1px solid #999;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--font-ui);
+    align-self: flex-start;
+}
+
+.rf-window-body button:hover {
+    background: #d0d0d0;
+}
+
+.rf-window-body input[type="text"] {
+    padding: 4px 8px;
+    border: 1px solid #999;
+    border-radius: 2px;
+    font-size: 12px;
+    font-family: var(--font-ui);
+    width: 200px;
+}
+
+/* rf 菜单栏 */
+.rf-window-body .rf-menu-bar {
+    display: flex;
+    background: #d0d0d0;
+    border-bottom: 1px solid #999;
+    margin: -16px -16px 8px -16px;
+    padding: 0;
+}
+
+.rf-window-body .rf-menu-item {
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    position: relative;
+}
+
+.rf-window-body .rf-menu-item:hover {
+    background: #c0c0c0;
+}
+
+.rf-window-body .rf-menu-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: #f0f0f0;
+    border: 1px solid #999;
+    min-width: 150px;
+    display: none;
+    z-index: 50;
+    box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.rf-window-body .rf-menu-dropdown.open {
+    display: block;
+}
+
+.rf-window-body .rf-menu-dropdown-item {
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.rf-window-body .rf-menu-dropdown-item:hover {
+    background: #0078d7;
+    color: #fff;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1182,17 +1261,6 @@ body {
     .install-dialog {
         width: 90%;
         padding: 20px;
-    }
-
-    .desktop-icon {
-        width: 70px;
-    }
-
-    .desktop-icon .icon-img {
-        width: 40px;
-        height: 40px;
-        font-size: 28px;
-        line-height: 40px;
     }
 }
 </style>
@@ -1236,6 +1304,14 @@ body {
         <div>KSD 3D</div>
     </div>
 
+    <!-- VS Code Web 图标 -->
+    <div class="desktop-icon" style="top: 420px; left: 20px;"
+         ondblclick="openVSCode()"
+         title="VS Code Web - 在线代码编辑器">
+        <div class="icon-img">💻</div>
+        <div>VS Code</div>
+    </div>
+
     <!-- 关于系统图标 -->
     <div class="desktop-icon" style="top: 20px; right: 20px;"
          ondblclick="openAbout()"
@@ -1260,12 +1336,12 @@ body {
      ═══════════════════════════════════════════════════════════════ -->
 <div id="taskbar">
     <!-- 开始按钮 -->
-    <button class="taskbar-btn" id="start-btn" onclick="toggleStartMenu()" title="开始菜单">
+    <button id="start-btn" onclick="toggleStartMenu()" title="开始菜单">
         ⊞ 开始
     </button>
 
-    <!-- 已打开窗口的按钮（动态生成） -->
-    <div id="taskbar-windows"></div>
+    <!-- 任务栏固定槽位（10个） -->
+    <span id="taskbar-slots"></span>
 
     <!-- 系统时钟 -->
     <div id="clock"></div>
@@ -1286,6 +1362,9 @@ body {
     </div>
     <div class="start-menu-item" onclick="runKSD(); toggleStartMenu();">
         <span class="sm-icon">🎮</span> KSD 3D
+    </div>
+    <div class="start-menu-item" onclick="openVSCode(); toggleStartMenu();">
+        <span class="sm-icon">💻</span> VS Code Web
     </div>
     <div class="start-menu-item" onclick="openAbout(); toggleStartMenu();">
         <span class="sm-icon">ℹ️</span> 关于系统
@@ -1314,6 +1393,9 @@ body {
     </div>
     <div class="context-menu-item" onclick="openFiles(); hideAllContextMenus();">
         <span>📁</span> 打开文件管理
+    </div>
+    <div class="context-menu-item" onclick="openVSCode(); hideAllContextMenus();">
+        <span>💻</span> 打开 VS Code
     </div>
     <div class="context-menu-item" onclick="openAbout(); hideAllContextMenus();">
         <span>ℹ️</span> 关于系统
@@ -1360,18 +1442,19 @@ body {
 <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════
-     主程序 JavaScript
+     主程序 JavaScript（完全展开版，无精简）
      ═══════════════════════════════════════════════════════════════ -->
 <script>
 // ╔══════════════════════════════════════════════════════════════╗
-// ║              tkemu v1.1.1 - 完整主程序                      ║
+// ║              tkemu v1.2.0 - 完整主程序                      ║
 // ║  所有功能全部展开，不精简，不压缩                            ║
+// ║  新增: VS Code Web | rf 脚本系统 | 任务栏槽位 | 隐藏删除    ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 // ─────────────────────────────────────────────────────────────
 //  版本信息
 // ─────────────────────────────────────────────────────────────
-var APP_VERSION = '1.1.1';
+var APP_VERSION = '1.2.0';
 var APP_NAME = 'tkemu';
 var APP_FULL_NAME = 'tkemu - Windows 桌面模拟器';
 var APP_COPYRIGHT = '闪讯工作社 Snxth.';
@@ -1381,112 +1464,283 @@ var PYODIDE_VERSION = '0.25.0';
 // ─────────────────────────────────────────────────────────────
 //  全局状态变量
 // ─────────────────────────────────────────────────────────────
-var windowZIndex = 10;                // 窗口层级计数器
-var openWindows = {};                // 所有打开的窗口 {id: {el, title, icon, minimized, maximized}}
-var activeWindowId = null;           // 当前聚焦的窗口 ID
-var startMenuOpen = false;           // 开始菜单是否打开
-var pyodide = null;                  // Pyodide 实例
-var pyodideReady = false;            // Python 环境是否就绪
-var _tkMsgResolve = null;            // messagebox 回调
-var _tkEntryValues = {};             // Entry 组件的值
-var _tkListboxSel = {};              // Listbox 选中索引
-var _tkPanelTabs = [];               // 控制面板标签
-var _tkPanelActiveTab = 0;           // 控制面板当前标签
-var shellHistory = [];               // Shell 命令历史
-var shellHistoryIdx = -1;            // Shell 历史索引
-var trashItems = [];                 // 回收站项目
-var _titlebarContextTarget = null;   // 标题栏右键菜单的目标窗口 ID
-var _nextWindowX = 80;               // 下一个新窗口的 X 坐标
-var _nextWindowY = 60;               // 下一个新窗口的 Y 坐标
+var windowZIndex = 10;
+var openWindows = {};
+var activeWindowId = null;
+var startMenuOpen = false;
+var pyodide = null;
+var pyodideReady = false;
+var _tkMsgResolve = null;
+var _tkEntryValues = {};
+var _tkListboxSel = {};
+var _tkPanelTabs = [];
+var _tkPanelActiveTab = 0;
+var shellHistory = [];
+var shellHistoryIdx = -1;
+var trashItems = [];
+var hiddenFiles = [];
+var _titlebarContextTarget = null;
+var _nextWindowX = 80;
+var _nextWindowY = 60;
+
+// ─────────────────────────────────────────────────────────────
+//  任务栏槽位系统（10个固定框子，从左到右排列）
+// ─────────────────────────────────────────────────────────────
+var TASKBAR_SLOTS = 10;
+var taskbarSlots = new Array(TASKBAR_SLOTS).fill(null);
+
+/**
+ * 初始化任务栏槽位
+ * 创建10个隐藏的按钮占位
+ */
+function initTaskbarSlots() {
+    var container = document.getElementById('taskbar-slots');
+    container.innerHTML = '';
+
+    for (var i = 0; i < TASKBAR_SLOTS; i++) {
+        var btn = document.createElement('button');
+        btn.className = 'taskbar-slot';
+        btn.id = 'taskbar-slot-' + i;
+        btn.style.display = 'none';
+
+        // 闭包保存索引
+        btn.onclick = (function(idx) {
+            return function() {
+                var windowId = taskbarSlots[idx];
+                if (windowId && openWindows[windowId]) {
+                    if (windowId === activeWindowId && !openWindows[windowId].minimized) {
+                        minimizeWindow(windowId);
+                    } else {
+                        restoreWindow(windowId);
+                        focusWindow(windowId);
+                    }
+                }
+            };
+        })(i);
+
+        container.appendChild(btn);
+    }
+}
+
+/**
+ * 为新窗口分配任务栏槽位
+ * @param {string} windowId - 窗口ID
+ * @param {string} title - 窗口标题
+ * @param {string} icon - 窗口图标
+ * @returns {number} 分配的槽位索引，-1表示失败
+ */
+function assignTaskbarSlot(windowId, title, icon) {
+    // 查找第一个空闲槽位
+    for (var i = 0; i < TASKBAR_SLOTS; i++) {
+        if (taskbarSlots[i] === null) {
+            taskbarSlots[i] = windowId;
+
+            var btn = document.getElementById('taskbar-slot-' + i);
+            if (btn) {
+                btn.innerHTML = '<span class="tb-icon">' + icon + '</span>' + title;
+                btn.title = title;
+                btn.style.display = 'flex';
+
+                if (windowId === activeWindowId) {
+                    btn.classList.add('active');
+                }
+            }
+
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+/**
+ * 释放窗口占用的任务栏槽位
+ * @param {string} windowId - 窗口ID
+ */
+function releaseTaskbarSlot(windowId) {
+    for (var i = 0; i < TASKBAR_SLOTS; i++) {
+        if (taskbarSlots[i] === windowId) {
+            taskbarSlots[i] = null;
+
+            var btn = document.getElementById('taskbar-slot-' + i);
+            if (btn) {
+                btn.innerHTML = '';
+                btn.style.display = 'none';
+                btn.classList.remove('active');
+            }
+
+            return;
+        }
+    }
+}
+
+/**
+ * 更新所有任务栏槽位的激活状态
+ */
+function updateTaskbarActive() {
+    for (var i = 0; i < TASKBAR_SLOTS; i++) {
+        var btn = document.getElementById('taskbar-slot-' + i);
+        if (btn) {
+            var isActive = taskbarSlots[i] === activeWindowId;
+            btn.classList.toggle('active', isActive);
+        }
+    }
+}
+
+/**
+ * 更新任务栏槽位的标题和图标
+ * @param {string} windowId - 窗口ID
+ * @param {string} title - 新标题
+ * @param {string} icon - 新图标
+ */
+function updateTaskbarSlotTitle(windowId, title, icon) {
+    for (var i = 0; i < TASKBAR_SLOTS; i++) {
+        if (taskbarSlots[i] === windowId) {
+            var btn = document.getElementById('taskbar-slot-' + i);
+            if (btn) {
+                btn.innerHTML = '<span class="tb-icon">' + icon + '</span>' + title;
+                btn.title = title;
+            }
+            return;
+        }
+    }
+}
 
 // ─────────────────────────────────────────────────────────────
 //  虚拟文件系统（数据存储在 localStorage）
 // ─────────────────────────────────────────────────────────────
 var VirtualFS = {
-    _key: 'tkemu_fs_v3',
+    _key: 'tkemu_fs_v5',
+    _hiddenKey: 'tkemu_hidden_files',
 
-    // 初始化文件系统，首次使用时创建默认文件
+    /**
+     * 初始化文件系统，首次使用时创建默认文件
+     */
     init: function() {
         if (!localStorage.getItem(this._key)) {
             var defaultFiles = {
                 'main.py': '# -*- coding: utf-8 -*-\n# 欢迎使用 tkemu\n# 在编辑器中编写 Python 代码\n# 点击"运行"按钮或按 F5 执行\n\nprint("Hello, tkemu!")\n\n# 试试 tkinter:\n# import tkinter as tk\n# root = tk.Tk()\n# root.title("你好")\n# root.geometry("300x200")\n# tk.Label(root, text="Hello World!").pack()\n# root.mainloop()\n',
-                'README.txt': '══════════════════════════════════\n  tkemu - 浏览器中的 Windows 桌面\n   Python + tkinter 模拟环境\n══════════════════════════════════\n\n版本: ' + APP_VERSION + '\nPython 运行时: Pyodide ' + PYODIDE_VERSION + '\n\n功能列表:\n  📝 代码编辑器 - 编写和运行 Python\n  ⬛ Python Shell - 交互式命令行\n  📁 文件管理 - 虚拟文件系统\n  🎮 KSD 3D - 游戏引擎入口\n  ℹ️ 关于系统 - 版本信息\n  🗑️ 回收站 - 文件删除保护\n\n快捷键:\n  Ctrl+S - 保存文件\n  F5 - 运行代码\n\n技术支持: ' + APP_COPYRIGHT + '\n'
+                'README.txt': '══════════════════════════════════\n  tkemu - 浏览器中的 Windows 桌面\n   Python + tkinter 模拟环境\n══════════════════════════════════\n\n版本: ' + APP_VERSION + '\nPython 运行时: Pyodide ' + PYODIDE_VERSION + '\n\n功能列表:\n  📝 代码编辑器\n  ⬛ Python Shell\n  📁 文件管理\n  🎮 KSD 3D\n  💻 VS Code Web\n  📜 rf 脚本系统\n  ℹ️ 关于系统\n  🗑️ 回收站\n\n技术支持: ' + APP_COPYRIGHT + '\n',
+                'hello.rf': '// rf 脚本示例 - 你好世界\nwindow "Hello RF" 400 300\nlabel "欢迎使用 rf 脚本系统!" center\nlabel "这是一个简单的示例程序" center\nbutton "点击我" run\n  print "按钮被点击了!"\n  python "print(\'Hello from Python!\')"\n  msg "提示" "你好，rf脚本!"\nend\nbutton "关闭" close\n'
             };
             localStorage.setItem(this._key, JSON.stringify(defaultFiles));
         }
 
         // 加载回收站数据
         try {
-            var saved = localStorage.getItem('tkemu_trash');
-            if (saved) {
-                trashItems = JSON.parse(saved);
+            var savedTrash = localStorage.getItem('tkemu_trash');
+            if (savedTrash) {
+                trashItems = JSON.parse(savedTrash);
             }
         } catch (e) {
             trashItems = [];
         }
 
-        // 迁移旧版本数据
+        // 加载隐藏文件列表
         try {
-            var oldData = localStorage.getItem('tkemu_fs_v2');
-            if (oldData) {
-                var oldFiles = JSON.parse(oldData);
-                var currentFiles = this.listFiles();
-                var merged = false;
-                Object.keys(oldFiles).forEach(function(key) {
-                    if (!currentFiles[key]) {
-                        currentFiles[key] = oldFiles[key];
-                        merged = true;
-                    }
-                });
-                if (merged) {
-                    localStorage.setItem(this._key, JSON.stringify(currentFiles));
-                }
-                localStorage.removeItem('tkemu_fs_v2');
+            var savedHidden = localStorage.getItem(this._hiddenKey);
+            if (savedHidden) {
+                hiddenFiles = JSON.parse(savedHidden);
             }
         } catch (e) {
-            // 忽略迁移错误
+            hiddenFiles = [];
         }
     },
 
-    // 获取所有文件列表
+    /**
+     * 获取所有可见文件列表（排除隐藏文件）
+     * @returns {object} 文件名到内容的映射
+     */
     listFiles: function() {
+        var allFiles = {};
         try {
-            return JSON.parse(localStorage.getItem(this._key) || '{}');
+            allFiles = JSON.parse(localStorage.getItem(this._key) || '{}');
         } catch (e) {
-            return {};
+            allFiles = {};
         }
+
+        // 过滤隐藏文件
+        var visibleFiles = {};
+        Object.keys(allFiles).forEach(function(key) {
+            if (hiddenFiles.indexOf(key) === -1) {
+                visibleFiles[key] = allFiles[key];
+            }
+        });
+
+        return visibleFiles;
     },
 
-    // 读取文件内容
+    /**
+     * 读取文件内容（包括隐藏文件）
+     * @param {string} path - 文件路径
+     * @returns {string|null} 文件内容或null
+     */
     readFile: function(path) {
-        var files = this.listFiles();
-        return files[path] || null;
-    },
-
-    // 写入文件
-    writeFile: function(path, content) {
-        var files = this.listFiles();
-        files[path] = content;
-        localStorage.setItem(this._key, JSON.stringify(files));
-    },
-
-    // 删除文件
-    deleteFile: function(path) {
-        var files = this.listFiles();
-        delete files[path];
-        localStorage.setItem(this._key, JSON.stringify(files));
-    },
-
-    // 重命名文件
-    renameFile: function(oldPath, newPath) {
-        var files = this.listFiles();
-        if (files[oldPath] && !files[newPath]) {
-            files[newPath] = files[oldPath];
-            delete files[oldPath];
-            localStorage.setItem(this._key, JSON.stringify(files));
-            return true;
+        var allFiles = {};
+        try {
+            allFiles = JSON.parse(localStorage.getItem(this._key) || '{}');
+        } catch (e) {
+            allFiles = {};
         }
-        return false;
+        return allFiles[path] || null;
+    },
+
+    /**
+     * 写入文件（自动取消隐藏）
+     * @param {string} path - 文件路径
+     * @param {string} content - 文件内容
+     */
+    writeFile: function(path, content) {
+        var allFiles = {};
+        try {
+            allFiles = JSON.parse(localStorage.getItem(this._key) || '{}');
+        } catch (e) {
+            allFiles = {};
+        }
+
+        allFiles[path] = content;
+        localStorage.setItem(this._key, JSON.stringify(allFiles));
+
+        // 如果文件之前被隐藏，写入时自动取消隐藏
+        var hiddenIndex = hiddenFiles.indexOf(path);
+        if (hiddenIndex > -1) {
+            hiddenFiles.splice(hiddenIndex, 1);
+            localStorage.setItem(this._hiddenKey, JSON.stringify(hiddenFiles));
+        }
+    },
+
+    /**
+     * 永久删除文件
+     * @param {string} path - 文件路径
+     */
+    deleteFile: function(path) {
+        var allFiles = {};
+        try {
+            allFiles = JSON.parse(localStorage.getItem(this._key) || '{}');
+        } catch (e) {
+            allFiles = {};
+        }
+
+        delete allFiles[path];
+        localStorage.setItem(this._key, JSON.stringify(allFiles));
+
+        // 同时从隐藏列表移除
+        var hiddenIndex = hiddenFiles.indexOf(path);
+        if (hiddenIndex > -1) {
+            hiddenFiles.splice(hiddenIndex, 1);
+            localStorage.setItem(this._hiddenKey, JSON.stringify(hiddenFiles));
+        }
+    },
+
+    /**
+     * 隐藏文件（不删除数据，只是不再显示）
+     * @param {string} path - 文件路径
+     */
+    hideFile: function(path) {
+        if (hiddenFiles.indexOf(path) === -1) {
+            hiddenFiles.push(path);
+            localStorage.setItem(this._hiddenKey, JSON.stringify(hiddenFiles));
+        }
     }
 };
 
@@ -1494,7 +1748,6 @@ var VirtualFS = {
 //  回收站功能
 // ─────────────────────────────────────────────────────────────
 
-// 将文件移入回收站
 function trashAdd(path) {
     var content = VirtualFS.readFile(path);
     if (content !== null) {
@@ -1503,17 +1756,17 @@ function trashAdd(path) {
             content: content,
             time: new Date().toISOString()
         });
-        VirtualFS.deleteFile(path);
+        VirtualFS.hideFile(path);
         updateTrashIcon();
         localStorage.setItem('tkemu_trash', JSON.stringify(trashItems));
     }
 }
 
-// 从回收站还原文件
 function trashRestore(index) {
     if (index >= 0 && index < trashItems.length) {
         var item = trashItems[index];
         VirtualFS.writeFile(item.path, item.content);
+        // 从回收站移除
         trashItems.splice(index, 1);
         updateTrashIcon();
         localStorage.setItem('tkemu_trash', JSON.stringify(trashItems));
@@ -1522,14 +1775,12 @@ function trashRestore(index) {
     return false;
 }
 
-// 清空回收站
 function trashEmpty() {
     trashItems = [];
     updateTrashIcon();
     localStorage.setItem('tkemu_trash', JSON.stringify(trashItems));
 }
 
-// 还原回收站中的所有文件
 function trashRestoreAll() {
     while (trashItems.length > 0) {
         trashRestore(0);
@@ -1537,7 +1788,6 @@ function trashRestoreAll() {
     showToast('📥 已全部还原');
 }
 
-// 更新回收站图标的角标数字
 function updateTrashIcon() {
     var badge = document.getElementById('trash-count');
     if (badge) {
@@ -1546,7 +1796,6 @@ function updateTrashIcon() {
     }
 }
 
-// 打开回收站窗口
 function openTrash() {
     var html = '';
 
@@ -1581,9 +1830,8 @@ function openTrash() {
 //  窗口管理器
 // ─────────────────────────────────────────────────────────────
 
-// 创建新窗口
 function createWindow(id, title, icon, width, height, top, left, bodyHTML) {
-    // 如果窗口已存在，则聚焦该窗口
+    // 如果窗口已存在，聚焦
     if (openWindows[id]) {
         focusWindow(id);
         return openWindows[id].el;
@@ -1636,18 +1884,19 @@ function createWindow(id, title, icon, width, height, top, left, bodyHTML) {
         icon: icon,
         minimized: false,
         maximized: false,
-        origX: finalLeft,
-        origY: finalTop,
-        origW: width,
-        origH: height
+        slotIndex: -1
     };
 
+    // 分配任务栏槽位
+    var slotIdx = assignTaskbarSlot(id, title, icon);
+    if (slotIdx >= 0) {
+        openWindows[id].slotIndex = slotIdx;
+    }
+
     focusWindow(id);
-    updateTaskbar();
     return win;
 }
 
-// 聚焦窗口
 function focusWindow(id) {
     if (!openWindows[id]) {
         return;
@@ -1671,10 +1920,9 @@ function focusWindow(id) {
         restoreWindow(id);
     }
 
-    updateTaskbar();
+    updateTaskbarActive();
 }
 
-// 最小化窗口
 function minimizeWindow(id) {
     if (!openWindows[id]) {
         return;
@@ -1687,10 +1935,9 @@ function minimizeWindow(id) {
         activeWindowId = null;
     }
 
-    updateTaskbar();
+    updateTaskbarActive();
 }
 
-// 还原窗口
 function restoreWindow(id) {
     if (!openWindows[id]) {
         return;
@@ -1701,7 +1948,6 @@ function restoreWindow(id) {
     focusWindow(id);
 }
 
-// 最大化/还原窗口
 function toggleMaximize(id) {
     if (!openWindows[id]) {
         return;
@@ -1724,11 +1970,13 @@ function toggleMaximize(id) {
     }
 }
 
-// 关闭窗口
 function closeWindow(id) {
     if (!openWindows[id]) {
         return;
     }
+
+    // 释放任务栏槽位
+    releaseTaskbarSlot(id);
 
     openWindows[id].el.remove();
     delete openWindows[id];
@@ -1740,18 +1988,18 @@ function closeWindow(id) {
             focusWindow(keys[keys.length - 1]);
         }
     }
-
-    updateTaskbar();
 }
 
 // ─────────────────────────────────────────────────────────────
 //  窗口标题栏右键菜单
 // ─────────────────────────────────────────────────────────────
 
-// 显示标题栏右键菜单
 function titlebarContextMenu(e, id) {
     e.preventDefault();
     e.stopPropagation();
+
+    // 先关闭所有菜单
+    hideAllContextMenus();
 
     _titlebarContextTarget = id;
 
@@ -1761,7 +2009,6 @@ function titlebarContextMenu(e, id) {
     menu.classList.add('open');
 }
 
-// 处理标题栏右键菜单动作
 function titlebarContextAction(action) {
     var id = _titlebarContextTarget;
     if (!id || !openWindows[id]) {
@@ -1785,17 +2032,14 @@ function titlebarContextAction(action) {
             }
             break;
         case 'move':
-            // 由用户拖动窗口完成
-            break;
         case 'size':
-            // 由用户拖动窗口边缘完成
+            // 由用户拖动窗口完成
             break;
     }
 
     hideAllContextMenus();
 }
 
-// 隐藏所有右键菜单
 function hideAllContextMenus() {
     document.querySelectorAll('.context-menu.open').forEach(function(menu) {
         menu.classList.remove('open');
@@ -1808,7 +2052,6 @@ function hideAllContextMenus() {
 
 var dragInfo = null;
 
-// 开始拖动窗口
 function startDrag(e, id) {
     if (!openWindows[id] || openWindows[id].maximized) {
         return;
@@ -1826,7 +2069,6 @@ function startDrag(e, id) {
     e.preventDefault();
 }
 
-// 拖动过程中更新窗口位置
 document.addEventListener('pointermove', function(e) {
     if (!dragInfo) {
         return;
@@ -1842,41 +2084,9 @@ document.addEventListener('pointermove', function(e) {
     w.el.style.top = Math.max(0, dragInfo.origTop + e.clientY - dragInfo.startY) + 'px';
 });
 
-// 停止拖动
 document.addEventListener('pointerup', function() {
     dragInfo = null;
 });
-
-// ─────────────────────────────────────────────────────────────
-//  任务栏管理
-// ─────────────────────────────────────────────────────────────
-
-// 更新任务栏按钮
-function updateTaskbar() {
-    var container = document.getElementById('taskbar-windows');
-    container.innerHTML = '';
-
-    var ids = Object.keys(openWindows);
-
-    ids.forEach(function(id) {
-        var w = openWindows[id];
-
-        var btn = document.createElement('button');
-        btn.className = 'taskbar-btn' + (id === activeWindowId ? ' active' : '');
-        btn.innerHTML = '<span class="tb-icon">' + w.icon + '</span>' + w.title;
-        btn.title = w.title;
-        btn.onclick = function() {
-            if (id === activeWindowId && !w.minimized) {
-                minimizeWindow(id);
-            } else {
-                restoreWindow(id);
-                focusWindow(id);
-            }
-        };
-
-        container.appendChild(btn);
-    });
-}
 
 // ─────────────────────────────────────────────────────────────
 //  系统时钟
@@ -1897,7 +2107,6 @@ function updateClock() {
         time + '<br><span style="font-size:11px;">' + date + '</span>';
 }
 
-// 每秒更新时钟
 setInterval(updateClock, 1000);
 updateClock();
 
@@ -1905,13 +2114,11 @@ updateClock();
 //  开始菜单
 // ─────────────────────────────────────────────────────────────
 
-// 切换开始菜单的打开/关闭状态
 function toggleStartMenu() {
     startMenuOpen = !startMenuOpen;
     document.getElementById('start-menu').classList.toggle('open', startMenuOpen);
 }
 
-// 点击桌面其他区域关闭开始菜单
 document.addEventListener('click', function(e) {
     if (startMenuOpen &&
         !e.target.closest('#start-menu') &&
@@ -1925,9 +2132,11 @@ document.addEventListener('click', function(e) {
 //  桌面右键菜单
 // ─────────────────────────────────────────────────────────────
 
-// 桌面上右键点击时显示菜单
 document.getElementById('desktop').addEventListener('contextmenu', function(e) {
     e.preventDefault();
+
+    // 先关闭所有菜单
+    hideAllContextMenus();
 
     var menu = document.getElementById('desktop-context-menu');
     menu.style.left = e.clientX + 'px';
@@ -1935,7 +2144,6 @@ document.getElementById('desktop').addEventListener('contextmenu', function(e) {
     menu.classList.add('open');
 });
 
-// 点击菜单外部关闭所有右键菜单
 document.addEventListener('click', function(e) {
     if (!e.target.closest('.context-menu')) {
         hideAllContextMenus();
@@ -1943,10 +2151,22 @@ document.addEventListener('click', function(e) {
 });
 
 // ─────────────────────────────────────────────────────────────
+//  VS Code Web - 打开网页版 VS Code
+// ─────────────────────────────────────────────────────────────
+
+function openVSCode() {
+    var bodyHTML = '<iframe src="https://vscode.dev" ' +
+        'allow="clipboard-read; clipboard-write" ' +
+        'sandbox="allow-scripts allow-same-origin allow-forms allow-popups">' +
+        '</iframe>';
+
+    createWindow('vscode', 'VS Code Web', '💻', 900, 600, 60, 100, bodyHTML);
+}
+
+// ─────────────────────────────────────────────────────────────
 //  代码编辑器
 // ─────────────────────────────────────────────────────────────
 
-// 打开代码编辑器窗口
 function openEditor(filePath) {
     var title = filePath ? '编辑: ' + filePath : '代码编辑器';
     var content = filePath ?
@@ -2044,7 +2264,6 @@ function openEditor(filePath) {
     }, 100);
 }
 
-// 更新编辑器状态栏的行号和列号
 function updateEditorStatus() {
     var ta = document.getElementById('editor-input');
     if (!ta) {
@@ -2069,7 +2288,6 @@ function updateEditorStatus() {
     }
 }
 
-// 保存当前编辑器中的文件
 function saveFile() {
     var ta = document.getElementById('editor-input');
     if (!ta) {
@@ -2082,7 +2300,6 @@ function saveFile() {
     refreshFiles();
 }
 
-// 另存为
 function saveFileAs() {
     var ta = document.getElementById('editor-input');
     if (!ta) {
@@ -2099,7 +2316,6 @@ function saveFileAs() {
     }
 }
 
-// 全选编辑器内容
 function editorSelectAll() {
     var ta = document.getElementById('editor-input');
     if (ta) {
@@ -2107,7 +2323,6 @@ function editorSelectAll() {
     }
 }
 
-// 菜单栏下拉切换
 function toggleMenu(e, el) {
     e.stopPropagation();
 
@@ -2131,7 +2346,6 @@ function toggleMenu(e, el) {
     el.classList.toggle('open', !isOpen);
 }
 
-// 点击其他地方关闭菜单栏下拉
 document.addEventListener('click', function() {
     document.querySelectorAll('.menu-dropdown.open').forEach(function(d) {
         d.classList.remove('open');
@@ -2145,7 +2359,6 @@ document.addEventListener('click', function() {
 //  Python Shell
 // ─────────────────────────────────────────────────────────────
 
-// 打开 Python Shell 窗口
 function openShell() {
     var bodyHTML = '' +
         '<div class="shell-container">' +
@@ -2163,7 +2376,6 @@ function openShell() {
 
     createWindow('shell', 'Python Shell', '⬛', 650, 450, 120, 140, bodyHTML);
 
-    // 聚焦输入框
     setTimeout(function() {
         var inp = document.getElementById('shell-input');
         if (inp) {
@@ -2173,7 +2385,6 @@ function openShell() {
     }, 200);
 }
 
-// 处理 Shell 输入框的键盘事件
 function handleShellKey(e) {
     // Enter 执行代码
     if (e.key === 'Enter') {
@@ -2209,7 +2420,6 @@ function handleShellKey(e) {
     }
 }
 
-// 向 Shell 输出区打印文字
 function shellPrint(text, className) {
     var output = document.getElementById('shell-output');
     if (!output) {
@@ -2225,7 +2435,6 @@ function shellPrint(text, className) {
 //  Python 环境检查与代码运行
 // ─────────────────────────────────────────────────────────────
 
-// 确保 Python 环境已就绪
 async function ensurePythonReady() {
     if (!pyodideReady) {
         var ok = await checkPythonEnv();
@@ -2238,11 +2447,18 @@ async function ensurePythonReady() {
     injectTkinterEmulator();
 }
 
-// 运行编辑器中的代码
 async function runEditorCode() {
     var ta = document.getElementById('editor-input');
     if (!ta || !ta.value.trim()) {
         showToast('⚠️ 请先输入代码');
+        return;
+    }
+
+    var filePath = ta.dataset.filepath || '';
+
+    // 如果是 .rf 文件，走 rf 脚本解释器
+    if (filePath.endsWith('.rf')) {
+        executeRFScript(ta.value);
         return;
     }
 
@@ -2284,7 +2500,6 @@ async function runEditorCode() {
     }
 }
 
-// 在 Shell 中执行单行代码
 async function executeShellCode(code) {
     // 清屏命令
     if (code === 'clear') {
@@ -2329,10 +2544,389 @@ async function executeShellCode(code) {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  rf 脚本解释器（Run File）
+// ─────────────────────────────────────────────────────────────
+
+var _rfWindowIdCounter = 0;
+
+/**
+ * 执行 rf 脚本
+ * @param {string} code - rf 脚本代码
+ */
+function executeRFScript(code) {
+    var lines = code.split('\n');
+    var variables = {};
+    var commands = [];
+    var i = 0;
+
+    // 第一遍：解析脚本为命令列表
+    while (i < lines.length) {
+        var line = lines[i].trim();
+
+        // 跳过空行和注释
+        if (!line || line.startsWith('//')) {
+            i++;
+            continue;
+        }
+
+        var parts = parseRFLine(line);
+        if (!parts) {
+            i++;
+            continue;
+        }
+
+        // 跳过 end 标记
+        if (parts.cmd === 'end') {
+            i++;
+            continue;
+        }
+
+        // 处理 button run 块
+        if (parts.cmd === 'button' && parts.args.length >= 2 && parts.args[1] === 'run') {
+            var blockLines = [];
+            i++;
+            while (i < lines.length) {
+                var bline = lines[i].trim();
+                if (bline === 'end') break;
+                blockLines.push(bline);
+                i++;
+            }
+            parts.block = blockLines;
+        }
+
+        // 处理 if then 块
+        if (parts.cmd === 'if') {
+            var ifBlockLines = [];
+            i++;
+            var ifDepth = 1;
+            while (i < lines.length && ifDepth > 0) {
+                var ifLine = lines[i].trim();
+                if (ifLine.startsWith('if ')) ifDepth++;
+                if (ifLine === 'end') {
+                    ifDepth--;
+                    if (ifDepth === 0) break;
+                }
+                ifBlockLines.push(ifLine);
+                i++;
+            }
+            parts.ifBlock = ifBlockLines;
+        }
+
+        commands.push(parts);
+        i++;
+    }
+
+    // 第二遍：执行命令
+    executeRFCommands(commands, variables, 0);
+}
+
+/**
+ * 解析单行 rf 命令
+ * @param {string} line - 单行脚本
+ * @returns {object|null} 解析后的命令对象
+ */
+function parseRFLine(line) {
+    // window "标题" 宽 高
+    var m = line.match(/^window\s+"([^"]*)"\s+(\d+)\s+(\d+)/);
+    if (m) return { cmd: 'window', args: [m[1], parseInt(m[2]), parseInt(m[3])] };
+
+    // label "文字" [center/left]
+    m = line.match(/^label\s+"([^"]*)"\s*(center|left)?/);
+    if (m) return { cmd: 'label', args: [m[1], m[2] || 'left'] };
+
+    // button "文字" run / button "文字" close
+    m = line.match(/^button\s+"([^"]*)"\s+(run|close)/);
+    if (m) return { cmd: 'button', args: [m[1], m[2]] };
+
+    // print "文字"
+    m = line.match(/^print\s+"([^"]*)"/);
+    if (m) return { cmd: 'print', args: [m[1]] };
+
+    // python "代码"
+    m = line.match(/^python\s+"([^"]*)"/);
+    if (m) return { cmd: 'python', args: [m[1]] };
+
+    // msg "标题" "内容"
+    m = line.match(/^msg\s+"([^"]*)"\s+"([^"]*)"/);
+    if (m) return { cmd: 'msg', args: [m[1], m[2]] };
+
+    // ask "标题" "内容" -> 变量
+    m = line.match(/^ask\s+"([^"]*)"\s+"([^"]*)"\s*->\s*(\w+)/);
+    if (m) return { cmd: 'ask', args: [m[1], m[2], m[3]] };
+
+    // input "提示" -> 变量
+    m = line.match(/^input\s+"([^"]*)"\s*->\s*(\w+)/);
+    if (m) return { cmd: 'input', args: [m[1], m[2]] };
+
+    // set 变量 = 值
+    m = line.match(/^set\s+(\w+)\s*=\s*(.+)/);
+    if (m) return { cmd: 'set', args: [m[1], m[2].replace(/"/g, '').trim()] };
+
+    // close
+    if (line === 'close') return { cmd: 'close', args: [] };
+
+    // wait 毫秒
+    m = line.match(/^wait\s+(\d+)/);
+    if (m) return { cmd: 'wait', args: [parseInt(m[1])] };
+
+    // if 变量 == "值" then
+    m = line.match(/^if\s+(\w+)\s*==\s*"([^"]*)"\s*then/);
+    if (m) return { cmd: 'if', args: [m[1], m[2]] };
+
+    // menu "文字"
+    m = line.match(/^menu\s+"([^"]*)"/);
+    if (m) return { cmd: 'menu', args: [m[1]] };
+
+    // menuitem "文字" run/close/print/msg [参数]
+    m = line.match(/^menuitem\s+"([^"]*)"\s+(run|close|print|msg)\s*(.*)/);
+    if (m) return { cmd: 'menuitem', args: [m[1], m[2], m[3] || ''] };
+
+    // menusep
+    if (line === 'menusep') return { cmd: 'menusep', args: [] };
+
+    return null;
+}
+
+/**
+ * 执行 rf 命令列表
+ * @param {Array} commands - 命令列表
+ * @param {object} variables - 变量表
+ * @param {number} startIdx - 起始索引
+ */
+function executeRFCommands(commands, variables, startIdx) {
+    var i = startIdx;
+    var currentWindowId = null;
+    var menuItems = [];
+
+    while (i < commands.length) {
+        var cmd = commands[i];
+
+        switch (cmd.cmd) {
+            case 'window':
+                // 创建 rf 窗口
+                _rfWindowIdCounter++;
+                currentWindowId = 'rfwin_' + _rfWindowIdCounter;
+                var wTitle = cmd.args[0];
+                var wW = cmd.args[1];
+                var wH = cmd.args[2];
+                var placeholder = '<div class="rf-window-body" id="rf-body-' + currentWindowId + '"></div>';
+                createWindow(currentWindowId, wTitle, '📜', wW, wH, 100, 120, placeholder);
+                menuItems = [];
+                break;
+
+            case 'menu':
+                // 添加菜单
+                menuItems.push({ type: 'menu', label: cmd.args[0], items: [] });
+                break;
+
+            case 'menuitem':
+                // 添加菜单项
+                if (menuItems.length > 0 && menuItems[menuItems.length - 1].type === 'menu') {
+                    menuItems[menuItems.length - 1].items.push({
+                        label: cmd.args[0],
+                        action: cmd.args[1],
+                        arg: cmd.args[2]
+                    });
+                }
+                break;
+
+            case 'menusep':
+                // 添加菜单分隔线
+                if (menuItems.length > 0 && menuItems[menuItems.length - 1].type === 'menu') {
+                    menuItems[menuItems.length - 1].items.push({ separator: true });
+                }
+                break;
+
+            case 'label':
+                // 添加标签
+                if (currentWindowId) {
+                    appendRFWidget(currentWindowId, 'label', cmd.args);
+                }
+                break;
+
+            case 'button':
+                // 添加按钮
+                if (currentWindowId) {
+                    appendRFWidget(currentWindowId, 'button', cmd.args, cmd.block, commands, variables);
+                }
+                break;
+
+            case 'print':
+                // 输出到 Shell
+                if (!openWindows['shell']) openShell();
+                focusWindow('shell');
+                shellPrint(cmd.args[0], '');
+                break;
+
+            case 'python':
+                // 执行 Python 代码
+                if (pyodideReady) {
+                    try {
+                        pyodide.runPython(cmd.args[0]);
+                    } catch (e) {
+                        shellPrint('Python错误: ' + e.message, 'error');
+                    }
+                }
+                break;
+
+            case 'msg':
+                // 弹出消息框
+                tkMsgBox('info', cmd.args[0], cmd.args[1]);
+                break;
+
+            case 'ask':
+                // 弹出询问框
+                tkMsgBox('yesno', cmd.args[0], cmd.args[1]).then(function(r) {
+                    variables[cmd.args[2]] = r ? 'yes' : 'no';
+                });
+                break;
+
+            case 'input':
+                // 弹出输入框
+                var inpVal = prompt(cmd.args[0], '');
+                if (inpVal !== null) {
+                    variables[cmd.args[1]] = inpVal;
+                }
+                break;
+
+            case 'set':
+                // 设置变量
+                variables[cmd.args[0]] = cmd.args[1];
+                break;
+
+            case 'close':
+                // 关闭窗口
+                if (currentWindowId) closeWindow(currentWindowId);
+                return;
+
+            case 'wait':
+                // 同步等待
+                var start = Date.now();
+                while (Date.now() - start < cmd.args[0]) {
+                    // 空循环等待
+                }
+                break;
+
+            case 'if':
+                // 条件判断
+                var varVal = variables[cmd.args[0]] || '';
+                if (varVal === cmd.args[1] && cmd.ifBlock) {
+                    var subCommands = cmd.ifBlock
+                        .map(function(l) { return parseRFLine(l); })
+                        .filter(Boolean);
+                    executeRFCommands(subCommands, variables, 0);
+                }
+                break;
+        }
+
+        i++;
+    }
+
+    // 渲染菜单栏
+    if (currentWindowId && menuItems.length > 0) {
+        renderRFMenu(currentWindowId, menuItems, commands, variables);
+    }
+}
+
+/**
+ * 向 rf 窗口添加控件
+ */
+function appendRFWidget(winId, type, args, block, commands, variables) {
+    var body = document.getElementById('rf-body-' + winId);
+    if (!body) return;
+
+    if (type === 'label') {
+        var text = args[0];
+        var align = args[1] || 'left';
+        var el = document.createElement('div');
+        el.className = 'rf-label' + (align === 'center' ? ' center' : '');
+        el.textContent = text;
+        body.appendChild(el);
+    } else if (type === 'button') {
+        var btnText = args[0];
+        var action = args[1];
+        var el = document.createElement('button');
+        el.textContent = btnText;
+
+        if (action === 'close') {
+            el.onclick = function() {
+                closeWindow(winId);
+            };
+        } else if (action === 'run' && block) {
+            el.onclick = function() {
+                var blockCommands = block
+                    .map(function(l) { return parseRFLine(l); })
+                    .filter(Boolean);
+                executeRFCommands(blockCommands, variables, 0);
+            };
+        }
+
+        body.appendChild(el);
+    }
+}
+
+/**
+ * 渲染 rf 窗口的菜单栏
+ */
+function renderRFMenu(winId, menuItems, commands, variables) {
+    var body = document.getElementById('rf-body-' + winId);
+    if (!body) return;
+
+    var menuBar = document.createElement('div');
+    menuBar.className = 'rf-menu-bar';
+
+    menuItems.forEach(function(m) {
+        if (m.type === 'menu') {
+            var menuEl = document.createElement('div');
+            menuEl.className = 'rf-menu-item';
+            menuEl.textContent = m.label;
+
+            var dropdown = document.createElement('div');
+            dropdown.className = 'rf-menu-dropdown';
+
+            m.items.forEach(function(item) {
+                if (item.separator) {
+                    var sep = document.createElement('div');
+                    sep.style.cssText = 'height:1px;background:#999;margin:2px 0';
+                    dropdown.appendChild(sep);
+                } else {
+                    var itemEl = document.createElement('div');
+                    itemEl.className = 'rf-menu-dropdown-item';
+                    itemEl.textContent = item.label;
+
+                    itemEl.onclick = function() {
+                        dropdown.classList.remove('open');
+
+                        if (item.action === 'close') {
+                            closeWindow(winId);
+                        } else if (item.action === 'print') {
+                            shellPrint(item.arg, '');
+                        } else if (item.action === 'msg') {
+                            tkMsgBox('info', item.label, item.arg);
+                        }
+                    };
+
+                    dropdown.appendChild(itemEl);
+                }
+            });
+
+            menuEl.onclick = function(e) {
+                e.stopPropagation();
+                dropdown.classList.toggle('open');
+            };
+
+            menuEl.appendChild(dropdown);
+            menuBar.appendChild(menuEl);
+        }
+    });
+
+    body.insertBefore(menuBar, body.firstChild);
+}
+
+// ─────────────────────────────────────────────────────────────
 //  文件管理器
 // ─────────────────────────────────────────────────────────────
 
-// 打开文件管理器窗口
 function openFiles() {
     var files = VirtualFS.listFiles();
     var names = Object.keys(files).sort();
@@ -2343,6 +2937,7 @@ function openFiles() {
     html += '<div class="file-manager-toolbar">';
     html += '  <button onclick="newFileDialog()" title="新建一个文件">📄 新建文件</button>';
     html += '  <button onclick="newFolderDialog()" title="新建一个文件夹">📁 新建文件夹</button>';
+    html += '  <button onclick="newRFFileDialog()" title="新建 rf 脚本文件">📜 新建rf脚本</button>';
     html += '  <button onclick="closeWindow(\'files\'); openFiles();" title="刷新文件列表">🔄 刷新</button>';
     html += '</div>';
 
@@ -2353,13 +2948,14 @@ function openFiles() {
     } else {
         names.forEach(function(name) {
             var isPy = name.endsWith('.py');
+            var isRf = name.endsWith('.rf');
             var isFolder = name.indexOf('/') > -1;
-            var icon = isFolder ? '📁' : (isPy ? '📄' : '📃');
+            var icon = isFolder ? '📁' : (isPy ? '📄' : (isRf ? '📜' : '📃'));
 
             html += '<div class="file-item" ondblclick="openFileByType(\'' + escapeAttr(name) + '\')" title="双击打开">';
             html += '  <span class="fi-icon">' + icon + '</span>';
             html += '  <span style="flex:1">' + escapeHTML(name) + '</span>';
-            html += '  <button onclick="event.stopPropagation(); deleteFileDialog(\'' + escapeAttr(name) + '\')" style="background:none;border:none;cursor:pointer;font-size:14px;" title="删除">🗑</button>';
+            html += '  <button onclick="event.stopPropagation(); permanentlyHideFile(\'' + escapeAttr(name) + '\')" style="background:none;border:none;cursor:pointer;font-size:14px;" title="永久删除（数据保留，不再显示）">🗑</button>';
             html += '</div>';
         });
     }
@@ -2368,7 +2964,6 @@ function openFiles() {
     createWindow('files', '文件管理', '📁', 550, 450, 100, 120, html);
 }
 
-// 新建文件对话框
 function newFileDialog() {
     var name = prompt('请输入文件名:', 'new_file.py');
     if (name && name.trim()) {
@@ -2383,7 +2978,6 @@ function newFileDialog() {
     }
 }
 
-// 新建文件夹对话框
 function newFolderDialog() {
     var name = prompt('请输入文件夹名:', '新建文件夹');
     if (name && name.trim()) {
@@ -2396,37 +2990,56 @@ function newFolderDialog() {
     }
 }
 
-// 删除文件（移入回收站）
-function deleteFileDialog(path) {
-    if (confirm('将 "' + path + '" 移动到回收站吗？\n\n之后可以从回收站还原。')) {
-        trashAdd(path);
+function newRFFileDialog() {
+    var name = prompt('请输入rf脚本文件名:', 'script.rf');
+    if (name && name.trim()) {
+        name = name.trim();
+        if (!name.endsWith('.rf')) {
+            name += '.rf';
+        }
+        var defaultRF = '' +
+            '// rf 脚本示例\n' +
+            'window "我的应用" 400 300\n' +
+            'label "Hello RF!" center\n' +
+            'button "点击我" run\n' +
+            '  print "按钮被点击了!"\n' +
+            'end\n' +
+            'button "关闭" close\n';
+        VirtualFS.writeFile(name, defaultRF);
         closeWindow('files');
         openFiles();
-        showToast('🗑 已移至回收站: ' + path);
+        showToast('✅ 已创建: ' + name);
     }
 }
 
-// 根据文件类型打开文件
+/**
+ * 永久隐藏文件（数据保留，不再显示）
+ * @param {string} path - 文件路径
+ */
+function permanentlyHideFile(path) {
+    VirtualFS.hideFile(path);
+    closeWindow('files');
+    openFiles();
+    showToast('🗑 已永久删除（数据保留）: ' + path);
+}
+
 function openFileByType(path) {
     var parts = path.split('.');
     var ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
 
     var textTypes = [
-        'py', 'txt', 'md', 'json', 'ini', 'cfg',
+        'py', 'rf', 'txt', 'md', 'json', 'ini', 'cfg',
         'yml', 'yaml', 'html', 'css', 'js',
         'xml', 'csv', 'log', 'bat', 'sh', 'pyw'
     ];
 
     if (textTypes.indexOf(ext) !== -1) {
         openEditor(path);
-    } else if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'ico'].indexOf(ext) !== -1) {
-        showToast('🖼️ 图片预览功能开发中: ' + path);
     } else {
         showToast('⚠️ 不支持的文件类型: .' + ext);
     }
 }
 
-// 刷新文件管理器
 function refreshFiles() {
     if (openWindows['files']) {
         closeWindow('files');
@@ -2476,8 +3089,10 @@ function openAbout() {
         '    <div class="info-row"><span class="info-label">🌐 应用程序版本</span><span class="info-value">' + APP_VERSION + '</span></div>' +
         '    <div class="info-row"><span class="info-label">🐍 Python 运行时</span><span class="info-value">Pyodide ' + PYODIDE_VERSION + '</span></div>' +
         '    <div class="info-row"><span class="info-label">📦 Python 版本</span><span class="info-value">' + escapeHTML(pythonVersion) + '</span></div>' +
-        '    <div class="info-row"><span class="info-label">💻 浏览器</span><span class="info-value">' + browserName + '</span></div>' +
-        '    <div class="info-row"><span class="info-label">🖥️ 平台</span><span class="info-value">' + platformName + '</span></div>' +
+        '    <div class="info-row"><span class="info-label">📜 rf 脚本引擎</span><span class="info-value">v1.0</span></div>' +
+        '    <div class="info-row"><span class="info-label">💻 VS Code Web</span><span class="info-value">vscode.dev</span></div>' +
+        '    <div class="info-row"><span class="info-label">🖥️ 浏览器</span><span class="info-value">' + browserName + '</span></div>' +
+        '    <div class="info-row"><span class="info-label">💻 平台</span><span class="info-value">' + platformName + '</span></div>' +
         '    <div class="info-row"><span class="info-label">🌍 语言</span><span class="info-value">' + language + '</span></div>' +
         '    <div class="info-row"><span class="info-label">📐 分辨率</span><span class="info-value">' + window.innerWidth + '×' + window.innerHeight + '</span></div>' +
         '    <div class="info-row"><span class="info-label">🕐 运行时间</span><span class="info-value" id="about-uptime">计算中...</span></div>' +
@@ -2487,11 +3102,12 @@ function openAbout() {
         '    © ' + APP_YEAR + ' ' + APP_COPYRIGHT + '<br>' +
         '    基于 Pyodide 技术构建<br>' +
         '    tkinter 窗口由 HTML/CSS/JS 模拟<br>' +
+        '    rf 脚本系统为可扩展脚本引擎<br>' +
         '    MIT License - 开源免费<br>' +
         '  </div>' +
         '</div>';
 
-    createWindow('about', '关于系统', 'ℹ️', 460, 520, 130, 180, bodyHTML);
+    createWindow('about', '关于系统', 'ℹ️', 460, 540, 130, 180, bodyHTML);
 
     // 运行时间计时器
     setTimeout(function() {
@@ -2528,7 +3144,6 @@ function restartSystem() {
 //  Python 环境检测与安装
 // ─────────────────────────────────────────────────────────────
 
-// 检查 Python 环境，未安装则弹出安装窗口
 async function checkPythonEnv() {
     if (pyodideReady) {
         return true;
@@ -2539,7 +3154,6 @@ async function checkPythonEnv() {
     });
 }
 
-// 显示 Python 环境安装弹窗
 function showInstallDialog(onComplete) {
     // 移除旧弹窗
     var oldOverlay = document.querySelector('.install-overlay');
@@ -2744,8 +3358,9 @@ function injectTkinterEmulator() {
 '            """设置或获取窗口标题"""\n' +
 '            if s is not None:\n' +
 '                self.title_str = s\n' +
-'                from js import updateWindowTitle\n' +
+'                from js import updateWindowTitle, updateTaskbarSlotTitle\n' +
 '                updateWindowTitle("tkapp", s)\n' +
+'                updateTaskbarSlotTitle("tkapp", s, "🖥️")\n' +
 '            return self.title_str\n' +
 '\n' +
 '        def geometry(self, s=None):\n' +
@@ -3212,10 +3827,7 @@ function injectTkinterEmulator() {
 'sys.modules["tkinter.ttk"] = _ttk\n' +
 '\n' +
 'del _tk, _ttk\n' +
-'print("[tkemu] tkinter 完整模拟层已注入")\n' +
-'print("[tkemu] 支持: Tk, Toplevel, Label, Button, Entry, Frame, Canvas, PhotoImage")\n' +
-'print("[tkemu] 支持: Listbox, Menu, Scrollbar, StringVar, IntVar, BooleanVar")\n' +
-'print("[tkemu] 支持: messagebox, simpledialog, ttk.Notebook, ttk.Style")\n'
+'print("[tkemu] tkinter 完整模拟层已注入")\n'
     );
 }
 
@@ -3223,7 +3835,6 @@ function injectTkinterEmulator() {
 //  JS ↔ Python 桥接函数
 // ─────────────────────────────────────────────────────────────
 
-// 更新 tkinter Canvas 像素
 function tkCanvasUpdate(rgbBytes, width, height) {
     var canvas = document.getElementById('tk-canvas');
     if (!canvas) {
@@ -3246,7 +3857,6 @@ function tkCanvasUpdate(rgbBytes, width, height) {
     ctx.putImageData(imgData, 0, 0);
 }
 
-// 在 tkinter Canvas 上绘制文字
 function drawUIText(x, y, text, fill, size) {
     var canvas = document.getElementById('tk-canvas');
     if (!canvas) {
@@ -3255,11 +3865,10 @@ function drawUIText(x, y, text, fill, size) {
 
     var ctx = canvas.getContext('2d');
     ctx.fillStyle = fill;
-    ctx.font = size + "px 'Segoe UI', 'Microsoft YaHei', sans-serif";
+    ctx.font = size + "px 'Segoe UI', sans-serif";
     ctx.fillText(text, x, y);
 }
 
-// 更新窗口标题
 function updateWindowTitle(id, title) {
     if (openWindows[id]) {
         openWindows[id].title = title;
@@ -3267,11 +3876,10 @@ function updateWindowTitle(id, title) {
         if (titleEl) {
             titleEl.textContent = title;
         }
-        updateTaskbar();
+        updateTaskbarSlotTitle(id, title, openWindows[id].icon);
     }
 }
 
-// 调整 tkinter 窗口大小
 function tkResizeWindow(id, width, height) {
     if (openWindows[id]) {
         var win = openWindows[id].el;
@@ -3282,7 +3890,6 @@ function tkResizeWindow(id, width, height) {
     }
 }
 
-// 同步 tkinter 控件到 DOM
 function tkSyncAll(jsonStr) {
     var wrap = document.getElementById('tk-body-wrap') ||
                document.getElementById('tk-panel-wrap');
@@ -3302,8 +3909,7 @@ function tkSyncAll(jsonStr) {
 
             if (w.type === 'label') {
                 el.innerHTML = '<span style="color:' + w.fg +
-                    ';font-size:' + w.fontSize + 'px;' +
-                    (w.bg ? 'background:' + w.bg + ';' : '') + '">' +
+                    ';font-size:' + w.fontSize + 'px;">' +
                     escapeHTML(w.text || '') + '</span>';
             } else if (w.type === 'button') {
                 el.innerHTML = '<button class="tk-btn" style="font-size:' +
@@ -3335,14 +3941,12 @@ function tkSyncAll(jsonStr) {
     }
 }
 
-// 按钮点击回调
 function tkBtnClick(id) {
     if (pyodide) {
         pyodide.runPython("TkEmulator._call_cb('" + id + "')");
     }
 }
 
-// Entry 值跟踪
 function tkEntryChange(id, val) {
     _tkEntryValues[id] = val;
 }
@@ -3351,7 +3955,6 @@ function tkGetEntryValue(id) {
     return _tkEntryValues[id] || '';
 }
 
-// Listbox 选择跟踪
 function tkListboxSelect(id, idx) {
     _tkListboxSel[id] = idx;
     var el = document.getElementById(id);
@@ -3366,10 +3969,6 @@ function tkListboxSelect(id, idx) {
 function tkListboxSelection(id) {
     return _tkListboxSel.hasOwnProperty(id) ? _tkListboxSel[id] : null;
 }
-
-// ─────────────────────────────────────────────────────────────
-//  控制面板 (Toplevel 模拟)
-// ─────────────────────────────────────────────────────────────
 
 function tkInitPanel() {
     var wrap = document.getElementById('tk-panel-wrap');
@@ -3412,10 +4011,6 @@ function tkPanelSwitchTab(idx) {
         t.classList.toggle('active', i === idx);
     });
 }
-
-// ─────────────────────────────────────────────────────────────
-//  messagebox 模拟
-// ─────────────────────────────────────────────────────────────
 
 function tkMsgBox(type, title, msg) {
     var icons = {
@@ -3498,19 +4093,16 @@ async function runKSD() {
 //  工具函数
 // ─────────────────────────────────────────────────────────────
 
-// HTML 转义
 function escapeHTML(str) {
     var div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
 }
 
-// 属性转义（用于 onclick 等）
 function escapeAttr(str) {
     return str.replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\\/g, '\\\\');
 }
 
-// 显示 Toast 通知
 function showToast(msg) {
     var toast = document.getElementById('toast');
     toast.textContent = msg;
@@ -3526,12 +4118,10 @@ function showToast(msg) {
 // ─────────────────────────────────────────────────────────────
 
 document.addEventListener('keydown', function(e) {
-    // Ctrl+Shift+E - 打开编辑器
     if (e.ctrlKey && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
         e.preventDefault();
         openEditor();
     }
-    // Ctrl+Shift+S - 打开 Shell
     if (e.ctrlKey && e.shiftKey && (e.key === 'S' || e.key === 's')) {
         e.preventDefault();
         openShell();
@@ -3549,13 +4139,10 @@ console.log('║  Python: Pyodide ' + PYODIDE_VERSION + '              ║');
 console.log('║  ' + APP_COPYRIGHT + '           ║');
 console.log('╚══════════════════════════════════════╝');
 
-// 初始化虚拟文件系统
 VirtualFS.init();
-
-// 更新回收站角标
 updateTrashIcon();
+initTaskbarSlots();
 
-// 首次启动时延迟检测 Python 环境
 setTimeout(function() {
     if (!pyodideReady) {
         checkPythonEnv().then(function(ok) {
