@@ -6,16 +6,16 @@
 <title>tkemu - Windows 桌面模拟器</title>
 <!--
 ╔══════════════════════════════════════════════════════════════╗
-║                    tkemu v1.2.0                              ║
+║                    tkemu v1.3.0                              ║
 ║    浏览器中的 Windows 桌面 + Python + tkinter 完整模拟        ║
 ║    基于 Pyodide 0.25.0  |  MIT License                       ║
 ║    闪讯工作社 Snxth.  |  2026                                ║
 ║                                                              ║
 ║    新增功能:                                                  ║
-║      💻 VS Code Web 网页版                                   ║
-║      📜 rf 脚本系统 (Run File)                               ║
-║      📌 任务栏固定槽位系统                                   ║
-║      🙈 文件隐藏删除(数据保留)                               ║
+║      ⚡ KD文件 (Kernel Driver) 支持                          ║
+║      🎨 RF引擎加强 (Canvas绘制)                              ║
+║      🚀 启动优化 (不再强制安装Pyodide)                      ║
+║      ⚙️ 控制面板应用                                        ║
 ╚══════════════════════════════════════════════════════════════╝
 -->
 <style>
@@ -715,7 +715,7 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Python 环境安装弹窗
+   Python 环境安装弹窗（全屏覆盖层，保留但默认不使用）
    ═══════════════════════════════════════════════════════════════ */
 .install-overlay {
     position: fixed;
@@ -1245,6 +1245,46 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   控制面板样式
+   ═══════════════════════════════════════════════════════════════ */
+.control-panel-content {
+    padding: 20px;
+    color: #1a1a1a;
+    background: #f0f0f0;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.control-panel-content h3 {
+    margin-bottom: 15px;
+    color: #0078D4;
+}
+
+.control-panel-content .setting-item {
+    margin-bottom: 15px;
+}
+
+.control-panel-content .setting-item label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.control-panel-content button {
+    padding: 8px 16px;
+    margin-right: 10px;
+    background: #0078D4;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.control-panel-content button:hover {
+    background: #005A9E;
+}
+
+/* ═══════════════════════════════════════════════════════════════
    响应式设计 - 移动端适配
    ═══════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
@@ -1312,6 +1352,14 @@ body {
         <div>VS Code</div>
     </div>
 
+    <!-- 控制面板图标 -->
+    <div class="desktop-icon" style="top: 520px; left: 20px;"
+         ondblclick="openControlPanel()"
+         title="控制面板 - 系统设置与Python环境管理">
+        <div class="icon-img">⚙️</div>
+        <div>控制面板</div>
+    </div>
+
     <!-- 关于系统图标 -->
     <div class="desktop-icon" style="top: 20px; right: 20px;"
          ondblclick="openAbout()"
@@ -1366,6 +1414,9 @@ body {
     <div class="start-menu-item" onclick="openVSCode(); toggleStartMenu();">
         <span class="sm-icon">💻</span> VS Code Web
     </div>
+    <div class="start-menu-item" onclick="openControlPanel(); toggleStartMenu();">
+        <span class="sm-icon">⚙️</span> 控制面板
+    </div>
     <div class="start-menu-item" onclick="openAbout(); toggleStartMenu();">
         <span class="sm-icon">ℹ️</span> 关于系统
     </div>
@@ -1373,11 +1424,11 @@ body {
     <!-- 分隔线 -->
     <div style="border-top: 1px solid #333333; margin: 4px 0;"></div>
 
-    <div class="start-menu-item" onclick="checkPythonEnv(); toggleStartMenu();">
-        <span class="sm-icon">🔍</span> 检查 Python 环境
-    </div>
     <div class="start-menu-item" onclick="restartSystem(); toggleStartMenu();">
         <span class="sm-icon">🔄</span> 重启系统
+    </div>
+    <div id="installed-apps-section" style="border-top: 1px solid #333333; margin: 4px 0; display: none;">
+        <!-- 已安装的KD应用会动态添加到这里 -->
     </div>
 </div>
 
@@ -1394,11 +1445,8 @@ body {
     <div class="context-menu-item" onclick="openFiles(); hideAllContextMenus();">
         <span>📁</span> 打开文件管理
     </div>
-    <div class="context-menu-item" onclick="openVSCode(); hideAllContextMenus();">
-        <span>💻</span> 打开 VS Code
-    </div>
-    <div class="context-menu-item" onclick="openAbout(); hideAllContextMenus();">
-        <span>ℹ️</span> 关于系统
+    <div class="context-menu-item" onclick="openControlPanel(); hideAllContextMenus();">
+        <span>⚙️</span> 打开控制面板
     </div>
     <div style="border-top: 1px solid #444; margin: 4px 0;"></div>
     <div class="context-menu-item" onclick="restartSystem(); hideAllContextMenus();">
@@ -1437,24 +1485,19 @@ body {
 <div id="toast"></div>
 
 <!-- ═══════════════════════════════════════════════════════════════
-     加载 Pyodide 运行时
-     ═══════════════════════════════════════════════════════════════ -->
-<script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
-
-<!-- ═══════════════════════════════════════════════════════════════
      主程序 JavaScript（完全展开版，无精简）
      ═══════════════════════════════════════════════════════════════ -->
 <script>
 // ╔══════════════════════════════════════════════════════════════╗
-// ║              tkemu v1.2.0 - 完整主程序                      ║
+// ║              tkemu v1.3.0 - 完整主程序                      ║
 // ║  所有功能全部展开，不精简，不压缩                            ║
-// ║  新增: VS Code Web | rf 脚本系统 | 任务栏槽位 | 隐藏删除    ║
+// ║  新增: KD文件 | RF Canvas | 控制面板                       ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 // ─────────────────────────────────────────────────────────────
 //  版本信息
 // ─────────────────────────────────────────────────────────────
-var APP_VERSION = '1.2.0';
+var APP_VERSION = '1.3.0';
 var APP_NAME = 'tkemu';
 var APP_FULL_NAME = 'tkemu - Windows 桌面模拟器';
 var APP_COPYRIGHT = '闪讯工作社 Snxth.';
@@ -1479,9 +1522,11 @@ var shellHistory = [];
 var shellHistoryIdx = -1;
 var trashItems = [];
 var hiddenFiles = [];
+var installedKDApps = [];
 var _titlebarContextTarget = null;
 var _nextWindowX = 80;
 var _nextWindowY = 60;
+var _installProgressCallback = null;
 
 // ─────────────────────────────────────────────────────────────
 //  任务栏槽位系统（10个固定框子，从左到右排列）
@@ -1491,19 +1536,15 @@ var taskbarSlots = new Array(TASKBAR_SLOTS).fill(null);
 
 /**
  * 初始化任务栏槽位
- * 创建10个隐藏的按钮占位
  */
 function initTaskbarSlots() {
     var container = document.getElementById('taskbar-slots');
     container.innerHTML = '';
-
     for (var i = 0; i < TASKBAR_SLOTS; i++) {
         var btn = document.createElement('button');
         btn.className = 'taskbar-slot';
         btn.id = 'taskbar-slot-' + i;
         btn.style.display = 'none';
-
-        // 闭包保存索引
         btn.onclick = (function(idx) {
             return function() {
                 var windowId = taskbarSlots[idx];
@@ -1517,7 +1558,6 @@ function initTaskbarSlots() {
                 }
             };
         })(i);
-
         container.appendChild(btn);
     }
 }
@@ -1530,26 +1570,19 @@ function initTaskbarSlots() {
  * @returns {number} 分配的槽位索引，-1表示失败
  */
 function assignTaskbarSlot(windowId, title, icon) {
-    // 查找第一个空闲槽位
     for (var i = 0; i < TASKBAR_SLOTS; i++) {
         if (taskbarSlots[i] === null) {
             taskbarSlots[i] = windowId;
-
             var btn = document.getElementById('taskbar-slot-' + i);
             if (btn) {
                 btn.innerHTML = '<span class="tb-icon">' + icon + '</span>' + title;
                 btn.title = title;
                 btn.style.display = 'flex';
-
-                if (windowId === activeWindowId) {
-                    btn.classList.add('active');
-                }
+                if (windowId === activeWindowId) btn.classList.add('active');
             }
-
             return i;
         }
     }
-
     return -1;
 }
 
@@ -1561,14 +1594,12 @@ function releaseTaskbarSlot(windowId) {
     for (var i = 0; i < TASKBAR_SLOTS; i++) {
         if (taskbarSlots[i] === windowId) {
             taskbarSlots[i] = null;
-
             var btn = document.getElementById('taskbar-slot-' + i);
             if (btn) {
                 btn.innerHTML = '';
                 btn.style.display = 'none';
                 btn.classList.remove('active');
             }
-
             return;
         }
     }
@@ -1610,40 +1641,42 @@ function updateTaskbarSlotTitle(windowId, title, icon) {
 //  虚拟文件系统（数据存储在 localStorage）
 // ─────────────────────────────────────────────────────────────
 var VirtualFS = {
-    _key: 'tkemu_fs_v5',
-    _hiddenKey: 'tkemu_hidden_files',
+    _key: 'tkemu_fs_v6',
+    _hiddenKey: 'tkemu_hidden_files_v2',
+    _kdKey: 'tkemu_kd_apps',
 
     /**
-     * 初始化文件系统，首次使用时创建默认文件
+     * 初始化文件系统
      */
     init: function() {
         if (!localStorage.getItem(this._key)) {
             var defaultFiles = {
-                'main.py': '# -*- coding: utf-8 -*-\n# 欢迎使用 tkemu\n# 在编辑器中编写 Python 代码\n# 点击"运行"按钮或按 F5 执行\n\nprint("Hello, tkemu!")\n\n# 试试 tkinter:\n# import tkinter as tk\n# root = tk.Tk()\n# root.title("你好")\n# root.geometry("300x200")\n# tk.Label(root, text="Hello World!").pack()\n# root.mainloop()\n',
-                'README.txt': '══════════════════════════════════\n  tkemu - 浏览器中的 Windows 桌面\n   Python + tkinter 模拟环境\n══════════════════════════════════\n\n版本: ' + APP_VERSION + '\nPython 运行时: Pyodide ' + PYODIDE_VERSION + '\n\n功能列表:\n  📝 代码编辑器\n  ⬛ Python Shell\n  📁 文件管理\n  🎮 KSD 3D\n  💻 VS Code Web\n  📜 rf 脚本系统\n  ℹ️ 关于系统\n  🗑️ 回收站\n\n技术支持: ' + APP_COPYRIGHT + '\n',
-                'hello.rf': '// rf 脚本示例 - 你好世界\nwindow "Hello RF" 400 300\nlabel "欢迎使用 rf 脚本系统!" center\nlabel "这是一个简单的示例程序" center\nbutton "点击我" run\n  print "按钮被点击了!"\n  python "print(\'Hello from Python!\')"\n  msg "提示" "你好，rf脚本!"\nend\nbutton "关闭" close\n'
+                'main.py': '# 欢迎使用 tkemu\nprint("Hello, tkemu!")\n',
+                'README.txt': 'tkemu v' + APP_VERSION + '\n',
+                'hello.rf': '// rf 脚本示例\nwindow "Hello RF" 400 300\nlabel "欢迎使用 rf 脚本系统!" center\nbutton "点击我" run\n  print "按钮被点击了!"\nend\nbutton "关闭" close\n',
+                'welcome.kd': '<h1>欢迎使用KD!</h1><p>这是一个KD示例应用。</p><button onclick="parent.shellPrint(\'Hello from KD!\', \'info\')">打印到Shell</button>',
+                'paint.rf': 'window "简易画板" 500 400\nmenu "文件"\nmenuitem "清空画布" run\n  draw\n    var c = document.getElementById("rf-canvas");\n    var ctx = c.getContext("2d");\n    ctx.clearRect(0, 0, c.width, c.height);\n  end\nmenuitem "关闭" close\ncanvas 480 300\nlabel "在下方画布上拖动鼠标绘画" center\ndraw\n  var c = document.getElementById("rf-canvas");\n  var ctx = c.getContext("2d");\n  ctx.fillStyle = "white";\n  ctx.fillRect(0, 0, c.width, c.height);\n  ctx.strokeStyle = "black";\n  ctx.lineWidth = 2;\n  var painting = false;\n  c.onpointerdown = function(e) { painting = true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY); };\n  c.onpointerup = function() { painting = false; };\n  c.onpointermove = function(e) {\n    if (!painting) return;\n    ctx.lineTo(e.offsetX, e.offsetY);\n    ctx.stroke();\n  };\nend',
+                'clock.rf': 'window "动态时钟" 300 250\ncanvas 200 200\ndraw\n  var c = document.getElementById("rf-canvas");\n  var ctx = c.getContext("2d");\n  function drawClock() {\n    ctx.clearRect(0, 0, c.width, c.height);\n    var now = new Date();\n    var h = now.getHours() % 12;\n    var m = now.getMinutes();\n    var s = now.getSeconds();\n    ctx.fillStyle = "white"; ctx.fillRect(0,0,c.width,c.height);\n    ctx.beginPath(); ctx.arc(100, 100, 90, 0, 2*Math.PI);\n    ctx.strokeStyle = "black"; ctx.lineWidth = 4; ctx.stroke();\n    ctx.beginPath(); ctx.moveTo(100,100);\n    ctx.lineTo(100+50*Math.cos((h+m/60)*Math.PI/6 - Math.PI/2), 100+50*Math.sin((h+m/60)*Math.PI/6 - Math.PI/2));\n    ctx.stroke();\n    ctx.beginPath(); ctx.moveTo(100,100);\n    ctx.lineTo(100+70*Math.cos(m*Math.PI/30 - Math.PI/2), 100+70*Math.sin(m*Math.PI/30 - Math.PI/2));\n    ctx.stroke();\n    ctx.beginPath(); ctx.moveTo(100,100);\n    ctx.lineTo(100+80*Math.cos(s*Math.PI/30 - Math.PI/2), 100+80*Math.sin(s*Math.PI/30 - Math.PI/2));\n    ctx.strokeStyle = "red"; ctx.lineWidth = 2; ctx.stroke();\n  }\n  setInterval(drawClock, 1000);\n  drawClock();\nend\nlabel "当前时间" center\nbutton "关闭" close\n'
             };
             localStorage.setItem(this._key, JSON.stringify(defaultFiles));
         }
-
-        // 加载回收站数据
         try {
             var savedTrash = localStorage.getItem('tkemu_trash');
-            if (savedTrash) {
-                trashItems = JSON.parse(savedTrash);
-            }
+            if (savedTrash) trashItems = JSON.parse(savedTrash);
         } catch (e) {
             trashItems = [];
         }
-
-        // 加载隐藏文件列表
         try {
             var savedHidden = localStorage.getItem(this._hiddenKey);
-            if (savedHidden) {
-                hiddenFiles = JSON.parse(savedHidden);
-            }
+            if (savedHidden) hiddenFiles = JSON.parse(savedHidden);
         } catch (e) {
             hiddenFiles = [];
+        }
+        try {
+            var savedKD = localStorage.getItem(this._kdKey);
+            if (savedKD) installedKDApps = JSON.parse(savedKD);
+        } catch (e) {
+            installedKDApps = [];
         }
     },
 
@@ -1658,15 +1691,12 @@ var VirtualFS = {
         } catch (e) {
             allFiles = {};
         }
-
-        // 过滤隐藏文件
         var visibleFiles = {};
         Object.keys(allFiles).forEach(function(key) {
             if (hiddenFiles.indexOf(key) === -1) {
                 visibleFiles[key] = allFiles[key];
             }
         });
-
         return visibleFiles;
     },
 
@@ -1697,11 +1727,8 @@ var VirtualFS = {
         } catch (e) {
             allFiles = {};
         }
-
         allFiles[path] = content;
         localStorage.setItem(this._key, JSON.stringify(allFiles));
-
-        // 如果文件之前被隐藏，写入时自动取消隐藏
         var hiddenIndex = hiddenFiles.indexOf(path);
         if (hiddenIndex > -1) {
             hiddenFiles.splice(hiddenIndex, 1);
@@ -1720,11 +1747,8 @@ var VirtualFS = {
         } catch (e) {
             allFiles = {};
         }
-
         delete allFiles[path];
         localStorage.setItem(this._key, JSON.stringify(allFiles));
-
-        // 同时从隐藏列表移除
         var hiddenIndex = hiddenFiles.indexOf(path);
         if (hiddenIndex > -1) {
             hiddenFiles.splice(hiddenIndex, 1);
@@ -1741,6 +1765,73 @@ var VirtualFS = {
             hiddenFiles.push(path);
             localStorage.setItem(this._hiddenKey, JSON.stringify(hiddenFiles));
         }
+    },
+
+    /**
+     * 安装KD应用
+     * @param {string} name - 应用名称
+     * @param {string} content - 应用HTML内容
+     */
+    installKDApp: function(name, content) {
+        var exists = installedKDApps.findIndex(function(app) {
+            return app.name === name;
+        });
+        if (exists > -1) {
+            installedKDApps[exists].content = content;
+        } else {
+            installedKDApps.push({
+                name: name,
+                content: content,
+                time: new Date().toISOString()
+            });
+        }
+        localStorage.setItem(this._kdKey, JSON.stringify(installedKDApps));
+        this.refreshStartMenuKD();
+    },
+
+    /**
+     * 卸载KD应用
+     * @param {string} name - 应用名称
+     */
+    uninstallKDApp: function(name) {
+        installedKDApps = installedKDApps.filter(function(app) {
+            return app.name !== name;
+        });
+        localStorage.setItem(this._kdKey, JSON.stringify(installedKDApps));
+        this.refreshStartMenuKD();
+    },
+
+    /**
+     * 获取所有已安装的KD应用
+     * @returns {Array} 已安装应用列表
+     */
+    getInstalledKDApps: function() {
+        return installedKDApps;
+    },
+
+    /**
+     * 刷新开始菜单中的KD应用列表
+     */
+    refreshStartMenuKD: function() {
+        var section = document.getElementById('installed-apps-section');
+        if (!section) return;
+        section.innerHTML = '';
+        if (installedKDApps.length > 0) {
+            section.style.display = 'block';
+            section.innerHTML = '<div style="border-top: 1px solid #333333; margin: 4px 0;"></div><div style="padding: 8px 16px; color: #888; font-size: 11px;">已安装应用</div>';
+            installedKDApps.forEach(function(app) {
+                var item = document.createElement('div');
+                item.className = 'start-menu-item';
+                item.innerHTML = '<span class="sm-icon">⚡</span> ' + app.name;
+                item.onclick = function() {
+                    openKDApp(app.content);
+                    toggleStartMenu();
+                };
+                section.appendChild(item);
+            });
+        } else {
+            section.style.display = 'none';
+        }
     }
 };
 
@@ -1748,6 +1839,10 @@ var VirtualFS = {
 //  回收站功能
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 将文件移入回收站
+ * @param {string} path - 文件路径
+ */
 function trashAdd(path) {
     var content = VirtualFS.readFile(path);
     if (content !== null) {
@@ -1762,11 +1857,15 @@ function trashAdd(path) {
     }
 }
 
+/**
+ * 从回收站还原文件
+ * @param {number} index - 回收站项目索引
+ * @returns {boolean} 是否成功
+ */
 function trashRestore(index) {
     if (index >= 0 && index < trashItems.length) {
         var item = trashItems[index];
         VirtualFS.writeFile(item.path, item.content);
-        // 从回收站移除
         trashItems.splice(index, 1);
         updateTrashIcon();
         localStorage.setItem('tkemu_trash', JSON.stringify(trashItems));
@@ -1775,12 +1874,18 @@ function trashRestore(index) {
     return false;
 }
 
+/**
+ * 清空回收站
+ */
 function trashEmpty() {
     trashItems = [];
     updateTrashIcon();
     localStorage.setItem('tkemu_trash', JSON.stringify(trashItems));
 }
 
+/**
+ * 还原回收站中的所有文件
+ */
 function trashRestoreAll() {
     while (trashItems.length > 0) {
         trashRestore(0);
@@ -1788,6 +1893,9 @@ function trashRestoreAll() {
     showToast('📥 已全部还原');
 }
 
+/**
+ * 更新回收站图标的角标数字
+ */
 function updateTrashIcon() {
     var badge = document.getElementById('trash-count');
     if (badge) {
@@ -1796,16 +1904,15 @@ function updateTrashIcon() {
     }
 }
 
+/**
+ * 打开回收站窗口
+ */
 function openTrash() {
     var html = '';
-
-    // 回收站工具栏
     html += '<div class="file-manager-toolbar">';
     html += '  <button onclick="trashRestoreAll(); closeWindow(\'trash\'); openTrash();">📥 全部还原</button>';
     html += '  <button onclick="if(confirm(\'确定要清空回收站吗？\\n此操作不可恢复。\')){ trashEmpty(); closeWindow(\'trash\'); openTrash(); }">🗑 清空回收站</button>';
     html += '</div>';
-
-    // 回收站文件列表
     html += '<div class="file-list">';
     if (trashItems.length === 0) {
         html += '<div style="padding:20px;color:#888;text-align:center;">🗑️ 回收站为空</div>';
@@ -1822,7 +1929,6 @@ function openTrash() {
         }
     }
     html += '</div>';
-
     createWindow('trash', '回收站', '🗑️', 500, 400, 130, 160, html);
 }
 
@@ -1830,26 +1936,29 @@ function openTrash() {
 //  窗口管理器
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 创建新窗口
+ * @param {string} id - 窗口ID
+ * @param {string} title - 窗口标题
+ * @param {string} icon - 窗口图标
+ * @param {number} width - 宽度
+ * @param {number} height - 高度
+ * @param {number} top - 顶部位置
+ * @param {number} left - 左侧位置
+ * @param {string} bodyHTML - 窗口主体HTML
+ * @returns {HTMLElement} 窗口DOM元素
+ */
 function createWindow(id, title, icon, width, height, top, left, bodyHTML) {
-    // 如果窗口已存在，聚焦
     if (openWindows[id]) {
         focusWindow(id);
         return openWindows[id].el;
     }
-
-    // 计算窗口默认位置
     var finalTop = top || _nextWindowY;
     var finalLeft = left || _nextWindowX;
     _nextWindowX += 30;
     _nextWindowY += 25;
-    if (_nextWindowX > 200) {
-        _nextWindowX = 80;
-    }
-    if (_nextWindowY > 200) {
-        _nextWindowY = 60;
-    }
-
-    // 创建窗口 DOM 元素
+    if (_nextWindowX > 200) _nextWindowX = 80;
+    if (_nextWindowY > 200) _nextWindowY = 60;
     var win = document.createElement('div');
     win.className = 'window focused';
     win.id = 'win-' + id;
@@ -1858,26 +1967,8 @@ function createWindow(id, title, icon, width, height, top, left, bodyHTML) {
     win.style.top = finalTop + 'px';
     win.style.left = finalLeft + 'px';
     win.style.zIndex = ++windowZIndex;
-
-    // 构建窗口内部 HTML
-    win.innerHTML = '' +
-        '<div class="window-titlebar" ' +
-        '    onpointerdown="startDrag(event, \'' + id + '\')" ' +
-        '    ondblclick="toggleMaximize(\'' + id + '\')" ' +
-        '    oncontextmenu="titlebarContextMenu(event, \'' + id + '\')">' +
-        '  <span class="title-icon">' + icon + '</span>' +
-        '  <span class="title-text">' + escapeHTML(title) + '</span>' +
-        '  <div class="title-buttons">' +
-        '    <button class="title-btn" onclick="minimizeWindow(\'' + id + '\')" title="最小化">─</button>' +
-        '    <button class="title-btn" onclick="toggleMaximize(\'' + id + '\')" title="最大化">□</button>' +
-        '    <button class="title-btn btn-close" onclick="closeWindow(\'' + id + '\')" title="关闭">✕</button>' +
-        '  </div>' +
-        '</div>' +
-        '<div class="window-body">' + bodyHTML + '</div>';
-
+    win.innerHTML = '<div class="window-titlebar" onpointerdown="startDrag(event,\'' + id + '\')" ondblclick="toggleMaximize(\'' + id + '\')" oncontextmenu="titlebarContextMenu(event,\'' + id + '\')"><span class="title-icon">' + icon + '</span><span class="title-text">' + escapeHTML(title) + '</span><div class="title-buttons"><button class="title-btn" onclick="minimizeWindow(\'' + id + '\')" title="最小化">─</button><button class="title-btn" onclick="toggleMaximize(\'' + id + '\')" title="最大化">□</button><button class="title-btn btn-close" onclick="closeWindow(\'' + id + '\')" title="关闭">✕</button></div></div><div class="window-body">' + bodyHTML + '</div>';
     document.getElementById('desktop').appendChild(win);
-
-    // 存储窗口数据
     openWindows[id] = {
         el: win,
         title: title,
@@ -1886,107 +1977,80 @@ function createWindow(id, title, icon, width, height, top, left, bodyHTML) {
         maximized: false,
         slotIndex: -1
     };
-
-    // 分配任务栏槽位
     var slotIdx = assignTaskbarSlot(id, title, icon);
-    if (slotIdx >= 0) {
-        openWindows[id].slotIndex = slotIdx;
-    }
-
+    if (slotIdx >= 0) openWindows[id].slotIndex = slotIdx;
     focusWindow(id);
     return win;
 }
 
+/**
+ * 聚焦窗口
+ * @param {string} id - 窗口ID
+ */
 function focusWindow(id) {
-    if (!openWindows[id]) {
-        return;
-    }
-    if (activeWindowId === id) {
-        return;
-    }
-
+    if (!openWindows[id] || activeWindowId === id) return;
     activeWindowId = id;
-    var win = openWindows[id].el;
-    win.style.zIndex = ++windowZIndex;
-
-    // 取消所有窗口的聚焦状态
+    openWindows[id].el.style.zIndex = ++windowZIndex;
     Object.values(openWindows).forEach(function(w) {
         w.el.classList.remove('focused');
     });
-    win.classList.add('focused');
-
-    // 如果窗口被最小化，先还原
-    if (openWindows[id].minimized) {
-        restoreWindow(id);
-    }
-
+    openWindows[id].el.classList.add('focused');
+    if (openWindows[id].minimized) restoreWindow(id);
     updateTaskbarActive();
 }
 
+/**
+ * 最小化窗口
+ * @param {string} id - 窗口ID
+ */
 function minimizeWindow(id) {
-    if (!openWindows[id]) {
-        return;
-    }
-
+    if (!openWindows[id]) return;
     openWindows[id].el.style.display = 'none';
     openWindows[id].minimized = true;
-
-    if (activeWindowId === id) {
-        activeWindowId = null;
-    }
-
+    if (activeWindowId === id) activeWindowId = null;
     updateTaskbarActive();
 }
 
+/**
+ * 还原窗口
+ * @param {string} id - 窗口ID
+ */
 function restoreWindow(id) {
-    if (!openWindows[id]) {
-        return;
-    }
-
+    if (!openWindows[id]) return;
     openWindows[id].el.style.display = 'flex';
     openWindows[id].minimized = false;
     focusWindow(id);
 }
 
+/**
+ * 最大化/还原窗口
+ * @param {string} id - 窗口ID
+ */
 function toggleMaximize(id) {
-    if (!openWindows[id]) {
-        return;
-    }
-
+    if (!openWindows[id]) return;
     var w = openWindows[id];
-
     if (w.maximized) {
-        // 还原窗口
         w.el.classList.remove('maximized');
-        w.el.style.top = w.origY + 'px';
-        w.el.style.left = w.origX + 'px';
-        w.el.style.width = w.origW + 'px';
-        w.el.style.height = w.origH + 'px';
         w.maximized = false;
     } else {
-        // 最大化窗口
         w.el.classList.add('maximized');
         w.maximized = true;
     }
 }
 
+/**
+ * 关闭窗口
+ * @param {string} id - 窗口ID
+ */
 function closeWindow(id) {
-    if (!openWindows[id]) {
-        return;
-    }
-
-    // 释放任务栏槽位
+    if (!openWindows[id]) return;
     releaseTaskbarSlot(id);
-
     openWindows[id].el.remove();
     delete openWindows[id];
-
     if (activeWindowId === id) {
         activeWindowId = null;
         var keys = Object.keys(openWindows);
-        if (keys.length > 0) {
-            focusWindow(keys[keys.length - 1]);
-        }
+        if (keys.length > 0) focusWindow(keys[keys.length - 1]);
     }
 }
 
@@ -1994,28 +2058,32 @@ function closeWindow(id) {
 //  窗口标题栏右键菜单
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 显示标题栏右键菜单
+ * @param {Event} e - 事件对象
+ * @param {string} id - 窗口ID
+ */
 function titlebarContextMenu(e, id) {
     e.preventDefault();
     e.stopPropagation();
-
-    // 先关闭所有菜单
     hideAllContextMenus();
-
     _titlebarContextTarget = id;
-
     var menu = document.getElementById('titlebar-context-menu');
     menu.style.left = e.clientX + 'px';
     menu.style.top = e.clientY + 'px';
     menu.classList.add('open');
 }
 
+/**
+ * 处理标题栏右键菜单动作
+ * @param {string} action - 动作类型
+ */
 function titlebarContextAction(action) {
     var id = _titlebarContextTarget;
     if (!id || !openWindows[id]) {
         hideAllContextMenus();
         return;
     }
-
     switch (action) {
         case 'minimize':
             minimizeWindow(id);
@@ -2027,19 +2095,18 @@ function titlebarContextAction(action) {
             closeWindow(id);
             break;
         case 'restore':
-            if (openWindows[id].maximized) {
-                toggleMaximize(id);
-            }
+            if (openWindows[id].maximized) toggleMaximize(id);
             break;
         case 'move':
         case 'size':
-            // 由用户拖动窗口完成
             break;
     }
-
     hideAllContextMenus();
 }
 
+/**
+ * 隐藏所有右键菜单
+ */
 function hideAllContextMenus() {
     document.querySelectorAll('.context-menu.open').forEach(function(menu) {
         menu.classList.remove('open');
@@ -2052,11 +2119,13 @@ function hideAllContextMenus() {
 
 var dragInfo = null;
 
+/**
+ * 开始拖动窗口
+ * @param {Event} e - 事件对象
+ * @param {string} id - 窗口ID
+ */
 function startDrag(e, id) {
-    if (!openWindows[id] || openWindows[id].maximized) {
-        return;
-    }
-
+    if (!openWindows[id] || openWindows[id].maximized) return;
     var win = openWindows[id].el;
     dragInfo = {
         id: id,
@@ -2065,21 +2134,16 @@ function startDrag(e, id) {
         origLeft: win.offsetLeft,
         origTop: win.offsetTop
     };
-
     e.preventDefault();
 }
 
 document.addEventListener('pointermove', function(e) {
-    if (!dragInfo) {
-        return;
-    }
-
+    if (!dragInfo) return;
     var w = openWindows[dragInfo.id];
     if (!w) {
         dragInfo = null;
         return;
     }
-
     w.el.style.left = Math.max(-100, dragInfo.origLeft + e.clientX - dragInfo.startX) + 'px';
     w.el.style.top = Math.max(0, dragInfo.origTop + e.clientY - dragInfo.startY) + 'px';
 });
@@ -2092,6 +2156,9 @@ document.addEventListener('pointerup', function() {
 //  系统时钟
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 更新系统时钟显示
+ */
 function updateClock() {
     var now = new Date();
     var time = now.toLocaleTimeString('zh-CN', {
@@ -2114,6 +2181,9 @@ updateClock();
 //  开始菜单
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 切换开始菜单的打开/关闭状态
+ */
 function toggleStartMenu() {
     startMenuOpen = !startMenuOpen;
     document.getElementById('start-menu').classList.toggle('open', startMenuOpen);
@@ -2134,10 +2204,7 @@ document.addEventListener('click', function(e) {
 
 document.getElementById('desktop').addEventListener('contextmenu', function(e) {
     e.preventDefault();
-
-    // 先关闭所有菜单
     hideAllContextMenus();
-
     var menu = document.getElementById('desktop-context-menu');
     menu.style.left = e.clientX + 'px';
     menu.style.top = e.clientY + 'px';
@@ -2154,204 +2221,156 @@ document.addEventListener('click', function(e) {
 //  VS Code Web - 打开网页版 VS Code
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 打开VS Code网页版窗口
+ */
 function openVSCode() {
     var bodyHTML = '<iframe src="https://vscode.dev" ' +
         'allow="clipboard-read; clipboard-write" ' +
         'sandbox="allow-scripts allow-same-origin allow-forms allow-popups">' +
         '</iframe>';
-
     createWindow('vscode', 'VS Code Web', '💻', 900, 600, 60, 100, bodyHTML);
+}
+
+// ─────────────────────────────────────────────────────────────
+//  KD 应用 (Kernel Driver) 支持
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 打开KD应用
+ * @param {string} content - KD应用HTML内容
+ * @param {string} appName - 应用名称
+ */
+function openKDApp(content, appName) {
+    var id = 'kdapp_' + Date.now();
+    var title = appName || 'KD 应用';
+    var bodyHTML = '<iframe id="' + id + '_iframe" srcdoc="' + escapeHTML(content).replace(/"/g, '&quot;') + '" style="width:100%;height:100%;border:none;"></iframe>';
+    createWindow(id, title, '⚡', 600, 450, 120, 140, bodyHTML);
+}
+
+/**
+ * 从文件安装KD应用
+ * @param {string} path - KD文件路径
+ */
+function installKDAppFromFile(path) {
+    var content = VirtualFS.readFile(path);
+    if (content) {
+        var appName = path.replace('.kd', '');
+        VirtualFS.installKDApp(appName, content);
+        showToast('⚡ 已安装KD应用: ' + appName);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
 //  代码编辑器
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 打开代码编辑器窗口
+ * @param {string} filePath - 文件路径（可选）
+ */
 function openEditor(filePath) {
     var title = filePath ? '编辑: ' + filePath : '代码编辑器';
-    var content = filePath ?
-        (VirtualFS.readFile(filePath) || '') :
-        (VirtualFS.readFile('main.py') || '');
-
-    // 构建菜单栏
+    var content = filePath ? (VirtualFS.readFile(filePath) || '') : VirtualFS.readFile('main.py') || '';
     var menuBarHTML = '<div class="menu-bar">';
-
-    // 文件菜单
-    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">文件';
-    menuBarHTML += '  <div class="menu-dropdown">';
-    menuBarHTML += '    <div class="menu-dropdown-item" onclick="saveFile()">💾 保存 <span style="margin-left:auto;color:#888;font-size:10px;">Ctrl+S</span></div>';
-    menuBarHTML += '    <div class="menu-dropdown-item" onclick="saveFileAs()">📄 另存为...</div>';
-    menuBarHTML += '    <div class="menu-separator"></div>';
-    menuBarHTML += '    <div class="menu-dropdown-item" onclick="closeWindow(\'editor\')">✕ 关闭</div>';
-    menuBarHTML += '  </div>';
+    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">文件<div class="menu-dropdown"><div class="menu-dropdown-item" onclick="saveFile()">💾 保存 Ctrl+S</div><div class="menu-dropdown-item" onclick="saveFileAs()">📄 另存为...</div><div class="menu-separator"></div><div class="menu-dropdown-item" onclick="closeWindow(\'editor\')">✕ 关闭</div></div></div>';
+    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">编辑<div class="menu-dropdown"><div class="menu-dropdown-item" onclick="document.execCommand(\'undo\')">↩ 撤销</div><div class="menu-dropdown-item" onclick="document.execCommand(\'redo\')">↪ 重做</div></div></div>';
+    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">运行<div class="menu-dropdown"><div class="menu-dropdown-item" onclick="runEditorCode()">▶ 运行 F5</div><div class="menu-dropdown-item" onclick="checkPythonEnv()">🔍 检查 Python 环境</div></div></div>';
+    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">关于<div class="menu-dropdown"><div class="menu-dropdown-item" onclick="openAbout()">ℹ️ 关于 tkemu</div></div></div>';
     menuBarHTML += '</div>';
-
-    // 编辑菜单
-    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">编辑';
-    menuBarHTML += '  <div class="menu-dropdown">';
-    menuBarHTML += '    <div class="menu-dropdown-item" onclick="document.execCommand(\'undo\')">↩ 撤销</div>';
-    menuBarHTML += '    <div class="menu-dropdown-item" onclick="document.execCommand(\'redo\')">↪ 重做</div>';
-    menuBarHTML += '    <div class="menu-separator"></div>';
-    menuBarHTML += '    <div class="menu-dropdown-item" onclick="editorSelectAll()">📋 全选</div>';
-    menuBarHTML += '  </div>';
-    menuBarHTML += '</div>';
-
-    // 运行菜单
-    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">运行';
-    menuBarHTML += '  <div class="menu-dropdown">';
-    menuBarHTML += '    <div class="menu-dropdown-item" onclick="runEditorCode()">▶ 运行 <span style="margin-left:auto;color:#888;font-size:10px;">F5</span></div>';
-    menuBarHTML += '    <div class="menu-dropdown-item" onclick="checkPythonEnv()">🔍 检查 Python 环境</div>';
-    menuBarHTML += '  </div>';
-    menuBarHTML += '</div>';
-
-    // 关于菜单
-    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">关于';
-    menuBarHTML += '  <div class="menu-dropdown">';
-    menuBarHTML += '    <div class="menu-dropdown-item" onclick="openAbout()">ℹ️ 关于 tkemu</div>';
-    menuBarHTML += '  </div>';
-    menuBarHTML += '</div>';
-
-    menuBarHTML += '</div>';
-
-    // 编辑器区域
-    var editorHTML = '' +
-        '<div class="editor-area">' +
-        '  <textarea id="editor-input" spellcheck="false" placeholder="# 在此编写 Python 代码..."></textarea>' +
-        '</div>';
-
-    // 状态栏
-    var statusHTML = '' +
-        '<div class="editor-statusbar">' +
-        '  <span id="editor-status-file">' + (filePath || 'main.py') + '</span>' +
-        '  <span id="editor-status-ln">行: 1, 列: 1</span>' +
-        '  <span>Python</span>' +
-        '  <span>UTF-8</span>' +
-        '</div>';
-
-    var bodyHTML = menuBarHTML + editorHTML + statusHTML;
+    var bodyHTML = menuBarHTML + '<div class="editor-area"><textarea id="editor-input" spellcheck="false"></textarea></div><div class="editor-statusbar"><span id="editor-status-file">' + (filePath || 'main.py') + '</span><span id="editor-status-ln">行: 1, 列: 1</span><span>Python</span></div>';
     createWindow('editor', title, '📝', 750, 550, 80, 100, bodyHTML);
-
-    // 延迟设置编辑器内容和事件监听
     setTimeout(function() {
         var ta = document.getElementById('editor-input');
-        if (!ta) {
-            return;
-        }
-
+        if (!ta) return;
         ta.value = content;
         ta.dataset.filepath = filePath || 'main.py';
         ta.focus();
-
-        // 快捷键处理
         ta.addEventListener('keydown', function(e) {
-            // Ctrl+S 保存
             if (e.ctrlKey && e.key === 's') {
                 e.preventDefault();
                 saveFile();
             }
-            // F5 运行
             if (e.key === 'F5') {
                 e.preventDefault();
                 runEditorCode();
             }
         });
-
-        // 更新状态栏
         ta.addEventListener('input', updateEditorStatus);
-        ta.addEventListener('click', updateEditorStatus);
         ta.addEventListener('keyup', updateEditorStatus);
+        ta.addEventListener('click', updateEditorStatus);
         updateEditorStatus();
     }, 100);
 }
 
+/**
+ * 更新编辑器状态栏
+ */
 function updateEditorStatus() {
     var ta = document.getElementById('editor-input');
-    if (!ta) {
-        return;
-    }
-
-    var value = ta.value;
+    if (!ta) return;
+    var v = ta.value;
     var pos = ta.selectionStart;
-    var textBeforeCursor = value.substr(0, pos);
-    var lines = textBeforeCursor.split('\n');
-    var currentLine = lines.length;
-    var currentColumn = lines[lines.length - 1].length + 1;
-
-    var statusLn = document.getElementById('editor-status-ln');
-    if (statusLn) {
-        statusLn.textContent = '行: ' + currentLine + ', 列: ' + currentColumn;
-    }
-
-    var statusFile = document.getElementById('editor-status-file');
-    if (statusFile) {
-        statusFile.textContent = ta.dataset.filepath || 'main.py';
-    }
+    var lines = v.substr(0, pos).split('\n');
+    var ln = lines.length;
+    var cn = lines[lines.length - 1].length + 1;
+    var el = document.getElementById('editor-status-ln');
+    if (el) el.textContent = '行: ' + ln + ', 列: ' + cn;
+    var sf = document.getElementById('editor-status-file');
+    if (sf) sf.textContent = ta.dataset.filepath || 'main.py';
 }
 
+/**
+ * 保存当前编辑器中的文件
+ */
 function saveFile() {
     var ta = document.getElementById('editor-input');
-    if (!ta) {
-        return;
-    }
-
-    var path = ta.dataset.filepath || 'main.py';
-    VirtualFS.writeFile(path, ta.value);
-    showToast('✅ 已保存: ' + path);
+    if (!ta) return;
+    VirtualFS.writeFile(ta.dataset.filepath || 'main.py', ta.value);
+    showToast('已保存');
     refreshFiles();
 }
 
+/**
+ * 另存为
+ */
 function saveFileAs() {
     var ta = document.getElementById('editor-input');
-    if (!ta) {
-        return;
-    }
-
-    var newName = prompt('请输入文件名:', 'new_file.py');
-    if (newName) {
-        ta.dataset.filepath = newName;
+    if (!ta) return;
+    var n = prompt('文件名:', 'new.py');
+    if (n) {
+        ta.dataset.filepath = n;
         updateEditorStatus();
-        VirtualFS.writeFile(newName, ta.value);
-        showToast('✅ 已保存: ' + newName);
+        VirtualFS.writeFile(n, ta.value);
+        showToast('已保存');
         refreshFiles();
     }
 }
 
-function editorSelectAll() {
-    var ta = document.getElementById('editor-input');
-    if (ta) {
-        ta.select();
-    }
-}
-
+/**
+ * 菜单栏下拉切换
+ * @param {Event} e - 事件对象
+ * @param {HTMLElement} el - 菜单元素
+ */
 function toggleMenu(e, el) {
     e.stopPropagation();
-
-    var dropdown = el.querySelector('.menu-dropdown');
-    if (!dropdown) {
-        return;
-    }
-
-    // 关闭其他已打开的下拉菜单
+    var dd = el.querySelector('.menu-dropdown');
+    if (!dd) return;
     document.querySelectorAll('.menu-dropdown.open').forEach(function(d) {
-        if (d !== dropdown) {
+        if (d !== dd) {
             d.classList.remove('open');
-            if (d.parentElement) {
-                d.parentElement.classList.remove('open');
-            }
+            d.parentElement.classList.remove('open');
         }
     });
-
-    var isOpen = dropdown.classList.contains('open');
-    dropdown.classList.toggle('open', !isOpen);
+    var isOpen = dd.classList.contains('open');
+    dd.classList.toggle('open', !isOpen);
     el.classList.toggle('open', !isOpen);
 }
 
 document.addEventListener('click', function() {
     document.querySelectorAll('.menu-dropdown.open').forEach(function(d) {
         d.classList.remove('open');
-        if (d.parentElement) {
-            d.parentElement.classList.remove('open');
-        }
+        d.parentElement.classList.remove('open');
     });
 });
 
@@ -2359,23 +2378,12 @@ document.addEventListener('click', function() {
 //  Python Shell
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 打开Python Shell窗口
+ */
 function openShell() {
-    var bodyHTML = '' +
-        '<div class="shell-container">' +
-        '  <div class="shell-output" id="shell-output">' +
-        '    <div class="shell-info">🐍 tkemu Python Shell 就绪</div>' +
-        '    <div class="shell-info">   Pyodide ' + PYODIDE_VERSION + ' | 输入 Python 代码后按 Enter 执行</div>' +
-        '    <div class="shell-info">   输入 clear 清屏 | 上下箭头浏览历史</div>' +
-        '    <div class="shell-info">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>' +
-        '  </div>' +
-        '  <div class="shell-input-line">' +
-        '    <span class="prompt">&gt;&gt;&gt;&nbsp;</span>' +
-        '    <input type="text" id="shell-input" placeholder="输入 Python 代码..." autofocus>' +
-        '  </div>' +
-        '</div>';
-
+    var bodyHTML = '<div class="shell-container"><div class="shell-output" id="shell-output"><div class="shell-info">🐍 tkemu Python Shell 就绪</div></div><div class="shell-input-line"><span class="prompt">&gt;&gt;&gt;&nbsp;</span><input type="text" id="shell-input" placeholder="输入 Python 代码..." autofocus></div></div>';
     createWindow('shell', 'Python Shell', '⬛', 650, 450, 120, 140, bodyHTML);
-
     setTimeout(function() {
         var inp = document.getElementById('shell-input');
         if (inp) {
@@ -2385,30 +2393,26 @@ function openShell() {
     }, 200);
 }
 
+/**
+ * 处理Shell输入框的键盘事件
+ * @param {Event} e - 键盘事件
+ */
 function handleShellKey(e) {
-    // Enter 执行代码
     if (e.key === 'Enter') {
-        var code = e.target.value.trim();
-        if (!code) {
-            return;
-        }
-
-        shellHistory.push(code);
+        var c = e.target.value.trim();
+        if (!c) return;
+        shellHistory.push(c);
         shellHistoryIdx = shellHistory.length;
         e.target.value = '';
-        shellPrint('>>> ' + code, '');
-        executeShellCode(code);
-    }
-    // 上箭头浏览历史
-    else if (e.key === 'ArrowUp') {
+        shellPrint('>>> ' + c, '');
+        executeShellCode(c);
+    } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (shellHistoryIdx > 0) {
             shellHistoryIdx--;
             e.target.value = shellHistory[shellHistoryIdx];
         }
-    }
-    // 下箭头浏览历史
-    else if (e.key === 'ArrowDown') {
+    } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (shellHistoryIdx < shellHistory.length - 1) {
             shellHistoryIdx++;
@@ -2420,168 +2424,121 @@ function handleShellKey(e) {
     }
 }
 
+/**
+ * 向Shell输出区打印文字
+ * @param {string} text - 文字内容
+ * @param {string} className - CSS类名
+ */
 function shellPrint(text, className) {
-    var output = document.getElementById('shell-output');
-    if (!output) {
-        return;
-    }
-
-    var classAttr = className ? ' class="shell-' + className + '"' : '';
-    output.innerHTML += '<div' + classAttr + '>' + escapeHTML(text) + '</div>';
-    output.scrollTop = output.scrollHeight;
+    var o = document.getElementById('shell-output');
+    if (!o) return;
+    o.innerHTML += '<div class="shell-' + (className || '') + '">' + escapeHTML(text) + '</div>';
+    o.scrollTop = o.scrollHeight;
 }
 
 // ─────────────────────────────────────────────────────────────
 //  Python 环境检查与代码运行
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 确保Python环境已就绪
+ */
 async function ensurePythonReady() {
     if (!pyodideReady) {
         var ok = await checkPythonEnv();
-        if (!ok) {
-            throw new Error('Python 环境未就绪，请先安装');
-        }
+        if (!ok) throw new Error('Python 环境未就绪，请先在控制面板中安装');
     }
-
-    // 每次运行前重新注入 tkinter 模拟层
     injectTkinterEmulator();
 }
 
+/**
+ * 运行编辑器中的代码
+ */
 async function runEditorCode() {
     var ta = document.getElementById('editor-input');
-    if (!ta || !ta.value.trim()) {
-        showToast('⚠️ 请先输入代码');
-        return;
-    }
-
+    if (!ta || !ta.value.trim()) return;
     var filePath = ta.dataset.filepath || '';
-
-    // 如果是 .rf 文件，走 rf 脚本解释器
     if (filePath.endsWith('.rf')) {
         executeRFScript(ta.value);
         return;
     }
-
-    // 确保 Python 环境就绪
+    if (filePath.endsWith('.kd')) {
+        openKDApp(ta.value, filePath.replace('.kd', ''));
+        return;
+    }
     try {
         await ensurePythonReady();
     } catch (e) {
-        showToast('❌ ' + e.message);
+        showToast(e.message);
         return;
     }
-
-    // 打开 Shell 查看输出
-    if (!openWindows['shell']) {
-        openShell();
-    }
+    if (!openWindows['shell']) openShell();
     focusWindow('shell');
-    shellPrint('▶ 正在执行编辑器代码...', 'info');
-
-    // 重定向 Python 的 stdout 和 stderr 到 Shell
-    pyodide.runPython('' +
-        'import sys\n' +
-        'from js import shellPrint as _sp\n' +
-        'class _ShellWriter:\n' +
-        '    def write(self, s):\n' +
-        '        if s.strip():\n' +
-        '            _sp(s.rstrip(), "")\n' +
-        '    def flush(self):\n' +
-        '        pass\n' +
-        'sys.stdout = _ShellWriter()\n' +
-        'sys.stderr = _ShellWriter()\n'
-    );
-
-    // 执行用户代码
+    shellPrint('▶ 执行...', 'info');
+    pyodide.runPython("import sys\nfrom js import shellPrint as _sp\nclass _SW:\n def write(self,s):\n  if s.strip():_sp(s.rstrip(),'')\n def flush(self):pass\nsys.stdout=_SW();sys.stderr=_SW()");
     try {
         await pyodide.runPythonAsync(ta.value);
-        shellPrint('▶ 执行完毕', 'info');
+        shellPrint('▶ 完毕', 'info');
     } catch (e) {
-        shellPrint('❌ 错误: ' + e.message, 'error');
+        shellPrint('❌ ' + e.message, 'error');
     }
 }
 
+/**
+ * 在Shell中执行单行代码
+ * @param {string} code - Python代码
+ */
 async function executeShellCode(code) {
-    // 清屏命令
     if (code === 'clear') {
-        var output = document.getElementById('shell-output');
-        if (output) {
-            output.innerHTML = '';
-        }
+        var o = document.getElementById('shell-output');
+        if (o) o.innerHTML = '';
         return;
     }
-
-    // 确保 Python 环境就绪
     try {
         await ensurePythonReady();
     } catch (e) {
         shellPrint('❌ ' + e.message, 'error');
         return;
     }
-
-    // 重定向输出
-    pyodide.runPython('' +
-        'import sys\n' +
-        'from js import shellPrint as _sp\n' +
-        'class _ShellWriter:\n' +
-        '    def write(self, s):\n' +
-        '        if s.strip():\n' +
-        '            _sp(s.rstrip(), "")\n' +
-        '    def flush(self):\n' +
-        '        pass\n' +
-        'sys.stdout = _ShellWriter()\n' +
-        'sys.stderr = _ShellWriter()\n'
-    );
-
-    // 执行代码
+    pyodide.runPython("import sys\nfrom js import shellPrint as _sp\nclass _SW:\n def write(self,s):\n  if s.strip():_sp(s.rstrip(),'')\n def flush(self):pass\nsys.stdout=_SW();sys.stderr=_SW()");
     try {
-        var result = pyodide.runPython(code);
-        if (result !== undefined && result !== null) {
-            shellPrint(repr(result), 'result');
-        }
+        var r = pyodide.runPython(code);
+        if (r !== undefined && r !== null) shellPrint(repr(r), 'result');
     } catch (e) {
         shellPrint('❌ ' + e.message, 'error');
     }
 }
 
 // ─────────────────────────────────────────────────────────────
-//  rf 脚本解释器（Run File）
+//  rf 脚本解释器（Run File） - 增强版，支持Canvas和Draw
 // ─────────────────────────────────────────────────────────────
 
 var _rfWindowIdCounter = 0;
 
 /**
- * 执行 rf 脚本
- * @param {string} code - rf 脚本代码
+ * 执行rf脚本
+ * @param {string} code - rf脚本代码
  */
 function executeRFScript(code) {
     var lines = code.split('\n');
     var variables = {};
     var commands = [];
     var i = 0;
-
-    // 第一遍：解析脚本为命令列表
     while (i < lines.length) {
         var line = lines[i].trim();
-
-        // 跳过空行和注释
         if (!line || line.startsWith('//')) {
             i++;
             continue;
         }
-
         var parts = parseRFLine(line);
         if (!parts) {
             i++;
             continue;
         }
-
-        // 跳过 end 标记
         if (parts.cmd === 'end') {
             i++;
             continue;
         }
-
-        // 处理 button run 块
         if (parts.cmd === 'button' && parts.args.length >= 2 && parts.args[1] === 'run') {
             var blockLines = [];
             i++;
@@ -2593,8 +2550,6 @@ function executeRFScript(code) {
             }
             parts.block = blockLines;
         }
-
-        // 处理 if then 块
         if (parts.cmd === 'if') {
             var ifBlockLines = [];
             i++;
@@ -2611,23 +2566,32 @@ function executeRFScript(code) {
             }
             parts.ifBlock = ifBlockLines;
         }
-
+        if (parts.cmd === 'draw') {
+            var drawBlockLines = [];
+            i++;
+            while (i < lines.length) {
+                var drawLine = lines[i].trim();
+                if (drawLine === 'end') break;
+                drawBlockLines.push(drawLine);
+                i++;
+            }
+            parts.block = drawBlockLines;
+        }
         commands.push(parts);
         i++;
     }
-
-    // 第二遍：执行命令
     executeRFCommands(commands, variables, 0);
 }
 
 /**
- * 解析单行 rf 命令
+ * 解析单行rf命令
  * @param {string} line - 单行脚本
  * @returns {object|null} 解析后的命令对象
  */
 function parseRFLine(line) {
+    var m;
     // window "标题" 宽 高
-    var m = line.match(/^window\s+"([^"]*)"\s+(\d+)\s+(\d+)/);
+    m = line.match(/^window\s+"([^"]*)"\s+(\d+)\s+(\d+)/);
     if (m) return { cmd: 'window', args: [m[1], parseInt(m[2]), parseInt(m[3])] };
 
     // label "文字" [center/left]
@@ -2684,11 +2648,18 @@ function parseRFLine(line) {
     // menusep
     if (line === 'menusep') return { cmd: 'menusep', args: [] };
 
+    // canvas 宽 高
+    m = line.match(/^canvas\s+(\d+)\s+(\d+)/);
+    if (m) return { cmd: 'canvas', args: [parseInt(m[1]), parseInt(m[2])] };
+
+    // draw
+    if (line.trim() === 'draw') return { cmd: 'draw', args: [] };
+
     return null;
 }
 
 /**
- * 执行 rf 命令列表
+ * 执行rf命令列表
  * @param {Array} commands - 命令列表
  * @param {object} variables - 变量表
  * @param {number} startIdx - 起始索引
@@ -2697,13 +2668,10 @@ function executeRFCommands(commands, variables, startIdx) {
     var i = startIdx;
     var currentWindowId = null;
     var menuItems = [];
-
     while (i < commands.length) {
         var cmd = commands[i];
-
         switch (cmd.cmd) {
             case 'window':
-                // 创建 rf 窗口
                 _rfWindowIdCounter++;
                 currentWindowId = 'rfwin_' + _rfWindowIdCounter;
                 var wTitle = cmd.args[0];
@@ -2713,14 +2681,10 @@ function executeRFCommands(commands, variables, startIdx) {
                 createWindow(currentWindowId, wTitle, '📜', wW, wH, 100, 120, placeholder);
                 menuItems = [];
                 break;
-
             case 'menu':
-                // 添加菜单
                 menuItems.push({ type: 'menu', label: cmd.args[0], items: [] });
                 break;
-
             case 'menuitem':
-                // 添加菜单项
                 if (menuItems.length > 0 && menuItems[menuItems.length - 1].type === 'menu') {
                     menuItems[menuItems.length - 1].items.push({
                         label: cmd.args[0],
@@ -2729,37 +2693,29 @@ function executeRFCommands(commands, variables, startIdx) {
                     });
                 }
                 break;
-
             case 'menusep':
-                // 添加菜单分隔线
                 if (menuItems.length > 0 && menuItems[menuItems.length - 1].type === 'menu') {
                     menuItems[menuItems.length - 1].items.push({ separator: true });
                 }
                 break;
-
             case 'label':
-                // 添加标签
-                if (currentWindowId) {
-                    appendRFWidget(currentWindowId, 'label', cmd.args);
-                }
+                if (currentWindowId) appendRFWidget(currentWindowId, 'label', cmd.args);
                 break;
-
             case 'button':
-                // 添加按钮
-                if (currentWindowId) {
-                    appendRFWidget(currentWindowId, 'button', cmd.args, cmd.block, commands, variables);
-                }
+                if (currentWindowId) appendRFWidget(currentWindowId, 'button', cmd.args, cmd.block, commands, variables);
                 break;
-
+            case 'canvas':
+                if (currentWindowId) appendRFWidget(currentWindowId, 'canvas', cmd.args);
+                break;
+            case 'draw':
+                if (currentWindowId) appendRFWidget(currentWindowId, 'draw', [], cmd.block);
+                break;
             case 'print':
-                // 输出到 Shell
                 if (!openWindows['shell']) openShell();
                 focusWindow('shell');
                 shellPrint(cmd.args[0], '');
                 break;
-
             case 'python':
-                // 执行 Python 代码
                 if (pyodideReady) {
                     try {
                         pyodide.runPython(cmd.args[0]);
@@ -2768,73 +2724,57 @@ function executeRFCommands(commands, variables, startIdx) {
                     }
                 }
                 break;
-
             case 'msg':
-                // 弹出消息框
                 tkMsgBox('info', cmd.args[0], cmd.args[1]);
                 break;
-
             case 'ask':
-                // 弹出询问框
                 tkMsgBox('yesno', cmd.args[0], cmd.args[1]).then(function(r) {
                     variables[cmd.args[2]] = r ? 'yes' : 'no';
                 });
                 break;
-
             case 'input':
-                // 弹出输入框
                 var inpVal = prompt(cmd.args[0], '');
-                if (inpVal !== null) {
-                    variables[cmd.args[1]] = inpVal;
-                }
+                if (inpVal !== null) variables[cmd.args[1]] = inpVal;
                 break;
-
             case 'set':
-                // 设置变量
                 variables[cmd.args[0]] = cmd.args[1];
                 break;
-
             case 'close':
-                // 关闭窗口
                 if (currentWindowId) closeWindow(currentWindowId);
                 return;
-
             case 'wait':
-                // 同步等待
                 var start = Date.now();
-                while (Date.now() - start < cmd.args[0]) {
-                    // 空循环等待
-                }
+                while (Date.now() - start < cmd.args[0]) {}
                 break;
-
             case 'if':
-                // 条件判断
                 var varVal = variables[cmd.args[0]] || '';
                 if (varVal === cmd.args[1] && cmd.ifBlock) {
-                    var subCommands = cmd.ifBlock
-                        .map(function(l) { return parseRFLine(l); })
-                        .filter(Boolean);
+                    var subCommands = cmd.ifBlock.map(function(l) {
+                        return parseRFLine(l);
+                    }).filter(Boolean);
                     executeRFCommands(subCommands, variables, 0);
                 }
                 break;
         }
-
         i++;
     }
-
-    // 渲染菜单栏
     if (currentWindowId && menuItems.length > 0) {
-        renderRFMenu(currentWindowId, menuItems, commands, variables);
+        renderRFMenu(currentWindowId, menuItems);
     }
 }
 
 /**
- * 向 rf 窗口添加控件
+ * 向rf窗口添加控件
+ * @param {string} winId - 窗口ID
+ * @param {string} type - 控件类型
+ * @param {Array} args - 参数
+ * @param {Array} block - 代码块（可选）
+ * @param {Array} commands - 命令列表
+ * @param {object} variables - 变量表
  */
 function appendRFWidget(winId, type, args, block, commands, variables) {
     var body = document.getElementById('rf-body-' + winId);
     if (!body) return;
-
     if (type === 'label') {
         var text = args[0];
         var align = args[1] || 'left';
@@ -2847,43 +2787,59 @@ function appendRFWidget(winId, type, args, block, commands, variables) {
         var action = args[1];
         var el = document.createElement('button');
         el.textContent = btnText;
-
         if (action === 'close') {
             el.onclick = function() {
                 closeWindow(winId);
             };
         } else if (action === 'run' && block) {
             el.onclick = function() {
-                var blockCommands = block
-                    .map(function(l) { return parseRFLine(l); })
-                    .filter(Boolean);
+                var blockCommands = block.map(function(l) {
+                    return parseRFLine(l);
+                }).filter(Boolean);
                 executeRFCommands(blockCommands, variables, 0);
             };
         }
-
         body.appendChild(el);
+    } else if (type === 'canvas') {
+        var width = args[0];
+        var height = args[1];
+        var canvas = document.createElement('canvas');
+        canvas.id = 'rf-canvas';
+        canvas.width = width;
+        canvas.height = height;
+        canvas.style.border = '1px solid #999';
+        canvas.style.background = '#fff';
+        canvas.style.alignSelf = 'center';
+        body.appendChild(canvas);
+    } else if (type === 'draw' && block) {
+        var scriptContent = block.join('\n');
+        setTimeout(function() {
+            try {
+                (new Function(scriptContent))();
+            } catch (e) {
+                shellPrint('RF Draw Error: ' + e.message, 'error');
+            }
+        }, 100);
     }
 }
 
 /**
- * 渲染 rf 窗口的菜单栏
+ * 渲染rf窗口的菜单栏
+ * @param {string} winId - 窗口ID
+ * @param {Array} menuItems - 菜单项列表
  */
-function renderRFMenu(winId, menuItems, commands, variables) {
+function renderRFMenu(winId, menuItems) {
     var body = document.getElementById('rf-body-' + winId);
     if (!body) return;
-
     var menuBar = document.createElement('div');
     menuBar.className = 'rf-menu-bar';
-
     menuItems.forEach(function(m) {
         if (m.type === 'menu') {
             var menuEl = document.createElement('div');
             menuEl.className = 'rf-menu-item';
             menuEl.textContent = m.label;
-
             var dropdown = document.createElement('div');
             dropdown.className = 'rf-menu-dropdown';
-
             m.items.forEach(function(item) {
                 if (item.separator) {
                     var sep = document.createElement('div');
@@ -2893,33 +2849,23 @@ function renderRFMenu(winId, menuItems, commands, variables) {
                     var itemEl = document.createElement('div');
                     itemEl.className = 'rf-menu-dropdown-item';
                     itemEl.textContent = item.label;
-
                     itemEl.onclick = function() {
                         dropdown.classList.remove('open');
-
-                        if (item.action === 'close') {
-                            closeWindow(winId);
-                        } else if (item.action === 'print') {
-                            shellPrint(item.arg, '');
-                        } else if (item.action === 'msg') {
-                            tkMsgBox('info', item.label, item.arg);
-                        }
+                        if (item.action === 'close') closeWindow(winId);
+                        else if (item.action === 'print') shellPrint(item.arg, '');
+                        else if (item.action === 'msg') tkMsgBox('info', item.label, item.arg);
                     };
-
                     dropdown.appendChild(itemEl);
                 }
             });
-
             menuEl.onclick = function(e) {
                 e.stopPropagation();
                 dropdown.classList.toggle('open');
             };
-
             menuEl.appendChild(dropdown);
             menuBar.appendChild(menuEl);
         }
     });
-
     body.insertBefore(menuBar, body.firstChild);
 }
 
@@ -2927,88 +2873,87 @@ function renderRFMenu(winId, menuItems, commands, variables) {
 //  文件管理器
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 打开文件管理器窗口
+ */
 function openFiles() {
     var files = VirtualFS.listFiles();
     var names = Object.keys(files).sort();
-
-    var html = '';
-
-    // 工具栏
-    html += '<div class="file-manager-toolbar">';
-    html += '  <button onclick="newFileDialog()" title="新建一个文件">📄 新建文件</button>';
-    html += '  <button onclick="newFolderDialog()" title="新建一个文件夹">📁 新建文件夹</button>';
-    html += '  <button onclick="newRFFileDialog()" title="新建 rf 脚本文件">📜 新建rf脚本</button>';
-    html += '  <button onclick="closeWindow(\'files\'); openFiles();" title="刷新文件列表">🔄 刷新</button>';
-    html += '</div>';
-
-    // 文件列表
-    html += '<div class="file-list">';
+    var html = '<div class="file-manager-toolbar"><button onclick="newFileDialog()">📄 新建文件</button><button onclick="newFolderDialog()">📁 新建文件夹</button><button onclick="newRFFileDialog()">📜 新建rf脚本</button><button onclick="newKDFileDialog()">⚡ 新建KD文件</button><button onclick="closeWindow(\'files\');openFiles()">🔄 刷新</button></div><div class="file-list">';
     if (names.length === 0) {
-        html += '<div style="padding:30px;color:#888;text-align:center;">📂 文件夹为空<br><span style="font-size:11px;">点击"新建文件"开始</span></div>';
+        html += '<div style="padding:30px;color:#888;text-align:center">文件夹为空</div>';
     } else {
-        names.forEach(function(name) {
-            var isPy = name.endsWith('.py');
-            var isRf = name.endsWith('.rf');
-            var isFolder = name.indexOf('/') > -1;
-            var icon = isFolder ? '📁' : (isPy ? '📄' : (isRf ? '📜' : '📃'));
-
-            html += '<div class="file-item" ondblclick="openFileByType(\'' + escapeAttr(name) + '\')" title="双击打开">';
-            html += '  <span class="fi-icon">' + icon + '</span>';
-            html += '  <span style="flex:1">' + escapeHTML(name) + '</span>';
-            html += '  <button onclick="event.stopPropagation(); permanentlyHideFile(\'' + escapeAttr(name) + '\')" style="background:none;border:none;cursor:pointer;font-size:14px;" title="永久删除（数据保留，不再显示）">🗑</button>';
+        names.forEach(function(n) {
+            var isPy = n.endsWith('.py');
+            var isRf = n.endsWith('.rf');
+            var isKd = n.endsWith('.kd');
+            var isFolder = n.indexOf('/') > -1;
+            var icon = isFolder ? '📁' : (isPy ? '📄' : (isRf ? '📜' : (isKd ? '⚡' : '📃')));
+            html += '<div class="file-item" ondblclick="openFileByType(\'' + escapeAttr(n) + '\')"><span class="fi-icon">' + icon + '</span><span style="flex:1">' + escapeHTML(n) + '</span><button onclick="event.stopPropagation();permanentlyHideFile(\'' + escapeAttr(n) + '\')" style="background:none;border:none;cursor:pointer;font-size:14px" title="永久删除">🗑</button>';
+            if (isKd) html += '<button onclick="event.stopPropagation();installKDAppFromFile(\'' + escapeAttr(n) + '\')" style="background:none;border:none;cursor:pointer;font-size:14px" title="安装KD应用">📥</button>';
             html += '</div>';
         });
     }
     html += '</div>';
-
     createWindow('files', '文件管理', '📁', 550, 450, 100, 120, html);
 }
 
+/**
+ * 新建文件对话框
+ */
 function newFileDialog() {
-    var name = prompt('请输入文件名:', 'new_file.py');
-    if (name && name.trim()) {
-        name = name.trim();
-        if (name.indexOf('.') === -1) {
-            name += '.txt';
-        }
-        VirtualFS.writeFile(name, '');
+    var n = prompt('文件名:', 'new.py');
+    if (n && n.trim()) {
+        n = n.trim();
+        if (n.indexOf('.') === -1) n += '.txt';
+        VirtualFS.writeFile(n, '');
         closeWindow('files');
         openFiles();
-        showToast('✅ 已创建: ' + name);
+        showToast('已创建: ' + n);
     }
 }
 
+/**
+ * 新建文件夹对话框
+ */
 function newFolderDialog() {
-    var name = prompt('请输入文件夹名:', '新建文件夹');
-    if (name && name.trim()) {
-        name = name.trim();
-        var placeholder = name + '/.placeholder';
-        VirtualFS.writeFile(placeholder, '');
+    var n = prompt('文件夹名:', '新建文件夹');
+    if (n && n.trim()) {
+        n = n.trim();
+        VirtualFS.writeFile(n + '/.placeholder', '');
         closeWindow('files');
         openFiles();
-        showToast('✅ 已创建文件夹: ' + name);
+        showToast('已创建文件夹: ' + n);
     }
 }
 
+/**
+ * 新建rf脚本文件对话框
+ */
 function newRFFileDialog() {
-    var name = prompt('请输入rf脚本文件名:', 'script.rf');
-    if (name && name.trim()) {
-        name = name.trim();
-        if (!name.endsWith('.rf')) {
-            name += '.rf';
-        }
-        var defaultRF = '' +
-            '// rf 脚本示例\n' +
-            'window "我的应用" 400 300\n' +
-            'label "Hello RF!" center\n' +
-            'button "点击我" run\n' +
-            '  print "按钮被点击了!"\n' +
-            'end\n' +
-            'button "关闭" close\n';
-        VirtualFS.writeFile(name, defaultRF);
+    var n = prompt('rf脚本文件名:', 'script.rf');
+    if (n && n.trim()) {
+        n = n.trim();
+        if (!n.endsWith('.rf')) n += '.rf';
+        VirtualFS.writeFile(n, '// rf 脚本\nwindow "我的应用" 400 300\nlabel "Hello RF!" center\nbutton "关闭" close\n');
         closeWindow('files');
         openFiles();
-        showToast('✅ 已创建: ' + name);
+        showToast('已创建: ' + n);
+    }
+}
+
+/**
+ * 新建KD文件对话框
+ */
+function newKDFileDialog() {
+    var n = prompt('KD文件名:', 'app.kd');
+    if (n && n.trim()) {
+        n = n.trim();
+        if (!n.endsWith('.kd')) n += '.kd';
+        VirtualFS.writeFile(n, '<h1>新KD应用</h1><p>内容在此编辑</p>');
+        closeWindow('files');
+        openFiles();
+        showToast('已创建: ' + n);
     }
 }
 
@@ -3020,26 +2965,29 @@ function permanentlyHideFile(path) {
     VirtualFS.hideFile(path);
     closeWindow('files');
     openFiles();
-    showToast('🗑 已永久删除（数据保留）: ' + path);
+    showToast('已永久删除（数据保留）: ' + path);
 }
 
+/**
+ * 根据文件类型打开文件
+ * @param {string} path - 文件路径
+ */
 function openFileByType(path) {
-    var parts = path.split('.');
-    var ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
-
-    var textTypes = [
-        'py', 'rf', 'txt', 'md', 'json', 'ini', 'cfg',
-        'yml', 'yaml', 'html', 'css', 'js',
-        'xml', 'csv', 'log', 'bat', 'sh', 'pyw'
-    ];
-
-    if (textTypes.indexOf(ext) !== -1) {
+    var ext = path.split('.').pop().toLowerCase();
+    if (ext === 'kd') {
+        openKDApp(VirtualFS.readFile(path), path.replace('.kd', ''));
+        return;
+    }
+    if (['py', 'rf', 'txt', 'md', 'json', 'ini', 'cfg', 'yml', 'yaml', 'html', 'css', 'js', 'xml', 'csv', 'log'].indexOf(ext) !== -1) {
         openEditor(path);
     } else {
-        showToast('⚠️ 不支持的文件类型: .' + ext);
+        showToast('不支持此文件类型: .' + ext);
     }
 }
 
+/**
+ * 刷新文件管理器
+ */
 function refreshFiles() {
     if (openWindows['files']) {
         closeWindow('files');
@@ -3048,9 +2996,162 @@ function refreshFiles() {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  控制面板
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 打开控制面板窗口
+ */
+function openControlPanel() {
+    var tabs = [
+        { name: '系统', id: 'panel-tab-system' },
+        { name: '关于', id: 'panel-tab-about' },
+        { name: '设置', id: 'panel-tab-settings' }
+    ];
+    var tabButtons = '';
+    for (var ti = 0; ti < tabs.length; ti++) {
+        var t = tabs[ti];
+        var isActive = ti === 0;
+        tabButtons += '<button class="taskbar-btn" style="color:#1a1a1a; background: ' + (isActive ? '#fff' : '#d0d0d0') + '; border-bottom: 2px solid ' + (isActive ? 'var(--win-accent)' : 'transparent') + ';" onclick="switchControlPanelTab(\'' + t.id + '\')">' + t.name + '</button>';
+    }
+    var pythonStatus = pyodideReady ? '✅ 已安装 (Pyodide ' + PYODIDE_VERSION + ')' : '❌ 未安装';
+    var storageUsed = (new Blob([localStorage.getItem(VirtualFS._key) || '']).size / 1024).toFixed(1);
+    var bodyHTML = '' +
+        '<div style="display:flex;flex-direction:column;height:100%;">' +
+        '  <div style="display:flex;gap:4px;padding:8px;background:#d0d0d0;border-bottom:1px solid #999;flex-shrink:0;">' + tabButtons + '</div>' +
+        '  <div style="flex:1;overflow:auto;">' +
+        '    <div id="panel-tab-system" class="control-panel-content" style="display:block;">' +
+        '      <h3>系统信息</h3>' +
+        '      <div class="setting-item"><label>系统版本:</label><span>' + APP_VERSION + '</span></div>' +
+        '      <div class="setting-item"><label>Python环境:</label><span id="cp-python-status">' + pythonStatus + '</span></div>' +
+        '      <div class="setting-item"><label>存储使用:</label><span>约 ' + storageUsed + ' KB</span></div>' +
+        '      <div class="setting-item" id="cp-install-area">' +
+        '        <button id="cp-install-btn" onclick="installPythonFromCP()">' + (pyodideReady ? '重新安装' : '安装') + ' Pyodide 环境</button>' +
+        '        <div id="cp-install-log" class="install-log" style="display:none; margin-top:10px;"></div>' +
+        '        <div id="cp-install-progress" class="install-progress-bar" style="display:none; margin-top:5px;"><div class="install-progress-fill" id="cp-progress-fill"></div></div>' +
+        '        <div id="cp-install-stats" class="install-stats" style="display:none;"><span id="cp-percent">0%</span><span id="cp-speed">--</span><span id="cp-size">0 / 0 MB</span></div>' +
+        '      </div>' +
+        '    </div>' +
+        '    <div id="panel-tab-about" class="control-panel-content" style="display:none;">' +
+        '      <div class="about-content" style="background:transparent;color:#1a1a1a;">' +
+        '        <div class="about-logo" style="color:#0078D4;">🖥️</div>' +
+        '        <h2 style="color:#1a1a1a;">' + APP_FULL_NAME + '</h2>' +
+        '        <div class="about-ver" style="color:#666;">版本 ' + APP_VERSION + ' (Build 2026.0806)</div>' +
+        '        <div class="about-divider" style="background:#ccc;"></div>' +
+        '        <div class="about-info" style="color:#333;">' +
+        '          <div class="info-row"><span class="info-label" style="color:#666;">🌐 应用程序版本</span><span class="info-value" style="color:#1a1a1a;">' + APP_VERSION + '</span></div>' +
+        '          <div class="info-row"><span class="info-label" style="color:#666;">🐍 Python 运行时</span><span class="info-value" style="color:#1a1a1a;">Pyodide ' + PYODIDE_VERSION + '</span></div>' +
+        '          <div class="info-row"><span class="info-label" style="color:#666;">📜 rf 脚本引擎</span><span class="info-value" style="color:#1a1a1a;">v2.0 (支持Canvas)</span></div>' +
+        '          <div class="info-row"><span class="info-label" style="color:#666;">⚡ KD 内核驱动</span><span class="info-value" style="color:#1a1a1a;">v1.0</span></div>' +
+        '          <div class="info-row"><span class="info-label" style="color:#666;">🕐 运行时间</span><span class="info-value" style="color:#1a1a1a;" id="cp-uptime">计算中...</span></div>' +
+        '        </div>' +
+        '        <div class="about-divider" style="background:#ccc;"></div>' +
+        '        <div class="about-footer" style="color:#666;">© 2026 ' + APP_COPYRIGHT + '<br>MIT License</div>' +
+        '      </div>' +
+        '    </div>' +
+        '    <div id="panel-tab-settings" class="control-panel-content" style="display:none;">' +
+        '      <h3>系统设置</h3>' +
+        '      <div class="setting-item"><button onclick="restartSystem()">🔄 重启系统</button></div>' +
+        '      <div class="setting-item"><button onclick="if(confirm(\'确定要重置所有数据吗？\')){localStorage.clear();location.reload();}">⚠️ 重置所有数据</button></div>' +
+        '    </div>' +
+        '  </div>' +
+        '</div>';
+    createWindow('controlpanel', '控制面板', '⚙️', 550, 480, 100, 130, bodyHTML);
+    setTimeout(function() {
+        var st = Date.now();
+        var uptimeEl = document.getElementById('cp-uptime');
+        if (uptimeEl) {
+            setInterval(function() {
+                var s = Math.floor((Date.now() - st) / 1000);
+                uptimeEl.textContent = Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒';
+            }, 1000);
+        }
+    }, 100);
+}
+
+/**
+ * 切换控制面板选项卡
+ * @param {string} tabId - 选项卡ID
+ */
+function switchControlPanelTab(tabId) {
+    var tabIds = ['panel-tab-system', 'panel-tab-about', 'panel-tab-settings'];
+    for (var i = 0; i < tabIds.length; i++) {
+        var el = document.getElementById(tabIds[i]);
+        if (el) {
+            el.style.display = (tabIds[i] === tabId) ? 'block' : 'none';
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  从控制面板安装Pyodide（窗口内显示进度）
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 从控制面板安装Python环境
+ */
+function installPythonFromCP() {
+    var logEl = document.getElementById('cp-install-log');
+    var progressBar = document.getElementById('cp-install-progress');
+    var statsEl = document.getElementById('cp-install-stats');
+    var fill = document.getElementById('cp-progress-fill');
+    var percentEl = document.getElementById('cp-percent');
+    var speedEl = document.getElementById('cp-speed');
+    var sizeEl = document.getElementById('cp-size');
+    var btn = document.getElementById('cp-install-btn');
+    var statusEl = document.getElementById('cp-python-status');
+    if (!logEl || !progressBar || !statsEl) return;
+    logEl.style.display = 'block';
+    progressBar.style.display = 'block';
+    statsEl.style.display = 'flex';
+    logEl.innerHTML = '<div>🔄 开始下载 Pyodide...</div>';
+    btn.disabled = true;
+    var lastBytes = 0;
+    var lastTime = Date.now();
+
+    function log(msg) {
+        logEl.innerHTML += '<div>[' + new Date().toLocaleTimeString() + '] ' + msg + '</div>';
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+    loadPyodide({
+        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/',
+        onprogress: function(e) {
+            if (e && e.total) {
+                var pct = Math.round(e.loaded / e.total * 100);
+                var now = Date.now();
+                var speed = (e.loaded - lastBytes) / ((now - lastTime) / 1000);
+                var speedStr = speed > 1048576 ? (speed / 1048576).toFixed(2) + ' MB/s' : (speed / 1024).toFixed(1) + ' KB/s';
+                fill.style.width = pct + '%';
+                percentEl.textContent = pct + '%';
+                speedEl.textContent = speedStr;
+                sizeEl.textContent = (e.loaded / 1048576).toFixed(1) + ' / ' + (e.total / 1048576).toFixed(1) + ' MB';
+                lastBytes = e.loaded;
+                lastTime = now;
+                if (pct % 15 === 0) log('📥 ' + pct + '%');
+            }
+        }
+    }).then(function(result) {
+        pyodide = result;
+        injectTkinterEmulator();
+        pyodideReady = true;
+        log('✅ 安装完成！');
+        btn.disabled = false;
+        btn.textContent = '重新安装 Pyodide 环境';
+        if (statusEl) statusEl.textContent = '✅ 已安装 (Pyodide ' + PYODIDE_VERSION + ')';
+        showToast('🎉 Python 环境已就绪！');
+    }).catch(function(err) {
+        log('❌ 失败: ' + err.message);
+        btn.disabled = false;
+    });
+}
+
+// ─────────────────────────────────────────────────────────────
 //  关于系统窗口
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 打开关于系统窗口
+ */
 function openAbout() {
     // 获取 Python 版本信息
     var pythonVersion = '未安装';
@@ -3089,8 +3190,9 @@ function openAbout() {
         '    <div class="info-row"><span class="info-label">🌐 应用程序版本</span><span class="info-value">' + APP_VERSION + '</span></div>' +
         '    <div class="info-row"><span class="info-label">🐍 Python 运行时</span><span class="info-value">Pyodide ' + PYODIDE_VERSION + '</span></div>' +
         '    <div class="info-row"><span class="info-label">📦 Python 版本</span><span class="info-value">' + escapeHTML(pythonVersion) + '</span></div>' +
-        '    <div class="info-row"><span class="info-label">📜 rf 脚本引擎</span><span class="info-value">v1.0</span></div>' +
+        '    <div class="info-row"><span class="info-label">📜 rf 脚本引擎</span><span class="info-value">v2.0</span></div>' +
         '    <div class="info-row"><span class="info-label">💻 VS Code Web</span><span class="info-value">vscode.dev</span></div>' +
+        '    <div class="info-row"><span class="info-label">⚡ KD 内核驱动</span><span class="info-value">v1.0</span></div>' +
         '    <div class="info-row"><span class="info-label">🖥️ 浏览器</span><span class="info-value">' + browserName + '</span></div>' +
         '    <div class="info-row"><span class="info-label">💻 平台</span><span class="info-value">' + platformName + '</span></div>' +
         '    <div class="info-row"><span class="info-label">🌍 语言</span><span class="info-value">' + language + '</span></div>' +
@@ -3124,727 +3226,600 @@ function openAbout() {
     }, 100);
 }
 
-// ─────────────────────────────────────────────────────────────
-//  重启系统（关闭所有窗口，保留文件）
-// ─────────────────────────────────────────────────────────────
-
+/**
+ * 重启系统（关闭所有窗口，保留文件）
+ */
 function restartSystem() {
     var ids = Object.keys(openWindows);
-    ids.forEach(function(id) {
-        closeWindow(id);
-    });
-
+    for (var i = 0; i < ids.length; i++) {
+        closeWindow(ids[i]);
+    }
     _nextWindowX = 80;
     _nextWindowY = 60;
-
-    showToast('🔄 系统已重启（文件已保留）');
+    showToast('系统已重启');
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Python 环境检测与安装
-// ─────────────────────────────────────────────────────────────
-
+/**
+ * 检查Python环境
+ * @returns {Promise<boolean>} 是否就绪
+ */
 async function checkPythonEnv() {
-    if (pyodideReady) {
-        return true;
-    }
-
+    if (pyodideReady) return true;
     return new Promise(function(resolve) {
-        showInstallDialog(resolve);
-    });
-}
-
-function showInstallDialog(onComplete) {
-    // 移除旧弹窗
-    var oldOverlay = document.querySelector('.install-overlay');
-    if (oldOverlay) {
-        oldOverlay.remove();
-    }
-
-    // 创建安装弹窗
-    var overlay = document.createElement('div');
-    overlay.className = 'install-overlay';
-
-    overlay.innerHTML = '' +
-        '<div class="install-dialog">' +
-        '  <div class="install-icon">🐍</div>' +
-        '  <h3>Python 环境安装</h3>' +
-        '  <p style="color:#aaa;font-size:13px;">检测到 Python 环境未安装</p>' +
-        '  <p style="color:#888;font-size:12px;">Pyodide ' + PYODIDE_VERSION + ' | 预计大小: 10-15 MB</p>' +
-        '  <p style="color:#888;font-size:11px;">正在从 CDN 下载所需文件...</p>' +
-        '  <div class="install-progress-bar">' +
-        '    <div class="install-progress-fill" id="install-progress-fill"></div>' +
-        '  </div>' +
-        '  <div class="install-stats">' +
-        '    <span id="install-percent">0%</span>' +
-        '    <span id="install-speed">--</span>' +
-        '    <span id="install-size">0 / 0 MB</span>' +
-        '  </div>' +
-        '  <div class="install-log" id="install-log">' +
-        '    <div>🔄 开始下载...</div>' +
-        '  </div>' +
-        '  <button class="install-btn" id="install-btn" disabled>安装中...</button>' +
-        '</div>';
-
-    document.body.appendChild(overlay);
-
-    // 获取 UI 元素引用
-    var progressFill = overlay.querySelector('#install-progress-fill');
-    var percentEl = overlay.querySelector('#install-percent');
-    var speedEl = overlay.querySelector('#install-speed');
-    var sizeEl = overlay.querySelector('#install-size');
-    var logEl = overlay.querySelector('#install-log');
-    var btn = overlay.querySelector('#install-btn');
-
-    // 下载统计
-    var lastBytes = 0;
-    var lastTime = Date.now();
-    var startTime = Date.now();
-
-    // 日志输出函数
-    function log(msg) {
-        var time = new Date().toLocaleTimeString();
-        logEl.innerHTML += '<div>[' + time + '] ' + msg + '</div>';
-        logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    log('正在连接 Pyodide CDN...');
-    log('URL: cdn.jsdelivr.net/pyodide/v' + PYODIDE_VERSION + '/full/');
-
-    // 开始加载 Pyodide
-    loadPyodide({
-        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/',
-        onprogress: function(e) {
-            if (e && e.total) {
-                // 计算百分比
-                var pct = Math.round(e.loaded / e.total * 100);
-
-                // 计算下载速度
-                var now = Date.now();
-                var timeDiff = (now - lastTime) / 1000;
-                var bytesDiff = e.loaded - lastBytes;
-                var speed = bytesDiff / timeDiff;
-
-                // 格式化速度
-                var speedStr;
-                if (speed > 1048576) {
-                    speedStr = (speed / 1048576).toFixed(2) + ' MB/s';
-                } else if (speed > 1024) {
-                    speedStr = (speed / 1024).toFixed(1) + ' KB/s';
-                } else {
-                    speedStr = Math.round(speed) + ' B/s';
-                }
-
-                // 更新 UI
-                progressFill.style.width = pct + '%';
-                percentEl.textContent = pct + '%';
-                speedEl.textContent = speedStr;
-                sizeEl.textContent =
-                    (e.loaded / 1048576).toFixed(1) + ' / ' +
-                    (e.total / 1048576).toFixed(1) + ' MB';
-
-                lastBytes = e.loaded;
-                lastTime = now;
-
-                // 每 15% 记录一次日志
-                if (pct % 15 === 0 && pct > 0 && pct < 100) {
-                    log('📥 下载进度: ' + pct + '% (' +
-                        (e.loaded / 1048576).toFixed(1) + ' MB) - ' + speedStr);
-                }
-            }
+        if (confirm('Python 环境未安装。是否现在打开控制面板进行安装？')) {
+            openControlPanel();
         }
-    }).then(function(result) {
-        // 下载成功
-        pyodide = result;
-        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        log('✅ 下载完成，耗时 ' + elapsed + ' 秒');
-        log('🔄 正在初始化 Python 解释器...');
-
-        // 注入 tkinter 模拟层
-        injectTkinterEmulator();
-        pyodideReady = true;
-
-        // 更新 UI
-        progressFill.style.width = '100%';
-        percentEl.textContent = '100%';
-        btn.textContent = '✅ 安装完成 - 点击关闭';
-        btn.disabled = false;
-        btn.onclick = function() {
-            overlay.remove();
-            onComplete(true);
-            showToast('🎉 Python 环境就绪！双击桌面图标开始使用');
-        };
-
-        log('✅ Python 环境安装完成！');
-        log('📦 已加载模块: tkinter(模拟), sys, json, math, random, time');
-        log('💡 提示: 在编辑器中编写代码，点击运行即可执行');
-
-    }).catch(function(err) {
-        // 下载失败
-        log('❌ 安装失败: ' + err.message);
-        log('💡 请检查网络连接后重试');
-        btn.textContent = '❌ 安装失败 - 点击重试';
-        btn.disabled = false;
-        btn.onclick = function() {
-            overlay.remove();
-            checkPythonEnv().then(onComplete);
-        };
+        resolve(false);
     });
 }
 
+/**
+ * 显示安装对话框（保留但不再自动调用）
+ * @param {Function} onComplete - 完成回调
+ */
+function showInstallDialog(onComplete) {
+    checkPythonEnv().then(onComplete);
+}
+
 // ─────────────────────────────────────────────────────────────
-//  tkinter 完整模拟层
+//  tkinter 完整模拟层（完全展开版）
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 注入tkinter模拟层到Python环境
+ */
 function injectTkinterEmulator() {
-    if (!pyodide) {
-        return;
-    }
+    if (!pyodide) return;
+    pyodide.runPython(`
+import sys
+import json as _json
 
-    pyodide.runPython('' +
-'import sys, json as _json\n' +
-'\n' +
-'class TkEmulator:\n' +
-'    """tkinter 完整模拟器 - 支持所有常用组件"""\n' +
-'    _widgets = {}\n' +
-'    _next_id = 0\n' +
-'    _callbacks = {}\n' +
-'    _variables = {}\n' +
-'\n' +
-'    @classmethod\n' +
-'    def _gid(cls, p="w"):\n' +
-'        """生成唯一 ID"""\n' +
-'        cls._next_id += 1\n' +
-'        return f"{p}_{cls._next_id}"\n' +
-'\n' +
-'    @classmethod\n' +
-'    def _reg(cls, w):\n' +
-'        """注册控件"""\n' +
-'        cls._widgets[w._id] = w\n' +
-'        return w._id\n' +
-'\n' +
-'    @classmethod\n' +
-'    def _set_cb(cls, cid, fn):\n' +
-'        """设置回调函数"""\n' +
-'        if fn:\n' +
-'            cls._callbacks[cid] = fn\n' +
-'\n' +
-'    @classmethod\n' +
-'    def _call_cb(cls, cid):\n' +
-'        """调用回调函数"""\n' +
-'        if cid in cls._callbacks:\n' +
-'            try:\n' +
-'                cls._callbacks[cid]()\n' +
-'            except Exception as e:\n' +
-'                from js import shellPrint\n' +
-'                shellPrint(f"回调错误: {e}", "error")\n' +
-'\n' +
-'    # ═══ Tk - 主窗口 ═══\n' +
-'    class Tk:\n' +
-'        def __init__(self, **kw):\n' +
-'            self._id = TkEmulator._gid("tk")\n' +
-'            self.title_str = "tkinter"\n' +
-'            self.width = 800\n' +
-'            self.height = 600\n' +
-'            self.children = []\n' +
-'            self._config = {"bg": "#f0f0f0"}\n' +
-'            self._protocol_handlers = {}\n' +
-'            TkEmulator._reg(self)\n' +
-'            from js import createWindow\n' +
-'            createWindow("tkapp", self.title_str, "🖥️", self.width+16, self.height+40, 60, 80,\n' +
-'                \'<div class="tk-widget-wrap" id="tk-body-wrap"></div>\')\n' +
-'\n' +
-'        def title(self, s=None):\n' +
-'            """设置或获取窗口标题"""\n' +
-'            if s is not None:\n' +
-'                self.title_str = s\n' +
-'                from js import updateWindowTitle, updateTaskbarSlotTitle\n' +
-'                updateWindowTitle("tkapp", s)\n' +
-'                updateTaskbarSlotTitle("tkapp", s, "🖥️")\n' +
-'            return self.title_str\n' +
-'\n' +
-'        def geometry(self, s=None):\n' +
-'            """设置或获取窗口几何尺寸"""\n' +
-'            if s is not None:\n' +
-'                p = s.replace(" ", "").split("x")\n' +
-'                if len(p) >= 2:\n' +
-'                    self.width = int(p[0])\n' +
-'                    h = p[1].split("+")[0] if "+" in p[1] else p[1]\n' +
-'                    self.height = int(h)\n' +
-'                    from js import tkResizeWindow\n' +
-'                    tkResizeWindow("tkapp", self.width, self.height)\n' +
-'            return f"{self.width}x{self.height}"\n' +
-'\n' +
-'        def mainloop(self):\n' +
-'            """主事件循环（浏览器自动处理）"""\n' +
-'            pass\n' +
-'\n' +
-'        def bind(self, e, cb):\n' +
-'            """绑定事件"""\n' +
-'            pass\n' +
-'\n' +
-'        def after(self, ms, cb):\n' +
-'            """延时执行"""\n' +
-'            from js import setTimeout\n' +
-'            from pyodide.ffi import create_proxy\n' +
-'            setTimeout(create_proxy(cb), ms)\n' +
-'\n' +
-'        def destroy(self):\n' +
-'            """销毁窗口"""\n' +
-'            from js import closeWindow\n' +
-'            closeWindow("tkapp")\n' +
-'\n' +
-'        def config(self, **kw):\n' +
-'            """配置窗口属性"""\n' +
-'            self._config.update(kw)\n' +
-'        configure = config\n' +
-'\n' +
-'        def pack(self, **kw): pass\n' +
-'        def grid(self, **kw): pass\n' +
-'        def place(self, **kw): pass\n' +
-'        def protocol(self, name, handler):\n' +
-'            self._protocol_handlers[name] = handler\n' +
-'        def quit(self): self.destroy()\n' +
-'        def focus_set(self): pass\n' +
-'        def resizable(self, w, h): pass\n' +
-'        def minsize(self, w, h): pass\n' +
-'        def maxsize(self, w, h): pass\n' +
-'\n' +
-'    # ═══ Toplevel - 子窗口 ═══\n' +
-'    class Toplevel:\n' +
-'        def __init__(self, master=None, **kw):\n' +
-'            self._id = TkEmulator._gid("tl")\n' +
-'            self.title_str = "Toplevel"\n' +
-'            self.width = 550\n' +
-'            self.height = 520\n' +
-'            self.children = []\n' +
-'            self._config = {"bg": "#f0f0f0"}\n' +
-'            TkEmulator._reg(self)\n' +
-'            from js import createWindow, tkInitPanel\n' +
-'            createWindow("tkpanel", self.title_str, "⚙️", self.width, self.height, 100, 150,\n' +
-'                \'<div id="tk-panel-wrap"></div>\')\n' +
-'            tkInitPanel()\n' +
-'\n' +
-'        def title(self, s=None):\n' +
-'            if s is not None:\n' +
-'                self.title_str = s\n' +
-'                from js import updateWindowTitle\n' +
-'                updateWindowTitle("tkpanel", s)\n' +
-'            return self.title_str\n' +
-'\n' +
-'        def geometry(self, s=None):\n' +
-'            if s is not None:\n' +
-'                p = s.replace(" ", "").split("x")\n' +
-'                if len(p) >= 2:\n' +
-'                    self.width = int(p[0])\n' +
-'                    h = p[1].split("+")[0] if "+" in p[1] else p[1]\n' +
-'                    self.height = int(h)\n' +
-'\n' +
-'        def destroy(self):\n' +
-'            from js import closeWindow\n' +
-'            closeWindow("tkpanel")\n' +
-'\n' +
-'        def config(self, **kw): pass\n' +
-'        configure = config\n' +
-'        def pack(self, **kw): pass\n' +
-'        def grid(self, **kw): pass\n' +
-'        def resizable(self, w, h): pass\n' +
-'        def focus_set(self): pass\n' +
-'        def protocol(self, n, h): pass\n' +
-'\n' +
-'    # ═══ Label - 标签 ═══\n' +
-'    class Label:\n' +
-'        def __init__(self, master=None, text="", font=None, fg=None, bg=None, **kw):\n' +
-'            self._id = TkEmulator._gid("lbl")\n' +
-'            self.text = str(text)\n' +
-'            self.fg = fg or "black"\n' +
-'            self.bg = bg or ""\n' +
-'            self.font_size = font[1] if isinstance(font, tuple) else 12\n' +
-'            self.master = master\n' +
-'            if master:\n' +
-'                master.children.append(self)\n' +
-'            TkEmulator._reg(self)\n' +
-'            self._render()\n' +
-'\n' +
-'        def _serialize(self):\n' +
-'            return {"id": self._id, "type": "label", "text": self.text,\n' +
-'                    "fg": self.fg, "bg": self.bg, "fontSize": self.font_size}\n' +
-'\n' +
-'        def _render(self):\n' +
-'            from js import tkSyncAll\n' +
-'            tkSyncAll(_json.dumps([self._serialize()]))\n' +
-'\n' +
-'        def config(self, text=None, **kw):\n' +
-'            if text is not None:\n' +
-'                self.text = str(text)\n' +
-'            self._render()\n' +
-'        configure = config\n' +
-'        def pack(self, **kw): pass\n' +
-'        def grid(self, **kw): pass\n' +
-'        def place(self, **kw): pass\n' +
-'\n' +
-'    # ═══ Button - 按钮 ═══\n' +
-'    class Button:\n' +
-'        def __init__(self, master=None, text="", command=None, font=None, fg=None, bg=None, **kw):\n' +
-'            self._id = TkEmulator._gid("btn")\n' +
-'            self.text = str(text)\n' +
-'            self.fg = fg or "black"\n' +
-'            self.bg = bg or "#e0e0e0"\n' +
-'            self.font_size = font[1] if isinstance(font, tuple) else 12\n' +
-'            self.master = master\n' +
-'            if master:\n' +
-'                master.children.append(self)\n' +
-'            TkEmulator._reg(self)\n' +
-'            TkEmulator._set_cb(self._id, command)\n' +
-'            self._render()\n' +
-'\n' +
-'        def _serialize(self):\n' +
-'            return {"id": self._id, "type": "button", "text": self.text,\n' +
-'                    "fg": self.fg, "bg": self.bg, "fontSize": self.font_size,\n' +
-'                    "hasCb": TkEmulator._callbacks.get(self._id) is not None}\n' +
-'\n' +
-'        def _render(self):\n' +
-'            from js import tkSyncAll\n' +
-'            tkSyncAll(_json.dumps([self._serialize()]))\n' +
-'\n' +
-'        def config(self, text=None, command=None, **kw):\n' +
-'            if text is not None:\n' +
-'                self.text = str(text)\n' +
-'            if command is not None:\n' +
-'                TkEmulator._set_cb(self._id, command)\n' +
-'            self._render()\n' +
-'        configure = config\n' +
-'        def pack(self, **kw): pass\n' +
-'        def grid(self, **kw): pass\n' +
-'        def place(self, **kw): pass\n' +
-'\n' +
-'    # ═══ Entry - 输入框 ═══\n' +
-'    class Entry:\n' +
-'        def __init__(self, master=None, width=20, font=None, **kw):\n' +
-'            self._id = TkEmulator._gid("ent")\n' +
-'            self._value = ""\n' +
-'            self.width = width\n' +
-'            self.font_size = font[1] if isinstance(font, tuple) else 12\n' +
-'            self.master = master\n' +
-'            if master:\n' +
-'                master.children.append(self)\n' +
-'            TkEmulator._reg(self)\n' +
-'            self._render()\n' +
-'\n' +
-'        def _serialize(self):\n' +
-'            return {"id": self._id, "type": "entry", "value": self._value,\n' +
-'                    "width": self.width, "fontSize": self.font_size}\n' +
-'\n' +
-'        def _render(self):\n' +
-'            from js import tkSyncAll\n' +
-'            tkSyncAll(_json.dumps([self._serialize()]))\n' +
-'\n' +
-'        def get(self):\n' +
-'            from js import tkGetEntryValue\n' +
-'            v = tkGetEntryValue(self._id)\n' +
-'            if v is not None:\n' +
-'                self._value = v\n' +
-'            return self._value\n' +
-'\n' +
-'        def insert(self, idx, text):\n' +
-'            self._value += text\n' +
-'            self._render()\n' +
-'\n' +
-'        def delete(self, s, e=None):\n' +
-'            self._value = ""\n' +
-'            self._render()\n' +
-'\n' +
-'        def config(self, **kw): pass\n' +
-'        configure = config\n' +
-'        def pack(self, **kw): pass\n' +
-'        def grid(self, **kw): pass\n' +
-'\n' +
-'    # ═══ Frame - 框架 ═══\n' +
-'    class Frame:\n' +
-'        def __init__(self, master=None, bg=None, **kw):\n' +
-'            self._id = TkEmulator._gid("frm")\n' +
-'            self.bg = bg or "#f0f0f0"\n' +
-'            self.children = []\n' +
-'            self.master = master\n' +
-'            if master:\n' +
-'                master.children.append(self)\n' +
-'            TkEmulator._reg(self)\n' +
-'\n' +
-'        def _serialize(self):\n' +
-'            return {"id": self._id, "type": "frame", "bg": self.bg}\n' +
-'\n' +
-'        def config(self, **kw): pass\n' +
-'        configure = config\n' +
-'        def pack(self, **kw): pass\n' +
-'        def grid(self, **kw): pass\n' +
-'        def place(self, **kw): pass\n' +
-'\n' +
-'    # ═══ Canvas - 画布 ═══\n' +
-'    class Canvas:\n' +
-'        def __init__(self, master=None, width=800, height=600, bg="black", **kw):\n' +
-'            self._id = TkEmulator._gid("cvs")\n' +
-'            self.width = width\n' +
-'            self.height = height\n' +
-'            self.bg = bg\n' +
-'            self.master = master\n' +
-'            TkEmulator._reg(self)\n' +
-'            from js import createWindow\n' +
-'            createWindow("tkapp", "tkinter", "🖥️", width+16, height+40, 60, 80,\n' +
-'                f\'<div class="tk-canvas-wrap"><canvas id="tk-canvas" width="{width}" height="{height}"></canvas></div>\')\n' +
-'\n' +
-'        def pack(self, **kw): pass\n' +
-'        def create_image(self, *a, **k): pass\n' +
-'        def delete(self, tag): pass\n' +
-'        def create_text(self, x, y, text="", fill="white", font=("Arial",12), anchor="nw", tags=""):\n' +
-'            from js import drawUIText\n' +
-'            fs = font[1] if isinstance(font, tuple) else 12\n' +
-'            drawUIText(x, y, text, fill, fs)\n' +
-'        def focus_set(self): pass\n' +
-'        def bind(self, e, cb): pass\n' +
-'        def event_generate(self, e, **kw): pass\n' +
-'\n' +
-'    # ═══ PhotoImage - 图像 ═══\n' +
-'    class PhotoImage:\n' +
-'        def __init__(self, width=800, height=600):\n' +
-'            self.width = width\n' +
-'            self.height = height\n' +
-'\n' +
-'        def put(self, data, format="ppm"):\n' +
-'            from js import tkCanvasUpdate\n' +
-'            if format == "ppm":\n' +
-'                idx = data.find(b"\\n255\\n")\n' +
-'                if idx > 0:\n' +
-'                    tkCanvasUpdate(data[idx+5:], self.width, self.height)\n' +
-'\n' +
-'    # ═══ ttk.Notebook - 选项卡 ═══\n' +
-'    class Notebook:\n' +
-'        def __init__(self, master=None, **kw):\n' +
-'            self._id = TkEmulator._gid("nb")\n' +
-'            self._tabs = []\n' +
-'            self.master = master\n' +
-'            if master:\n' +
-'                master.children.append(self)\n' +
-'            TkEmulator._reg(self)\n' +
-'\n' +
-'        def add(self, child, text=""):\n' +
-'            self._tabs.append({"child": child, "text": text})\n' +
-'            from js import tkNotebookAdd\n' +
-'            tkNotebookAdd(text)\n' +
-'\n' +
-'        def pack(self, **kw): pass\n' +
-'        def grid(self, **kw): pass\n' +
-'\n' +
-'    # ═══ Listbox - 列表框 ═══\n' +
-'    class Listbox:\n' +
-'        def __init__(self, master=None, bg="white", font=None, height=10, **kw):\n' +
-'            self._id = TkEmulator._gid("lb")\n' +
-'            self._items = []\n' +
-'            self.bg = bg\n' +
-'            self.font_size = font[1] if isinstance(font, tuple) else 12\n' +
-'            self.height = height\n' +
-'            self._sel = None\n' +
-'            self.master = master\n' +
-'            if master:\n' +
-'                master.children.append(self)\n' +
-'            TkEmulator._reg(self)\n' +
-'\n' +
-'        def insert(self, idx, text):\n' +
-'            if idx == "end" or idx >= len(self._items):\n' +
-'                self._items.append(str(text))\n' +
-'            else:\n' +
-'                self._items.insert(idx, str(text))\n' +
-'            self._render()\n' +
-'\n' +
-'        def delete(self, first, last=None):\n' +
-'            if last is None:\n' +
-'                self._items = self._items[:first]\n' +
-'            else:\n' +
-'                self._items = self._items[:first] + self._items[last:]\n' +
-'            self._render()\n' +
-'\n' +
-'        def curselection(self):\n' +
-'            from js import tkListboxSelection\n' +
-'            sel = tkListboxSelection(self._id)\n' +
-'            if sel is not None:\n' +
-'                self._sel = sel\n' +
-'            return (self._sel,) if self._sel is not None else ()\n' +
-'\n' +
-'        def size(self):\n' +
-'            return len(self._items)\n' +
-'\n' +
-'        def _serialize(self):\n' +
-'            return {"id": self._id, "type": "listbox", "items": self._items,\n' +
-'                    "bg": self.bg, "fontSize": self.font_size, "height": self.height}\n' +
-'\n' +
-'        def _render(self):\n' +
-'            from js import tkSyncAll\n' +
-'            tkSyncAll(_json.dumps([self._serialize()]))\n' +
-'\n' +
-'        def pack(self, **kw): pass\n' +
-'        def grid(self, **kw): pass\n' +
-'\n' +
-'    # ═══ StringVar ═══\n' +
-'    class StringVar:\n' +
-'        def __init__(self, value="", master=None):\n' +
-'            self._id = TkEmulator._gid("sv")\n' +
-'            self._value = str(value)\n' +
-'            TkEmulator._variables[self._id] = self\n' +
-'        def get(self): return self._value\n' +
-'        def set(self, v): self._value = str(v)\n' +
-'\n' +
-'    # ═══ IntVar ═══\n' +
-'    class IntVar:\n' +
-'        def __init__(self, value=0):\n' +
-'            self._value = int(value)\n' +
-'        def get(self): return self._value\n' +
-'        def set(self, v): self._value = int(v)\n' +
-'\n' +
-'    # ═══ BooleanVar ═══\n' +
-'    class BooleanVar:\n' +
-'        def __init__(self, value=False):\n' +
-'            self._value = bool(value)\n' +
-'        def get(self): return self._value\n' +
-'        def set(self, v): self._value = bool(v)\n' +
-'\n' +
-'    # ═══ messagebox ═══\n' +
-'    class messagebox:\n' +
-'        @staticmethod\n' +
-'        def showinfo(title="", message=""):\n' +
-'            from js import tkMsgBox\n' +
-'            tkMsgBox("info", title, message)\n' +
-'\n' +
-'        @staticmethod\n' +
-'        def showwarning(title="", message=""):\n' +
-'            from js import tkMsgBox\n' +
-'            tkMsgBox("warning", title, message)\n' +
-'\n' +
-'        @staticmethod\n' +
-'        def showerror(title="", message=""):\n' +
-'            from js import tkMsgBox\n' +
-'            tkMsgBox("error", title, message)\n' +
-'\n' +
-'        @staticmethod\n' +
-'        def askyesno(title="", message=""):\n' +
-'            from js import tkMsgBox\n' +
-'            return tkMsgBox("yesno", title, message)\n' +
-'\n' +
-'    # ═══ simpledialog ═══\n' +
-'    class simpledialog:\n' +
-'        @staticmethod\n' +
-'        def askstring(title, prompt):\n' +
-'            from js import tkMsgBox\n' +
-'            return tkMsgBox("askstring", title, prompt)\n' +
-'\n' +
-'    # ═══ Menu ═══\n' +
-'    class Menu:\n' +
-'        def __init__(self, master=None, tearoff=0, **kw):\n' +
-'            self._items = []\n' +
-'            self.master = master\n' +
-'        def add_command(self, label="", command=None):\n' +
-'            self._items.append({"label": label, "command": command})\n' +
-'        def add_separator(self):\n' +
-'            self._items.append({"separator": True})\n' +
-'        def add_cascade(self, label="", menu=None):\n' +
-'            pass\n' +
-'\n' +
-'    # ═══ Scrollbar ═══\n' +
-'    class Scrollbar:\n' +
-'        def __init__(self, master=None, orient="vertical", **kw):\n' +
-'            self.master = master\n' +
-'            if master:\n' +
-'                master.children.append(self)\n' +
-'        def pack(self, **kw): pass\n' +
-'        def grid(self, **kw): pass\n' +
-'        def set(self, *a): pass\n' +
-'\n' +
-'# ═══════════════════════════════════════════\n' +
-'#  将模拟层注入到 sys.modules\n' +
-'# ═══════════════════════════════════════════\n' +
-'_tk = type(sys)("tkinter")\n' +
-'_tk.Tk = TkEmulator.Tk\n' +
-'_tk.Toplevel = TkEmulator.Toplevel\n' +
-'_tk.Label = TkEmulator.Label\n' +
-'_tk.Button = TkEmulator.Button\n' +
-'_tk.Entry = TkEmulator.Entry\n' +
-'_tk.Frame = TkEmulator.Frame\n' +
-'_tk.Canvas = TkEmulator.Canvas\n' +
-'_tk.PhotoImage = TkEmulator.PhotoImage\n' +
-'_tk.StringVar = TkEmulator.StringVar\n' +
-'_tk.IntVar = TkEmulator.IntVar\n' +
-'_tk.BooleanVar = TkEmulator.BooleanVar\n' +
-'_tk.Listbox = TkEmulator.Listbox\n' +
-'_tk.Menu = TkEmulator.Menu\n' +
-'_tk.Scrollbar = TkEmulator.Scrollbar\n' +
-'_tk.messagebox = TkEmulator.messagebox\n' +
-'_tk.simpledialog = TkEmulator.simpledialog\n' +
-'\n' +
-'# tkinter 常量\n' +
-'_tk.W = "w"\n' +
-'_tk.E = "e"\n' +
-'_tk.N = "n"\n' +
-'_tk.S = "s"\n' +
-'_tk.NE = "ne"\n' +
-'_tk.NW = "nw"\n' +
-'_tk.SE = "se"\n' +
-'_tk.SW = "sw"\n' +
-'_tk.CENTER = "center"\n' +
-'_tk.LEFT = "left"\n' +
-'_tk.RIGHT = "right"\n' +
-'_tk.TOP = "top"\n' +
-'_tk.BOTTOM = "bottom"\n' +
-'_tk.HORIZONTAL = "horizontal"\n' +
-'_tk.VERTICAL = "vertical"\n' +
-'_tk.YES = "yes"\n' +
-'_tk.NO = "no"\n' +
-'_tk.BOTH = "both"\n' +
-'_tk.X = "x"\n' +
-'_tk.Y = "y"\n' +
-'_tk.END = "end"\n' +
-'_tk.ACTIVE = "active"\n' +
-'_tk.DISABLED = "disabled"\n' +
-'_tk.NORMAL = "normal"\n' +
-'_tk.HIDDEN = "hidden"\n' +
-'_tk.RAISED = "raised"\n' +
-'_tk.SUNKEN = "sunken"\n' +
-'_tk.FLAT = "flat"\n' +
-'_tk.GROOVE = "groove"\n' +
-'_tk.RIDGE = "ridge"\n' +
-'_tk.SOLID = "solid"\n' +
-'\n' +
-'sys.modules["tkinter"] = _tk\n' +
-'sys.modules["_tkinter"] = _tk\n' +
-'\n' +
-'# ttk 子模块\n' +
-'_ttk = type(sys)("tkinter.ttk")\n' +
-'_ttk.Notebook = TkEmulator.Notebook\n' +
-'_ttk.Button = TkEmulator.Button\n' +
-'_ttk.Label = TkEmulator.Label\n' +
-'_ttk.Entry = TkEmulator.Entry\n' +
-'_ttk.Frame = TkEmulator.Frame\n' +
-'_ttk.Combobox = TkEmulator.Entry\n' +
-'_ttk.Scrollbar = TkEmulator.Scrollbar\n' +
-'_ttk.Style = type("Style", (), {"configure": lambda s, *a, **k: None, "theme_use": lambda s, t: None})()\n' +
-'sys.modules["tkinter.ttk"] = _ttk\n' +
-'\n' +
-'del _tk, _ttk\n' +
-'print("[tkemu] tkinter 完整模拟层已注入")\n'
-    );
+class TkEmulator:
+    """tkinter 完整模拟器 - 支持所有常用组件"""
+    _widgets = {}
+    _next_id = 0
+    _callbacks = {}
+    _variables = {}
+
+    @classmethod
+    def _gid(cls, p="w"):
+        """生成唯一 ID"""
+        cls._next_id += 1
+        return f"{p}_{cls._next_id}"
+
+    @classmethod
+    def _reg(cls, w):
+        """注册控件"""
+        cls._widgets[w._id] = w
+        return w._id
+
+    @classmethod
+    def _set_cb(cls, cid, fn):
+        """设置回调函数"""
+        if fn:
+            cls._callbacks[cid] = fn
+
+    @classmethod
+    def _call_cb(cls, cid):
+        """调用回调函数"""
+        if cid in cls._callbacks:
+            try:
+                cls._callbacks[cid]()
+            except Exception as e:
+                from js import shellPrint
+                shellPrint(f"回调错误: {e}", "error")
+
+    # ═══ Tk - 主窗口 ═══
+    class Tk:
+        def __init__(self, **kw):
+            self._id = TkEmulator._gid("tk")
+            self.title_str = "tkinter"
+            self.width = 800
+            self.height = 600
+            self.children = []
+            self._config = {"bg": "#f0f0f0"}
+            self._protocol_handlers = {}
+            TkEmulator._reg(self)
+            from js import createWindow
+            createWindow("tkapp", self.title_str, "🖥️", self.width+16, self.height+40, 60, 80,
+                '<div class="tk-widget-wrap" id="tk-body-wrap"></div>')
+
+        def title(self, s=None):
+            """设置或获取窗口标题"""
+            if s is not None:
+                self.title_str = s
+                from js import updateWindowTitle, updateTaskbarSlotTitle
+                updateWindowTitle("tkapp", s)
+                updateTaskbarSlotTitle("tkapp", s, "🖥️")
+            return self.title_str
+
+        def geometry(self, s=None):
+            """设置或获取窗口几何尺寸"""
+            if s is not None:
+                p = s.replace(" ", "").split("x")
+                if len(p) >= 2:
+                    self.width = int(p[0])
+                    h = p[1].split("+")[0] if "+" in p[1] else p[1]
+                    self.height = int(h)
+                    from js import tkResizeWindow
+                    tkResizeWindow("tkapp", self.width, self.height)
+            return f"{self.width}x{self.height}"
+
+        def mainloop(self):
+            """主事件循环（浏览器自动处理）"""
+            pass
+
+        def bind(self, e, cb):
+            """绑定事件"""
+            pass
+
+        def after(self, ms, cb):
+            """延时执行"""
+            from js import setTimeout
+            from pyodide.ffi import create_proxy
+            setTimeout(create_proxy(cb), ms)
+
+        def destroy(self):
+            """销毁窗口"""
+            from js import closeWindow
+            closeWindow("tkapp")
+
+        def config(self, **kw):
+            """配置窗口属性"""
+            self._config.update(kw)
+        configure = config
+
+        def pack(self, **kw): pass
+        def grid(self, **kw): pass
+        def place(self, **kw): pass
+        def protocol(self, name, handler):
+            self._protocol_handlers[name] = handler
+        def quit(self): self.destroy()
+        def focus_set(self): pass
+        def resizable(self, w, h): pass
+        def minsize(self, w, h): pass
+        def maxsize(self, w, h): pass
+
+    # ═══ Toplevel - 子窗口 ═══
+    class Toplevel:
+        def __init__(self, master=None, **kw):
+            self._id = TkEmulator._gid("tl")
+            self.title_str = "Toplevel"
+            self.width = 550
+            self.height = 520
+            self.children = []
+            self._config = {"bg": "#f0f0f0"}
+            TkEmulator._reg(self)
+            from js import createWindow, tkInitPanel
+            createWindow("tkpanel", self.title_str, "⚙️", self.width, self.height, 100, 150,
+                '<div id="tk-panel-wrap"></div>')
+            tkInitPanel()
+
+        def title(self, s=None):
+            if s is not None:
+                self.title_str = s
+                from js import updateWindowTitle
+                updateWindowTitle("tkpanel", s)
+            return self.title_str
+
+        def geometry(self, s=None):
+            if s is not None:
+                p = s.replace(" ", "").split("x")
+                if len(p) >= 2:
+                    self.width = int(p[0])
+                    h = p[1].split("+")[0] if "+" in p[1] else p[1]
+                    self.height = int(h)
+
+        def destroy(self):
+            from js import closeWindow
+            closeWindow("tkpanel")
+
+        def config(self, **kw): pass
+        configure = config
+        def pack(self, **kw): pass
+        def grid(self, **kw): pass
+        def resizable(self, w, h): pass
+        def focus_set(self): pass
+        def protocol(self, n, h): pass
+
+    # ═══ Label - 标签 ═══
+    class Label:
+        def __init__(self, master=None, text="", font=None, fg=None, bg=None, **kw):
+            self._id = TkEmulator._gid("lbl")
+            self.text = str(text)
+            self.fg = fg or "black"
+            self.bg = bg or ""
+            self.font_size = font[1] if isinstance(font, tuple) else 12
+            self.master = master
+            if master:
+                master.children.append(self)
+            TkEmulator._reg(self)
+            self._render()
+
+        def _serialize(self):
+            return {"id": self._id, "type": "label", "text": self.text,
+                    "fg": self.fg, "bg": self.bg, "fontSize": self.font_size}
+
+        def _render(self):
+            from js import tkSyncAll
+            tkSyncAll(_json.dumps([self._serialize()]))
+
+        def config(self, text=None, **kw):
+            if text is not None:
+                self.text = str(text)
+            self._render()
+        configure = config
+        def pack(self, **kw): pass
+        def grid(self, **kw): pass
+        def place(self, **kw): pass
+
+    # ═══ Button - 按钮 ═══
+    class Button:
+        def __init__(self, master=None, text="", command=None, font=None, fg=None, bg=None, **kw):
+            self._id = TkEmulator._gid("btn")
+            self.text = str(text)
+            self.fg = fg or "black"
+            self.bg = bg or "#e0e0e0"
+            self.font_size = font[1] if isinstance(font, tuple) else 12
+            self.master = master
+            if master:
+                master.children.append(self)
+            TkEmulator._reg(self)
+            TkEmulator._set_cb(self._id, command)
+            self._render()
+
+        def _serialize(self):
+            return {"id": self._id, "type": "button", "text": self.text,
+                    "fg": self.fg, "bg": self.bg, "fontSize": self.font_size,
+                    "hasCb": TkEmulator._callbacks.get(self._id) is not None}
+
+        def _render(self):
+            from js import tkSyncAll
+            tkSyncAll(_json.dumps([self._serialize()]))
+
+        def config(self, text=None, command=None, **kw):
+            if text is not None:
+                self.text = str(text)
+            if command is not None:
+                TkEmulator._set_cb(self._id, command)
+            self._render()
+        configure = config
+        def pack(self, **kw): pass
+        def grid(self, **kw): pass
+        def place(self, **kw): pass
+
+    # ═══ Entry - 输入框 ═══
+    class Entry:
+        def __init__(self, master=None, width=20, font=None, **kw):
+            self._id = TkEmulator._gid("ent")
+            self._value = ""
+            self.width = width
+            self.font_size = font[1] if isinstance(font, tuple) else 12
+            self.master = master
+            if master:
+                master.children.append(self)
+            TkEmulator._reg(self)
+            self._render()
+
+        def _serialize(self):
+            return {"id": self._id, "type": "entry", "value": self._value,
+                    "width": self.width, "fontSize": self.font_size}
+
+        def _render(self):
+            from js import tkSyncAll
+            tkSyncAll(_json.dumps([self._serialize()]))
+
+        def get(self):
+            from js import tkGetEntryValue
+            v = tkGetEntryValue(self._id)
+            if v is not None:
+                self._value = v
+            return self._value
+
+        def insert(self, idx, text):
+            self._value += text
+            self._render()
+
+        def delete(self, s, e=None):
+            self._value = ""
+            self._render()
+
+        def config(self, **kw): pass
+        configure = config
+        def pack(self, **kw): pass
+        def grid(self, **kw): pass
+
+    # ═══ Frame - 框架 ═══
+    class Frame:
+        def __init__(self, master=None, bg=None, **kw):
+            self._id = TkEmulator._gid("frm")
+            self.bg = bg or "#f0f0f0"
+            self.children = []
+            self.master = master
+            if master:
+                master.children.append(self)
+            TkEmulator._reg(self)
+
+        def _serialize(self):
+            return {"id": self._id, "type": "frame", "bg": self.bg}
+
+        def config(self, **kw): pass
+        configure = config
+        def pack(self, **kw): pass
+        def grid(self, **kw): pass
+        def place(self, **kw): pass
+
+    # ═══ Canvas - 画布 ═══
+    class Canvas:
+        def __init__(self, master=None, width=800, height=600, bg="black", **kw):
+            self._id = TkEmulator._gid("cvs")
+            self.width = width
+            self.height = height
+            self.bg = bg
+            self.master = master
+            TkEmulator._reg(self)
+            from js import createWindow
+            createWindow("tkapp", "tkinter", "🖥️", width+16, height+40, 60, 80,
+                f'<div class="tk-canvas-wrap"><canvas id="tk-canvas" width="{width}" height="{height}"></canvas></div>')
+
+        def pack(self, **kw): pass
+        def create_image(self, *a, **k): pass
+        def delete(self, tag): pass
+        def create_text(self, x, y, text="", fill="white", font=("Arial",12), anchor="nw", tags=""):
+            from js import drawUIText
+            fs = font[1] if isinstance(font, tuple) else 12
+            drawUIText(x, y, text, fill, fs)
+        def focus_set(self): pass
+        def bind(self, e, cb): pass
+        def event_generate(self, e, **kw): pass
+
+    # ═══ PhotoImage - 图像 ═══
+    class PhotoImage:
+        def __init__(self, width=800, height=600):
+            self.width = width
+            self.height = height
+
+        def put(self, data, format="ppm"):
+            from js import tkCanvasUpdate
+            if format == "ppm":
+                idx = data.find(b"\\n255\\n")
+                if idx > 0:
+                    tkCanvasUpdate(data[idx+5:], self.width, self.height)
+
+    # ═══ ttk.Notebook - 选项卡 ═══
+    class Notebook:
+        def __init__(self, master=None, **kw):
+            self._id = TkEmulator._gid("nb")
+            self._tabs = []
+            self.master = master
+            if master:
+                master.children.append(self)
+            TkEmulator._reg(self)
+
+        def add(self, child, text=""):
+            self._tabs.append({"child": child, "text": text})
+            from js import tkNotebookAdd
+            tkNotebookAdd(text)
+
+        def pack(self, **kw): pass
+        def grid(self, **kw): pass
+
+    # ═══ Listbox - 列表框 ═══
+    class Listbox:
+        def __init__(self, master=None, bg="white", font=None, height=10, **kw):
+            self._id = TkEmulator._gid("lb")
+            self._items = []
+            self.bg = bg
+            self.font_size = font[1] if isinstance(font, tuple) else 12
+            self.height = height
+            self._sel = None
+            self.master = master
+            if master:
+                master.children.append(self)
+            TkEmulator._reg(self)
+
+        def insert(self, idx, text):
+            if idx == "end" or idx >= len(self._items):
+                self._items.append(str(text))
+            else:
+                self._items.insert(idx, str(text))
+            self._render()
+
+        def delete(self, first, last=None):
+            if last is None:
+                self._items = self._items[:first]
+            else:
+                self._items = self._items[:first] + self._items[last:]
+            self._render()
+
+        def curselection(self):
+            from js import tkListboxSelection
+            sel = tkListboxSelection(self._id)
+            if sel is not None:
+                self._sel = sel
+            return (self._sel,) if self._sel is not None else ()
+
+        def size(self):
+            return len(self._items)
+
+        def _serialize(self):
+            return {"id": self._id, "type": "listbox", "items": self._items,
+                    "bg": self.bg, "fontSize": self.font_size, "height": self.height}
+
+        def _render(self):
+            from js import tkSyncAll
+            tkSyncAll(_json.dumps([self._serialize()]))
+
+        def pack(self, **kw): pass
+        def grid(self, **kw): pass
+
+    # ═══ StringVar ═══
+    class StringVar:
+        def __init__(self, value="", master=None):
+            self._id = TkEmulator._gid("sv")
+            self._value = str(value)
+            TkEmulator._variables[self._id] = self
+        def get(self): return self._value
+        def set(self, v): self._value = str(v)
+
+    # ═══ IntVar ═══
+    class IntVar:
+        def __init__(self, value=0):
+            self._value = int(value)
+        def get(self): return self._value
+        def set(self, v): self._value = int(v)
+
+    # ═══ BooleanVar ═══
+    class BooleanVar:
+        def __init__(self, value=False):
+            self._value = bool(value)
+        def get(self): return self._value
+        def set(self, v): self._value = bool(v)
+
+    # ═══ messagebox ═══
+    class messagebox:
+        @staticmethod
+        def showinfo(title="", message=""):
+            from js import tkMsgBox
+            tkMsgBox("info", title, message)
+
+        @staticmethod
+        def showwarning(title="", message=""):
+            from js import tkMsgBox
+            tkMsgBox("warning", title, message)
+
+        @staticmethod
+        def showerror(title="", message=""):
+            from js import tkMsgBox
+            tkMsgBox("error", title, message)
+
+        @staticmethod
+        def askyesno(title="", message=""):
+            from js import tkMsgBox
+            return tkMsgBox("yesno", title, message)
+
+    # ═══ simpledialog ═══
+    class simpledialog:
+        @staticmethod
+        def askstring(title, prompt):
+            from js import tkMsgBox
+            return tkMsgBox("askstring", title, prompt)
+
+    # ═══ Menu ═══
+    class Menu:
+        def __init__(self, master=None, tearoff=0, **kw):
+            self._items = []
+            self.master = master
+        def add_command(self, label="", command=None):
+            self._items.append({"label": label, "command": command})
+        def add_separator(self):
+            self._items.append({"separator": True})
+        def add_cascade(self, label="", menu=None):
+            pass
+
+    # ═══ Scrollbar ═══
+    class Scrollbar:
+        def __init__(self, master=None, orient="vertical", **kw):
+            self.master = master
+            if master:
+                master.children.append(self)
+        def pack(self, **kw): pass
+        def grid(self, **kw): pass
+        def set(self, *a): pass
+
+# ═══════════════════════════════════════════
+#  将模拟层注入到 sys.modules
+# ═══════════════════════════════════════════
+_tk = type(sys)("tkinter")
+_tk.Tk = TkEmulator.Tk
+_tk.Toplevel = TkEmulator.Toplevel
+_tk.Label = TkEmulator.Label
+_tk.Button = TkEmulator.Button
+_tk.Entry = TkEmulator.Entry
+_tk.Frame = TkEmulator.Frame
+_tk.Canvas = TkEmulator.Canvas
+_tk.PhotoImage = TkEmulator.PhotoImage
+_tk.StringVar = TkEmulator.StringVar
+_tk.IntVar = TkEmulator.IntVar
+_tk.BooleanVar = TkEmulator.BooleanVar
+_tk.Listbox = TkEmulator.Listbox
+_tk.Menu = TkEmulator.Menu
+_tk.Scrollbar = TkEmulator.Scrollbar
+_tk.messagebox = TkEmulator.messagebox
+_tk.simpledialog = TkEmulator.simpledialog
+
+# tkinter 常量
+_tk.W = "w"
+_tk.E = "e"
+_tk.N = "n"
+_tk.S = "s"
+_tk.NE = "ne"
+_tk.NW = "nw"
+_tk.SE = "se"
+_tk.SW = "sw"
+_tk.CENTER = "center"
+_tk.LEFT = "left"
+_tk.RIGHT = "right"
+_tk.TOP = "top"
+_tk.BOTTOM = "bottom"
+_tk.HORIZONTAL = "horizontal"
+_tk.VERTICAL = "vertical"
+_tk.YES = "yes"
+_tk.NO = "no"
+_tk.BOTH = "both"
+_tk.X = "x"
+_tk.Y = "y"
+_tk.END = "end"
+_tk.ACTIVE = "active"
+_tk.DISABLED = "disabled"
+_tk.NORMAL = "normal"
+_tk.HIDDEN = "hidden"
+_tk.RAISED = "raised"
+_tk.SUNKEN = "sunken"
+_tk.FLAT = "flat"
+_tk.GROOVE = "groove"
+_tk.RIDGE = "ridge"
+_tk.SOLID = "solid"
+
+sys.modules["tkinter"] = _tk
+sys.modules["_tkinter"] = _tk
+
+# ttk 子模块
+_ttk = type(sys)("tkinter.ttk")
+_ttk.Notebook = TkEmulator.Notebook
+_ttk.Button = TkEmulator.Button
+_ttk.Label = TkEmulator.Label
+_ttk.Entry = TkEmulator.Entry
+_ttk.Frame = TkEmulator.Frame
+_ttk.Combobox = TkEmulator.Entry
+_ttk.Scrollbar = TkEmulator.Scrollbar
+_ttk.Style = type("Style", (), {"configure": lambda s, *a, **k: None, "theme_use": lambda s, t: None})()
+sys.modules["tkinter.ttk"] = _ttk
+
+del _tk, _ttk
+print("[tkemu] tkinter 完整模拟层已注入")
+print("[tkemu] 支持: Tk, Toplevel, Label, Button, Entry, Frame, Canvas, PhotoImage")
+print("[tkemu] 支持: Listbox, Menu, Scrollbar, StringVar, IntVar, BooleanVar")
+print("[tkemu] 支持: messagebox, simpledialog, ttk.Notebook, ttk.Style")
+`);
 }
 
 // ─────────────────────────────────────────────────────────────
 //  JS ↔ Python 桥接函数
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 更新 tkinter Canvas 像素
+ * @param {Uint8Array} rgbBytes - RGB字节数组
+ * @param {number} width - 宽度
+ * @param {number} height - 高度
+ */
 function tkCanvasUpdate(rgbBytes, width, height) {
     var canvas = document.getElementById('tk-canvas');
-    if (!canvas) {
-        return;
-    }
-
+    if (!canvas) return;
     var ctx = canvas.getContext('2d');
     var imgData = ctx.createImageData(width, height);
     var arr = new Uint8ClampedArray(rgbBytes);
-
     for (var i = 0; i < width * height; i++) {
         var src = i * 3;
         var dst = i * 4;
@@ -3853,50 +3828,60 @@ function tkCanvasUpdate(rgbBytes, width, height) {
         imgData.data[dst + 2] = arr[src + 2];
         imgData.data[dst + 3] = 255;
     }
-
     ctx.putImageData(imgData, 0, 0);
 }
 
+/**
+ * 在 tkinter Canvas 上绘制文字
+ * @param {number} x - X坐标
+ * @param {number} y - Y坐标
+ * @param {string} text - 文字内容
+ * @param {string} fill - 颜色
+ * @param {number} size - 字号
+ */
 function drawUIText(x, y, text, fill, size) {
     var canvas = document.getElementById('tk-canvas');
-    if (!canvas) {
-        return;
-    }
-
+    if (!canvas) return;
     var ctx = canvas.getContext('2d');
     ctx.fillStyle = fill;
     ctx.font = size + "px 'Segoe UI', sans-serif";
     ctx.fillText(text, x, y);
 }
 
+/**
+ * 更新窗口标题
+ * @param {string} id - 窗口ID
+ * @param {string} title - 新标题
+ */
 function updateWindowTitle(id, title) {
     if (openWindows[id]) {
         openWindows[id].title = title;
         var titleEl = openWindows[id].el.querySelector('.title-text');
-        if (titleEl) {
-            titleEl.textContent = title;
-        }
-        updateTaskbarSlotTitle(id, title, openWindows[id].icon);
+        if (titleEl) titleEl.textContent = title;
     }
 }
 
+/**
+ * 调整 tkinter 窗口大小
+ * @param {string} id - 窗口ID
+ * @param {number} width - 宽度
+ * @param {number} height - 高度
+ */
 function tkResizeWindow(id, width, height) {
     if (openWindows[id]) {
         var win = openWindows[id].el;
         win.style.width = (width + 16) + 'px';
         win.style.height = (height + 40) + 'px';
-        openWindows[id].origW = width + 16;
-        openWindows[id].origH = height + 40;
     }
 }
 
+/**
+ * 同步 tkinter 控件到 DOM
+ * @param {string} jsonStr - JSON字符串
+ */
 function tkSyncAll(jsonStr) {
-    var wrap = document.getElementById('tk-body-wrap') ||
-               document.getElementById('tk-panel-wrap');
-    if (!wrap) {
-        return;
-    }
-
+    var wrap = document.getElementById('tk-body-wrap') || document.getElementById('tk-panel-wrap');
+    if (!wrap) return;
     try {
         var widgets = JSON.parse(jsonStr);
         widgets.forEach(function(w) {
@@ -3906,22 +3891,12 @@ function tkSyncAll(jsonStr) {
                 el.id = w.id;
                 wrap.appendChild(el);
             }
-
             if (w.type === 'label') {
-                el.innerHTML = '<span style="color:' + w.fg +
-                    ';font-size:' + w.fontSize + 'px;">' +
-                    escapeHTML(w.text || '') + '</span>';
+                el.innerHTML = '<span style="color:' + w.fg + ';font-size:' + w.fontSize + 'px">' + escapeHTML(w.text || '') + '</span>';
             } else if (w.type === 'button') {
-                el.innerHTML = '<button class="tk-btn" style="font-size:' +
-                    w.fontSize + 'px" onclick="tkBtnClick(\'' + w.id +
-                    '\')">' + escapeHTML(w.text || '') + '</button>';
+                el.innerHTML = '<button class="tk-btn" style="font-size:' + w.fontSize + 'px" onclick="tkBtnClick(\'' + w.id + '\')">' + escapeHTML(w.text || '') + '</button>';
             } else if (w.type === 'entry') {
-                el.innerHTML = '<input type="text" value="' +
-                    escapeHTML(w.value || '') + '" style="width:' +
-                    ((w.width || 20) * 8) + 'px;font-size:' + w.fontSize +
-                    'px" onchange="tkEntryChange(\'' + w.id +
-                    '\',this.value)" oninput="tkEntryChange(\'' + w.id +
-                    '\',this.value)">';
+                el.innerHTML = '<input type="text" value="' + escapeHTML(w.value || '') + '" style="width:' + ((w.width || 20) * 8) + 'px;font-size:' + w.fontSize + 'px" onchange="tkEntryChange(\'' + w.id + '\',this.value)" oninput="tkEntryChange(\'' + w.id + '\',this.value)">';
             } else if (w.type === 'frame') {
                 el.style.border = '1px solid #ccc';
                 el.style.padding = '8px';
@@ -3929,8 +3904,7 @@ function tkSyncAll(jsonStr) {
             } else if (w.type === 'listbox') {
                 var h = '';
                 w.items.forEach(function(it, i) {
-                    h += '<div class="tk-listbox-item" onclick="tkListboxSelect(\'' +
-                        w.id + '\',' + i + ')">' + escapeHTML(it) + '</div>';
+                    h += '<div class="tk-listbox-item" onclick="tkListboxSelect(\'' + w.id + '\',' + i + ')">' + escapeHTML(it) + '</div>';
                 });
                 el.innerHTML = h;
                 el.style.maxHeight = ((w.height || 10) * 20) + 'px';
@@ -3941,20 +3915,39 @@ function tkSyncAll(jsonStr) {
     }
 }
 
+/**
+ * 按钮点击回调
+ * @param {string} id - 按钮ID
+ */
 function tkBtnClick(id) {
     if (pyodide) {
         pyodide.runPython("TkEmulator._call_cb('" + id + "')");
     }
 }
 
+/**
+ * Entry值跟踪
+ * @param {string} id - Entry ID
+ * @param {string} val - 值
+ */
 function tkEntryChange(id, val) {
     _tkEntryValues[id] = val;
 }
 
+/**
+ * 获取Entry值
+ * @param {string} id - Entry ID
+ * @returns {string} 值
+ */
 function tkGetEntryValue(id) {
     return _tkEntryValues[id] || '';
 }
 
+/**
+ * Listbox选择跟踪
+ * @param {string} id - Listbox ID
+ * @param {number} idx - 选中索引
+ */
 function tkListboxSelect(id, idx) {
     _tkListboxSel[id] = idx;
     var el = document.getElementById(id);
@@ -3966,52 +3959,54 @@ function tkListboxSelect(id, idx) {
     }
 }
 
+/**
+ * 获取Listbox选中项
+ * @param {string} id - Listbox ID
+ * @returns {number|null} 选中索引
+ */
 function tkListboxSelection(id) {
     return _tkListboxSel.hasOwnProperty(id) ? _tkListboxSel[id] : null;
 }
 
+/**
+ * 初始化控制面板
+ */
 function tkInitPanel() {
-    var wrap = document.getElementById('tk-panel-wrap');
-    if (!wrap) {
-        return;
+    var w = document.getElementById('tk-panel-wrap');
+    if (w) {
+        w.innerHTML = '<div class="tk-notebook"><div class="tk-tabs" id="tk-panel-tabs"></div><div class="tk-tab-body" id="tk-panel-body"></div></div>';
     }
-
-    wrap.innerHTML = '' +
-        '<div class="tk-notebook">' +
-        '  <div class="tk-tabs" id="tk-panel-tabs"></div>' +
-        '  <div class="tk-tab-body" id="tk-panel-body"></div>' +
-        '</div>';
-
     _tkPanelTabs = [];
-    _tkPanelActiveTab = 0;
 }
 
+/**
+ * 添加Notebook选项卡
+ * @param {string} text - 选项卡文字
+ */
 function tkNotebookAdd(text) {
-    _tkPanelTabs.push({ text: text, content: '' });
-
-    var tabsEl = document.getElementById('tk-panel-tabs');
-    if (!tabsEl) {
-        return;
-    }
-
+    _tkPanelTabs.push({ text: text });
+    var tabs = document.getElementById('tk-panel-tabs');
+    if (!tabs) return;
     var idx = _tkPanelTabs.length - 1;
-    var tab = document.createElement('div');
-    tab.className = 'tk-tab' + (idx === 0 ? ' active' : '');
-    tab.textContent = text;
-    tab.onclick = function() {
-        tkPanelSwitchTab(idx);
+    var t = document.createElement('div');
+    t.className = 'tk-tab' + (idx === 0 ? ' active' : '');
+    t.textContent = text;
+    t.onclick = function() {
+        var allTabs = document.querySelectorAll('#tk-panel-tabs .tk-tab');
+        allTabs.forEach(function(tb, i) {
+            tb.classList.toggle('active', i === idx);
+        });
     };
-    tabsEl.appendChild(tab);
+    tabs.appendChild(t);
 }
 
-function tkPanelSwitchTab(idx) {
-    _tkPanelActiveTab = idx;
-    var tabs = document.querySelectorAll('#tk-panel-tabs .tk-tab');
-    tabs.forEach(function(t, i) {
-        t.classList.toggle('active', i === idx);
-    });
-}
-
+/**
+ * 模拟messagebox
+ * @param {string} type - 类型
+ * @param {string} title - 标题
+ * @param {string} msg - 消息
+ * @returns {Promise} 结果
+ */
 function tkMsgBox(type, title, msg) {
     var icons = {
         info: 'ℹ️',
@@ -4020,113 +4015,82 @@ function tkMsgBox(type, title, msg) {
         yesno: '❓',
         askstring: '📝'
     };
-
-    var overlay = document.createElement('div');
-    overlay.className = 'tk-msgbox-overlay';
-
+    var ov = document.createElement('div');
+    ov.className = 'tk-msgbox-overlay';
     if (type === 'askstring') {
-        overlay.innerHTML = '' +
-            '<div class="tk-msgbox">' +
-            '  <div class="tk-msg-icon">' + (icons[type] || '') + '</div>' +
-            '  <div class="tk-msg-text"><b>' + escapeHTML(title) + '</b><br>' + escapeHTML(msg) + '</div>' +
-            '  <input type="text" id="tk-askstring-input" style="width:100%;padding:6px;margin-bottom:12px;border:1px solid #999;border-radius:3px;" autofocus>' +
-            '  <div>' +
-            '    <button onclick="tkMsgClose(null)">取消</button>' +
-            '    <button onclick="tkMsgClose(document.getElementById(\'tk-askstring-input\').value)">确定</button>' +
-            '  </div>' +
-            '</div>';
+        ov.innerHTML = '<div class="tk-msgbox"><div class="tk-msg-icon">' + icons[type] + '</div><div class="tk-msg-text"><b>' + escapeHTML(title) + '</b><br>' + escapeHTML(msg) + '</div><input type="text" id="tk-askstring-input" style="width:100%;padding:6px;margin-bottom:12px;border:1px solid #999;border-radius:3px" autofocus><div><button onclick="tkMsgClose(null)">取消</button><button onclick="tkMsgClose(document.getElementById(\'tk-askstring-input\').value)">确定</button></div></div>';
     } else {
-        overlay.innerHTML = '' +
-            '<div class="tk-msgbox">' +
-            '  <div class="tk-msg-icon">' + (icons[type] || '') + '</div>' +
-            '  <div class="tk-msg-text"><b>' + escapeHTML(title) + '</b><br>' + escapeHTML(msg) + '</div>' +
-            '  <div>' +
-            (type === 'yesno' ?
-                '<button onclick="tkMsgClose(true)">是</button><button onclick="tkMsgClose(false)">否</button>' :
-                '<button onclick="tkMsgClose(true)">确定</button>') +
-            '  </div>' +
-            '</div>';
+        ov.innerHTML = '<div class="tk-msgbox"><div class="tk-msg-icon">' + icons[type] + '</div><div class="tk-msg-text"><b>' + escapeHTML(title) + '</b><br>' + escapeHTML(msg) + '</div><div>' + (type === 'yesno' ? '<button onclick="tkMsgClose(true)">是</button><button onclick="tkMsgClose(false)">否</button>' : '<button onclick="tkMsgClose(true)">确定</button>') + '</div></div>';
     }
-
-    document.body.appendChild(overlay);
-
-    return new Promise(function(resolve) {
-        _tkMsgResolve = resolve;
+    document.body.appendChild(ov);
+    return new Promise(function(r) {
+        _tkMsgResolve = r;
     });
 }
 
+/**
+ * 关闭messagebox
+ * @param {*} val - 返回值
+ */
 function tkMsgClose(val) {
     var overlays = document.querySelectorAll('.tk-msgbox-overlay');
     overlays.forEach(function(o) {
         o.remove();
     });
-
     if (_tkMsgResolve) {
         _tkMsgResolve(val);
         _tkMsgResolve = null;
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  KSD 3D 启动入口
-// ─────────────────────────────────────────────────────────────
-
+/**
+ * KSD 3D启动入口
+ */
 async function runKSD() {
     try {
         await ensurePythonReady();
     } catch (e) {
-        showToast('⚠️ 请先安装 Python 环境');
+        showToast('请先安装 Python 环境');
         return;
     }
-
-    if (!openWindows['shell']) {
-        openShell();
-    }
+    if (!openWindows['shell']) openShell();
     focusWindow('shell');
-
-    shellPrint('🎮 KSD 3D Edition 26Version 1.0', 'info');
-    shellPrint('   引擎就绪，请将代码文件保存到文件管理器', 'info');
-    shellPrint('   支持: ksd_core.py, ksd_ui.py, nova_engine.py, main.py', 'info');
+    shellPrint('🎮 KSD 3D 就绪', 'info');
 }
 
-// ─────────────────────────────────────────────────────────────
-//  工具函数
-// ─────────────────────────────────────────────────────────────
-
-function escapeHTML(str) {
-    var div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+/**
+ * HTML转义
+ * @param {string} s - 原始字符串
+ * @returns {string} 转义后的字符串
+ */
+function escapeHTML(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
 }
 
-function escapeAttr(str) {
-    return str.replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\\/g, '\\\\');
+/**
+ * 属性转义
+ * @param {string} s - 原始字符串
+ * @returns {string} 转义后的字符串
+ */
+function escapeAttr(s) {
+    return s.replace(/'/g, "\\'").replace(/"/g, '\\"');
 }
 
-function showToast(msg) {
-    var toast = document.getElementById('toast');
-    toast.textContent = msg;
-    toast.style.opacity = '1';
-    clearTimeout(toast._timer);
-    toast._timer = setTimeout(function() {
-        toast.style.opacity = '0';
+/**
+ * 显示Toast通知
+ * @param {string} m - 消息内容
+ */
+function showToast(m) {
+    var t = document.getElementById('toast');
+    t.textContent = m;
+    t.style.opacity = '1';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function() {
+        t.style.opacity = '0';
     }, 3000);
 }
-
-// ─────────────────────────────────────────────────────────────
-//  全局快捷键
-// ─────────────────────────────────────────────────────────────
-
-document.addEventListener('keydown', function(e) {
-    if (e.ctrlKey && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
-        e.preventDefault();
-        openEditor();
-    }
-    if (e.ctrlKey && e.shiftKey && (e.key === 'S' || e.key === 's')) {
-        e.preventDefault();
-        openShell();
-    }
-});
 
 // ─────────────────────────────────────────────────────────────
 //  系统初始化
@@ -4142,16 +4106,7 @@ console.log('╚═════════════════════�
 VirtualFS.init();
 updateTrashIcon();
 initTaskbarSlots();
-
-setTimeout(function() {
-    if (!pyodideReady) {
-        checkPythonEnv().then(function(ok) {
-            if (ok) {
-                showToast('🎉 Python 环境就绪！双击桌面图标开始使用');
-            }
-        });
-    }
-}, 1000);
+VirtualFS.refreshStartMenuKD();
 </script>
 
 </body>
