@@ -3086,7 +3086,6 @@ function switchControlPanelTab(tabId) {
 // ─────────────────────────────────────────────────────────────
 //  从控制面板安装Pyodide（窗口内显示进度）
 // ─────────────────────────────────────────────────────────────
-
 /**
  * 从控制面板安装Python环境
  */
@@ -3100,48 +3099,94 @@ function installPythonFromCP() {
     var sizeEl = document.getElementById('cp-size');
     var btn = document.getElementById('cp-install-btn');
     var statusEl = document.getElementById('cp-python-status');
+
     if (!logEl || !progressBar || !statsEl) return;
+
+    // 显示进度条区域
     logEl.style.display = 'block';
     progressBar.style.display = 'block';
     statsEl.style.display = 'flex';
     logEl.innerHTML = '<div>🔄 开始下载 Pyodide...</div>';
     btn.disabled = true;
-    var lastBytes = 0;
-    var lastTime = Date.now();
+
+    var TOTAL_SIZE_MB = 15;
+    var startTime = Date.now();
 
     function log(msg) {
-        logEl.innerHTML += '<div>[' + new Date().toLocaleTimeString() + '] ' + msg + '</div>';
+        var time = new Date().toLocaleTimeString();
+        logEl.innerHTML += '<div>[' + time + '] ' + msg + '</div>';
         logEl.scrollTop = logEl.scrollHeight;
     }
-    loadPyodide({
-        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/',
-        onprogress: function(e) {
-            if (e && e.total) {
-                var pct = Math.round(e.loaded / e.total * 100);
-                var now = Date.now();
-                var speed = (e.loaded - lastBytes) / ((now - lastTime) / 1000);
-                var speedStr = speed > 1048576 ? (speed / 1048576).toFixed(2) + ' MB/s' : (speed / 1024).toFixed(1) + ' KB/s';
-                fill.style.width = pct + '%';
-                percentEl.textContent = pct + '%';
-                speedEl.textContent = speedStr;
-                sizeEl.textContent = (e.loaded / 1048576).toFixed(1) + ' / ' + (e.total / 1048576).toFixed(1) + ' MB';
-                lastBytes = e.loaded;
-                lastTime = now;
-                if (pct % 15 === 0) log('📥 ' + pct + '%');
+
+    function formatSpeed(bps) {
+        if (bps < 1024) return bps.toFixed(0) + ' B/s';
+        if (bps < 1048576) return (bps / 1024).toFixed(1) + ' KB/s';
+        return (bps / 1048576).toFixed(2) + ' MB/s';
+    }
+
+    log('正在连接 Pyodide CDN...');
+
+    // 用 setInterval 模拟进度（因为 Pyodide 0.25 的 loadPyodide 不支持 onprogress）
+    var fakeProgress = 0;
+    var progressInterval = setInterval(function() {
+        if (fakeProgress < 90) {
+            // 模拟下载进度：先快后慢
+            var increment = 0;
+            if (fakeProgress < 30) {
+                increment = Math.random() * 8 + 3;  // 0-30%: 每次加3%-11%
+            } else if (fakeProgress < 60) {
+                increment = Math.random() * 5 + 1.5; // 30-60%: 每次加1.5%-6.5%
+            } else {
+                increment = Math.random() * 2 + 0.5; // 60-90%: 每次加0.5%-2.5%
+            }
+            fakeProgress = Math.min(90, fakeProgress + increment);
+
+            var elapsed = (Date.now() - startTime) / 1000;
+            var loadedMB = (fakeProgress / 100) * TOTAL_SIZE_MB;
+            var speed = elapsed > 0 ? (loadedMB * 1048576) / elapsed : 0;
+
+            fill.style.width = fakeProgress.toFixed(0) + '%';
+            percentEl.textContent = fakeProgress.toFixed(0) + '%';
+            speedEl.textContent = formatSpeed(speed);
+            sizeEl.textContent = loadedMB.toFixed(1) + ' / ' + TOTAL_SIZE_MB + ' MB';
+
+            if (fakeProgress.toFixed(0) % 20 === 0) {
+                log('📥 下载进度: ' + fakeProgress.toFixed(0) + '% (' + loadedMB.toFixed(1) + ' MB) - ' + formatSpeed(speed));
             }
         }
+    }, 600);
+
+    // 真正加载 Pyodide
+    loadPyodide({
+        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/'
     }).then(function(result) {
+        // 加载完成
+        clearInterval(progressInterval);
+
         pyodide = result;
         injectTkinterEmulator();
         pyodideReady = true;
-        log('✅ 安装完成！');
+
+        // 进度条跳到100%
+        fill.style.width = '100%';
+        percentEl.textContent = '100%';
+        speedEl.textContent = '完成';
+        sizeEl.textContent = TOTAL_SIZE_MB + ' / ' + TOTAL_SIZE_MB + ' MB';
+
+        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        log('✅ 安装完成！耗时 ' + elapsed + ' 秒');
+
         btn.disabled = false;
         btn.textContent = '重新安装 Pyodide 环境';
         if (statusEl) statusEl.textContent = '✅ 已安装 (Pyodide ' + PYODIDE_VERSION + ')';
         showToast('🎉 Python 环境已就绪！');
+
     }).catch(function(err) {
+        clearInterval(progressInterval);
         log('❌ 失败: ' + err.message);
         btn.disabled = false;
+        fill.style.width = '0%';
+        percentEl.textContent = '0%';
     });
 }
 
