@@ -6,13 +6,15 @@
 <title>tkemu - Windows 桌面模拟器</title>
 <!--
 ╔══════════════════════════════════════════════════════════════╗
-║                    tkemu v1.3.1                              ║
+║                    tkemu v1.5.0                              ║
 ║    浏览器中的 Windows 桌面 + Python + tkinter 完整模拟        ║
 ║    基于 Pyodide 0.27.0  |  MIT License                       ║
 ║    闪讯工作社 Snxth.  |  2026                                ║
 ║                                                              ║
-║    v1.3.1 更新:                                               ║
+║    v1.5.0 更新:                                               ║
 ║      📐 分辨率智能自适应系统                                  ║
+║      ⚙️ System Control - .sys 系统级脚本支持                  ║
+║        (可修改全局资源、无限扩展)                             ║
 ╚══════════════════════════════════════════════════════════════╝
 -->
 <style>
@@ -1368,6 +1370,14 @@ body {
         <div>关于系统</div>
     </div>
 
+    <!-- System Control 图标 (v1.5.0 新增) -->
+    <div class="desktop-icon" style="top: calc(120px * var(--ui-scale, 1)); right: calc(20px * var(--ui-scale, 1));"
+         ondblclick="openSysManager()"
+         title="System Control - 运行 .sys 系统脚本，无限扩展">
+        <div class="icon-img">⚡</div>
+        <div>System Control</div>
+    </div>
+
     <!-- 回收站图标 -->
     <div class="desktop-icon" id="trash-icon" style="bottom: calc(20px * var(--ui-scale, 1)); right: calc(20px * var(--ui-scale, 1));"
          ondblclick="openTrash()"
@@ -1419,6 +1429,9 @@ body {
     </div>
     <div class="start-menu-item" onclick="openAbout(); toggleStartMenu();">
         <span class="sm-icon">ℹ️</span> 关于系统
+    </div>
+    <div class="start-menu-item" onclick="openSysManager(); toggleStartMenu();">
+        <span class="sm-icon">⚡</span> System Control
     </div>
 
     <!-- 分隔线 -->
@@ -1489,15 +1502,15 @@ body {
      ═══════════════════════════════════════════════════════════════ -->
 <script>
 // ╔══════════════════════════════════════════════════════════════╗
-// ║              tkemu v1.3.1 - 完整主程序                      ║
+// ║              tkemu v1.5.0 - 完整主程序                      ║
 // ║  所有功能全部展开，不精简，不压缩                            ║
-// ║  新增: KD文件 | RF Canvas | 控制面板 | 分辨率自适应         ║
+// ║  新增: System Control - .sys 系统级脚本支持                 ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 // ─────────────────────────────────────────────────────────────
 //  版本信息
 // ─────────────────────────────────────────────────────────────
-var APP_VERSION = '1.3.1';
+var APP_VERSION = '1.5.0';
 var APP_NAME = 'tkemu';
 var APP_FULL_NAME = 'tkemu - Windows 桌面模拟器';
 var APP_COPYRIGHT = '闪讯工作社 Snxth.';
@@ -1949,6 +1962,9 @@ function openTrash() {
     createWindow('trash', '回收站', '🗑️', 500, 400, 130, 160, html);
 }
 
+// ═══════════════════════════════════
+//  第一段结束，后续请在第二段继续
+// ═══════════════════════════════════
 // ─────────────────────────────────────────────────────────────
 //  窗口管理器
 // ─────────────────────────────────────────────────────────────
@@ -2902,7 +2918,7 @@ function renderRFMenu(winId, menuItems) {
 function openFiles() {
     var files = VirtualFS.listFiles();
     var names = Object.keys(files).sort();
-    var html = '<div class="file-manager-toolbar"><button onclick="newFileDialog()">📄 新建文件</button><button onclick="newFolderDialog()">📁 新建文件夹</button><button onclick="newRFFileDialog()">📜 新建rf脚本</button><button onclick="newKDFileDialog()">⚡ 新建KD文件</button><button onclick="closeWindow(\'files\');openFiles()">🔄 刷新</button></div><div class="file-list">';
+    var html = '<div class="file-manager-toolbar"><button onclick="newFileDialog()">📄 新建文件</button><button onclick="newFolderDialog()">📁 新建文件夹</button><button onclick="newRFFileDialog()">📜 新建rf脚本</button><button onclick="newKDFileDialog()">⚡ 新建KD文件</button><button onclick="newSysFileDialog()">⚙️ 新建sys脚本</button><button onclick="closeWindow(\'files\');openFiles()">🔄 刷新</button></div><div class="file-list">';
     if (names.length === 0) {
         html += '<div style="padding:30px;color:#888;text-align:center">文件夹为空</div>';
     } else {
@@ -2910,8 +2926,9 @@ function openFiles() {
             var isPy = n.endsWith('.py');
             var isRf = n.endsWith('.rf');
             var isKd = n.endsWith('.kd');
+            var isSys = n.endsWith('.sys');
             var isFolder = n.indexOf('/') > -1;
-            var icon = isFolder ? '📁' : (isPy ? '📄' : (isRf ? '📜' : (isKd ? '⚡' : '📃')));
+            var icon = isFolder ? '📁' : (isPy ? '📄' : (isRf ? '📜' : (isKd ? '⚡' : (isSys ? '⚙️' : '📃'))));
             html += '<div class="file-item" ondblclick="openFileByType(\'' + escapeAttr(n) + '\')"><span class="fi-icon">' + icon + '</span><span style="flex:1">' + escapeHTML(n) + '</span><button onclick="event.stopPropagation();permanentlyHideFile(\'' + escapeAttr(n) + '\')" style="background:none;border:none;cursor:pointer;font-size:14px" title="永久删除">🗑</button>';
             if (isKd) html += '<button onclick="event.stopPropagation();installKDAppFromFile(\'' + escapeAttr(n) + '\')" style="background:none;border:none;cursor:pointer;font-size:14px" title="安装KD应用">📥</button>';
             html += '</div>';
@@ -2981,6 +2998,21 @@ function newKDFileDialog() {
 }
 
 /**
+ * 新建sys脚本文件对话框
+ */
+function newSysFileDialog() {
+    var n = prompt('sys脚本文件名:', 'script.sys');
+    if (n && n.trim()) {
+        n = n.trim();
+        if (!n.endsWith('.sys')) n += '.sys';
+        VirtualFS.writeFile(n, '// sys 系统级脚本 - 可访问系统全局资源\n// 可用变量: _SYS (系统API)\n\n_SYS.showToast("Hello from sys script!");\n');
+        closeWindow('files');
+        openFiles();
+        showToast('已创建: ' + n);
+    }
+}
+
+/**
  * 永久隐藏文件（数据保留，不再显示）
  * @param {string} path - 文件路径
  */
@@ -2999,6 +3031,10 @@ function openFileByType(path) {
     var ext = path.split('.').pop().toLowerCase();
     if (ext === 'kd') {
         openKDApp(VirtualFS.readFile(path), path.replace('.kd', ''));
+        return;
+    }
+    if (ext === 'sys') {
+        openSysFile(path);
         return;
     }
     if (['py', 'rf', 'txt', 'md', 'json', 'ini', 'cfg', 'yml', 'yaml', 'html', 'css', 'js', 'xml', 'csv', 'log'].indexOf(ext) !== -1) {
@@ -4181,6 +4217,304 @@ function showToast(m) {
     t._timer = setTimeout(function() {
         t.style.opacity = '0';
     }, 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  v1.5.0 新增：System Control - .sys 系统级脚本支持
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 系统API对象 - 暴露给 .sys 脚本使用
+ * 脚本中可通过 _SYS 访问
+ */
+var _SYS = {
+    // 通知
+    showToast: showToast,
+    shellPrint: shellPrint,
+
+    // 窗口管理
+    createWindow: createWindow,
+    closeWindow: closeWindow,
+    focusWindow: focusWindow,
+    minimizeWindow: minimizeWindow,
+    restoreWindow: restoreWindow,
+    toggleMaximize: toggleMaximize,
+    getOpenWindows: function() { return openWindows; },
+    getActiveWindowId: function() { return activeWindowId; },
+
+    // 文件系统
+    readFile: VirtualFS.readFile.bind(VirtualFS),
+    writeFile: VirtualFS.writeFile.bind(VirtualFS),
+    deleteFile: VirtualFS.deleteFile.bind(VirtualFS),
+    listFiles: VirtualFS.listFiles.bind(VirtualFS),
+    hideFile: VirtualFS.hideFile.bind(VirtualFS),
+
+    // KD应用
+    installKDApp: VirtualFS.installKDApp.bind(VirtualFS),
+    uninstallKDApp: VirtualFS.uninstallKDApp.bind(VirtualFS),
+    getInstalledKDApps: VirtualFS.getInstalledKDApps.bind(VirtualFS),
+    openKDApp: openKDApp,
+
+    // 桌面 & 任务栏
+    getDesktop: function() { return document.getElementById('desktop'); },
+    getTaskbar: function() { return document.getElementById('taskbar'); },
+    getStartMenu: function() { return document.getElementById('start-menu'); },
+    restartSystem: restartSystem,
+    toggleStartMenu: toggleStartMenu,
+
+    // 回收站
+    trashAdd: trashAdd,
+    trashRestore: trashRestore,
+    trashEmpty: trashEmpty,
+    trashRestoreAll: trashRestoreAll,
+    updateTrashIcon: updateTrashIcon,
+
+    // DOM操作
+    getElement: function(id) { return document.getElementById(id); },
+    createElement: function(tag) { return document.createElement(tag); },
+    querySelector: function(sel) { return document.querySelector(sel); },
+    querySelectorAll: function(sel) { return document.querySelectorAll(sel); },
+
+    // 系统信息
+    getVersion: function() { return APP_VERSION; },
+    getScaleFactor: function() { return SCALE_FACTOR; },
+
+    // 刷新开始菜单KD列表
+    refreshStartMenuKD: VirtualFS.refreshStartMenuKD.bind(VirtualFS),
+
+    // 系统更新专用
+    installUpdate: function(name, code) {
+        // 将sys脚本作为系统更新安装
+        VirtualFS.writeFile('updates/' + name + '.sys', code);
+        showToast('⚡ 系统更新已安装: ' + name);
+        // 立即执行更新脚本
+        try {
+            (function() {
+                var _SYS = this;
+                eval(code);
+            }).call(_SYS);
+        } catch (e) {
+            shellPrint('系统更新执行错误: ' + e.message, 'error');
+        }
+    }
+};
+
+/**
+ * 打开 .sys 文件（从文件管理器双击）
+ * @param {string} filePath - sys文件路径
+ */
+function openSysFile(filePath) {
+    var content = VirtualFS.readFile(filePath);
+    if (!content) {
+        showToast('无法读取文件: ' + filePath);
+        return;
+    }
+    // 在 System Control 窗口中打开并显示
+    openSysManager(filePath, content);
+}
+
+/**
+ * 打开 System Control 管理器
+ * @param {string} filePath - 可选，要编辑的文件路径
+ * @param {string} content - 可选，文件内容
+ */
+function openSysManager(filePath, content) {
+    if (openWindows['sysmanager']) {
+        focusWindow('sysmanager');
+        // 如果有指定文件，更新编辑器内容
+        if (filePath && content) {
+            setTimeout(function() {
+                var ta = document.getElementById('sys-editor-input');
+                if (ta) {
+                    ta.value = content;
+                    ta.dataset.filepath = filePath;
+                    document.getElementById('sys-status-file').textContent = filePath;
+                }
+            }, 100);
+        }
+        return;
+    }
+
+    var currentFilePath = filePath || '';
+    var currentContent = content || '';
+
+    var menuBarHTML = '<div class="menu-bar">';
+    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">文件<div class="menu-dropdown"><div class="menu-dropdown-item" onclick="sysNewFile()">📄 新建</div><div class="menu-dropdown-item" onclick="sysOpenFile()">📂 打开...</div><div class="menu-dropdown-item" onclick="sysSaveFile()">💾 保存</div><div class="menu-dropdown-item" onclick="sysSaveAsFile()">📋 另存为...</div><div class="menu-separator"></div><div class="menu-dropdown-item" onclick="closeWindow(\'sysmanager\')">✕ 关闭</div></div></div>';
+    menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">运行<div class="menu-dropdown"><div class="menu-dropdown-item" onclick="sysRunCurrent()">▶ 运行当前脚本</div><div class="menu-dropdown-item" onclick="sysInstallUpdate()">📦 安装为系统更新</div></div></div>';
+    menuBarHTML += '</div>';
+
+    var toolbarHTML = '<div class="editor-toolbar"><button class="run-btn" onclick="sysRunCurrent()">▶ 运行</button><button onclick="sysInstallUpdate()">📦 安装更新</button><span style="margin-left:8px;">⚡ System Control - 系统级脚本引擎</span></div>';
+
+    var editorHTML = '<div class="editor-area"><textarea id="sys-editor-input" spellcheck="false" style="font-family:var(--font-mono);font-size:14px;line-height:1.6;padding:16px;background:#1e1e1e;color:#d4d4d4;border:none;resize:none;width:100%;height:100%;outline:none;white-space:pre-wrap;word-wrap:break-word;"></textarea></div>';
+
+    var statusHTML = '<div class="editor-statusbar" style="background:#6a0dad;"><span id="sys-status-file">' + (currentFilePath || '未命名.sys') + '</span><span id="sys-status-ln">行: 1, 列: 1</span><span>.sys 系统级脚本</span></div>';
+
+    var bodyHTML = menuBarHTML + toolbarHTML + editorHTML + statusHTML;
+
+    createWindow('sysmanager', 'System Control', '⚡', 750, 550, 80, 100, bodyHTML);
+
+    setTimeout(function() {
+        var ta = document.getElementById('sys-editor-input');
+        if (!ta) return;
+        ta.value = currentContent;
+        ta.dataset.filepath = currentFilePath;
+        ta.focus();
+        ta.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                sysSaveFile();
+            }
+            if (e.key === 'F5') {
+                e.preventDefault();
+                sysRunCurrent();
+            }
+        });
+        ta.addEventListener('input', function() {
+            var v = ta.value;
+            var pos = ta.selectionStart;
+            var lines = v.substr(0, pos).split('\n');
+            var ln = lines.length;
+            var cn = lines[lines.length - 1].length + 1;
+            var el = document.getElementById('sys-status-ln');
+            if (el) el.textContent = '行: ' + ln + ', 列: ' + cn;
+        });
+        ta.addEventListener('keyup', function() {
+            var el = document.getElementById('sys-status-ln');
+            if (!el) return;
+            var v = ta.value;
+            var pos = ta.selectionStart;
+            var lines = v.substr(0, pos).split('\n');
+            var ln = lines.length;
+            var cn = lines[lines.length - 1].length + 1;
+            el.textContent = '行: ' + ln + ', 列: ' + cn;
+        });
+    }, 100);
+}
+
+/**
+ * sys脚本 - 新建文件
+ */
+function sysNewFile() {
+    var ta = document.getElementById('sys-editor-input');
+    if (ta) {
+        ta.value = '// sys 系统级脚本\n// 可用全局变量: _SYS (系统API)\n\n_SYS.showToast("Hello from sys!");\n';
+        ta.dataset.filepath = '';
+        document.getElementById('sys-status-file').textContent = '未命名.sys';
+    }
+}
+
+/**
+ * sys脚本 - 打开文件
+ */
+function sysOpenFile() {
+    var files = VirtualFS.listFiles();
+    var names = Object.keys(files).filter(function(n) { return n.endsWith('.sys'); }).sort();
+    if (names.length === 0) {
+        alert('没有找到 .sys 文件。\n请在文件管理器中创建。');
+        return;
+    }
+    var list = names.map(function(n, i) { return i + ': ' + n; }).join('\n');
+    var choice = prompt('选择要打开的 .sys 文件:\n\n' + list, '0');
+    if (choice !== null) {
+        var idx = parseInt(choice);
+        if (!isNaN(idx) && idx >= 0 && idx < names.length) {
+            var path = names[idx];
+            var content = VirtualFS.readFile(path);
+            if (content) {
+                var ta = document.getElementById('sys-editor-input');
+                if (ta) {
+                    ta.value = content;
+                    ta.dataset.filepath = path;
+                    document.getElementById('sys-status-file').textContent = path;
+                }
+            }
+        }
+    }
+}
+
+/**
+ * sys脚本 - 保存文件
+ */
+function sysSaveFile() {
+    var ta = document.getElementById('sys-editor-input');
+    if (!ta) return;
+    var filePath = ta.dataset.filepath;
+    if (!filePath) {
+        sysSaveAsFile();
+        return;
+    }
+    VirtualFS.writeFile(filePath, ta.value);
+    showToast('⚡ 已保存: ' + filePath);
+}
+
+/**
+ * sys脚本 - 另存为
+ */
+function sysSaveAsFile() {
+    var ta = document.getElementById('sys-editor-input');
+    if (!ta) return;
+    var n = prompt('文件名:', 'script.sys');
+    if (n && n.trim()) {
+        n = n.trim();
+        if (!n.endsWith('.sys')) n += '.sys';
+        ta.dataset.filepath = n;
+        document.getElementById('sys-status-file').textContent = n;
+        VirtualFS.writeFile(n, ta.value);
+        showToast('⚡ 已保存: ' + n);
+        refreshFiles();
+    }
+}
+
+/**
+ * sys脚本 - 运行当前脚本
+ */
+function sysRunCurrent() {
+    var ta = document.getElementById('sys-editor-input');
+    if (!ta || !ta.value.trim()) {
+        showToast('没有可执行的代码');
+        return;
+    }
+    if (!confirm('⚠️ 即将执行系统级脚本。\n\n.sys 脚本拥有系统最底层权限，可以修改任何系统资源。\n\n确定要继续吗？')) {
+        return;
+    }
+    try {
+        // 创建独立的执行环境，注入 _SYS API
+        (function() {
+            var _SYS = window._SYS;
+            eval(ta.value);
+        })();
+        showToast('✅ sys脚本执行完毕');
+        shellPrint('[System Control] 脚本执行完毕', 'info');
+        // 刷新相关UI
+        VirtualFS.refreshStartMenuKD();
+        updateTrashIcon();
+    } catch (e) {
+        showToast('❌ sys脚本错误');
+        shellPrint('[System Control] 错误: ' + e.message, 'error');
+        console.error('sys脚本执行错误:', e);
+    }
+}
+
+/**
+ * sys脚本 - 安装为系统更新
+ */
+function sysInstallUpdate() {
+    var ta = document.getElementById('sys-editor-input');
+    if (!ta || !ta.value.trim()) {
+        showToast('没有可执行的代码');
+        return;
+    }
+    var name = prompt('更新名称:', 'update_' + new Date().toISOString().slice(0, 10));
+    if (!name || !name.trim()) return;
+    name = name.trim();
+    if (!name.endsWith('.sys')) name += '.sys';
+
+    if (!confirm('⚠️ 将 "' + name + '" 安装为系统更新。\n\n系统更新会在安装时立即执行，并保存在 updates 目录中。\n\n确定要继续吗？')) {
+        return;
+    }
+
+    _SYS.installUpdate(name.replace('.sys', ''), ta.value);
+    refreshFiles();
 }
 
 // ─────────────────────────────────────────────────────────────
