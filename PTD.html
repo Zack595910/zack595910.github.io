@@ -6,12 +6,12 @@
 <title>tkemu - Windows 桌面模拟器</title>
 <!--
 ╔══════════════════════════════════════════════════════════════╗
-║                    tkemu v1.5.0                              ║
+║                    tkemu v1.5.2                              ║
 ║    浏览器中的 Windows 桌面 + Python + tkinter 完整模拟        ║
 ║    基于 Pyodide 0.27.0  |  MIT License                       ║
 ║    闪讯工作社 Snxth.  |  2026                                ║
 ║                                                              ║
-║    v1.5.0 更新:                                               ║
+║    v1.5.2 更新:                                               ║
 ║      📐 分辨率智能自适应系统                                  ║
 ║      ⚙️ System Control - .sys 系统级脚本支持                  ║
 ║        (可修改全局资源、无限扩展)                             ║
@@ -1370,7 +1370,7 @@ body {
         <div>关于系统</div>
     </div>
 
-    <!-- System Control 图标 (v1.5.0 新增) -->
+    <!-- System Control 图标 (v1.5.2 新增) -->
     <div class="desktop-icon" style="top: calc(120px * var(--ui-scale, 1)); right: calc(20px * var(--ui-scale, 1));"
          ondblclick="openSysManager()"
          title="System Control - 运行 .sys 系统脚本，无限扩展">
@@ -1502,7 +1502,7 @@ body {
      ═══════════════════════════════════════════════════════════════ -->
 <script>
 // ╔══════════════════════════════════════════════════════════════╗
-// ║              tkemu v1.5.0 - 完整主程序                      ║
+// ║              tkemu v1.5.2 - 完整主程序                      ║
 // ║  所有功能全部展开，不精简，不压缩                            ║
 // ║  新增: System Control - .sys 系统级脚本支持                 ║
 // ╚══════════════════════════════════════════════════════════════╝
@@ -1510,7 +1510,7 @@ body {
 // ─────────────────────────────────────────────────────────────
 //  版本信息
 // ─────────────────────────────────────────────────────────────
-var APP_VERSION = '1.5.0';
+var APP_VERSION = '1.5.2';
 var APP_NAME = 'tkemu';
 var APP_FULL_NAME = 'tkemu - Windows 桌面模拟器';
 var APP_COPYRIGHT = '闪讯工作社 Snxth.';
@@ -4220,7 +4220,7 @@ function showToast(m) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  v1.5.0 新增：System Control - .sys 系统级脚本支持
+//  v1.5.2 新增：System Control - .sys 系统级脚本支持
 // ═══════════════════════════════════════════════════════════════
 
 /**
@@ -4478,14 +4478,9 @@ function sysRunCurrent() {
         return;
     }
     try {
-        // 创建独立的执行环境，注入 _SYS API
-        (function() {
-            var _SYS = window._SYS;
-            eval(ta.value);
-        })();
+        eval(ta.value);
         showToast('✅ sys脚本执行完毕');
         shellPrint('[System Control] 脚本执行完毕', 'info');
-        // 刷新相关UI
         VirtualFS.refreshStartMenuKD();
         updateTrashIcon();
     } catch (e) {
@@ -4532,6 +4527,245 @@ VirtualFS.init();
 updateTrashIcon();
 initTaskbarSlots();
 VirtualFS.refreshStartMenuKD();
+// ═══════════════════════════════════════════════════════════════
+//  v1.5.2 新增功能开始
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────
+//  v1.5.2 虚拟文件系统和文件标签
+// ─────────────────────────────────────────────────────────────
+var virtualFolders = {};
+var fileTags = {};
+var VFOLDERS_KEY = 'tkemu_vfolders_v1';
+var FTAGS_KEY = 'tkemu_ftags_v1';
+
+(function initV152Data() {
+    try { var vf = localStorage.getItem(VFOLDERS_KEY); if (vf) virtualFolders = JSON.parse(vf); } catch(e) {}
+    try { var ft = localStorage.getItem(FTAGS_KEY); if (ft) fileTags = JSON.parse(ft); } catch(e) {}
+})();
+
+function saveVFolders() { localStorage.setItem(VFOLDERS_KEY, JSON.stringify(virtualFolders)); }
+function saveFTags() { localStorage.setItem(FTAGS_KEY, JSON.stringify(fileTags)); }
+
+VirtualFS.createVirtualFolder = function(name) {
+    if (virtualFolders[name]) return false;
+    virtualFolders[name] = { name: name, files: [], time: new Date().toISOString() };
+    saveVFolders();
+    return true;
+};
+VirtualFS.removeVirtualFolder = function(name) { delete virtualFolders[name]; saveVFolders(); };
+VirtualFS.getVirtualFolders = function() { return virtualFolders; };
+VirtualFS.addFileToFolder = function(folderName, filePath) {
+    if (virtualFolders[folderName] && virtualFolders[folderName].files.indexOf(filePath) === -1) {
+        virtualFolders[folderName].files.push(filePath); saveVFolders(); return true;
+    } return false;
+};
+VirtualFS.removeFileFromFolder = function(folderName, filePath) {
+    if (virtualFolders[folderName]) {
+        var idx = virtualFolders[folderName].files.indexOf(filePath);
+        if (idx > -1) { virtualFolders[folderName].files.splice(idx, 1); saveVFolders(); return true; }
+    } return false;
+};
+VirtualFS.getFilesInFolder = function(folderName) {
+    return virtualFolders[folderName] ? virtualFolders[folderName].files : [];
+};
+VirtualFS.setFileTag = function(path, tag) { fileTags[path] = tag; saveFTags(); };
+VirtualFS.getFileTag = function(path) { return fileTags[path] || ''; };
+VirtualFS.removeFileTag = function(path) { delete fileTags[path]; saveFTags(); };
+
+// ─────────────────────────────────────────────────────────────
+//  v1.5.2 文件管理器增强函数
+// ─────────────────────────────────────────────────────────────
+var _fmSearchQuery = '';
+var _fmViewMode = 'all';
+var _fmSelectedType = '';
+
+function newVirtualFolderDialog() {
+    var n = prompt('虚拟文件夹名称:', '新建文件夹');
+    if (n && n.trim()) { VirtualFS.createVirtualFolder(n.trim()); closeWindow('files'); openFiles(); showToast('已创建: ' + n); }
+}
+
+function deleteVirtualFolderDialog(name) {
+    if (confirm('确定删除虚拟文件夹 "' + name + '" 吗？（不会删除里面文件）')) {
+        VirtualFS.removeVirtualFolder(name); closeWindow('files'); openFiles(); showToast('已删除: ' + name);
+    }
+}
+
+function addFileToFolderDialog(folderName) {
+    var files = VirtualFS.listFiles(); var names = Object.keys(files).sort();
+    if (names.length === 0) { alert('没有可用的文件'); return; }
+    var list = names.map(function(n, i) { return i + ': ' + n; }).join('\n');
+    var choice = prompt('选择文件添加到 "' + folderName + '":\n\n' + list, '0');
+    if (choice !== null) { var idx = parseInt(choice); if (!isNaN(idx) && idx >= 0 && idx < names.length) { VirtualFS.addFileToFolder(folderName, names[idx]); closeWindow('files'); openFiles(); showToast('已添加: ' + names[idx]); } }
+}
+
+function removeFileFromFolderDialog(folderName, filePath) {
+    VirtualFS.removeFileFromFolder(folderName, filePath); closeWindow('files'); openFiles(); showToast('已移除: ' + filePath);
+}
+
+function uploadFileDialog() {
+    var input = document.createElement('input'); input.type = 'file'; input.multiple = true;
+    input.onchange = function(e) {
+        var files = e.target.files; if (!files || files.length === 0) return;
+        var count = 0; for (var i = 0; i < files.length; i++) { (function(f) { var reader = new FileReader(); reader.onload = function(ev) { VirtualFS.writeFile(f.name, ev.target.result); count++; if (count === files.length) { closeWindow('files'); openFiles(); showToast('已上传 ' + count + ' 个文件'); } }; reader.readAsText(f); })(files[i]); }
+    };
+    input.click();
+}
+
+function downloadFileToLocal(path) {
+    var content = VirtualFS.readFile(path); if (content === null) { showToast('文件不存在'); return; }
+    var blob = new Blob([content], { type: 'application/octet-stream' }); var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = path.split('/').pop();
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast('已下载: ' + path);
+}
+
+// ─────────────────────────────────────────────────────────────
+//  v1.5.2 增强版 openFiles（完全重写，但不删除原函数，用新函数覆盖）
+// ─────────────────────────────────────────────────────────────
+var _originalOpenFiles = openFiles;
+openFiles = function() {
+    var files = VirtualFS.listFiles();
+    var names = Object.keys(files).sort();
+    var folders = VirtualFS.getVirtualFolders();
+    var folderNames = Object.keys(folders).sort();
+
+    // 搜索过滤
+    if (_fmSearchQuery) { names = names.filter(function(n) { return n.toLowerCase().indexOf(_fmSearchQuery.toLowerCase()) !== -1; }); }
+
+    // 虚拟文件夹视图
+    if (_fmViewMode === 'folders') {
+        var html = '<div class="file-manager-toolbar">';
+        html += '<button onclick="_fmViewMode=\'all\';closeWindow(\'files\');openFiles();">📁 全部文件</button>';
+        html += '<button style="background:var(--win-accent);color:#fff;">📂 虚拟文件夹</button>';
+        html += '<button onclick="newVirtualFolderDialog()">➕ 新建</button>';
+        html += '<input type="text" placeholder="🔍 搜索..." value="' + _fmSearchQuery + '" oninput="_fmSearchQuery=this.value;closeWindow(\'files\');openFiles();" style="width:120px;">';
+        html += '<button onclick="closeWindow(\'files\');openFiles();">🔄</button>';
+        html += '</div><div class="file-list">';
+        if (folderNames.length === 0) { html += '<div style="padding:30px;color:#888;text-align:center;">没有虚拟文件夹</div>'; }
+        else { folderNames.forEach(function(fn) { html += '<div class="file-item" ondblclick="_fmViewMode=\'folder_\'+fn;closeWindow(\'files\');openFiles();"><span class="fi-icon">📂</span><span style="flex:1">' + escapeHTML(fn) + '</span><button onclick="event.stopPropagation();deleteVirtualFolderDialog(\'' + escapeAttr(fn) + '\');">🗑</button></div>'; }); }
+        html += '</div>'; createWindow('files', '文件管理', '📁', 600, 520, 100, 120, html); return;
+    }
+
+    // 单个虚拟文件夹内容
+    if (_fmViewMode.indexOf('folder_') === 0) {
+        var fn2 = _fmViewMode.replace('folder_', '');
+        var ff = VirtualFS.getFilesInFolder(fn2);
+        var html = '<div class="file-manager-toolbar">';
+        html += '<button onclick="_fmViewMode=\'folders\';closeWindow(\'files\');openFiles();">⬅ 返回</button>';
+        html += '<span style="color:#ccc;">📂 ' + escapeHTML(fn2) + '</span>';
+        html += '<button onclick="addFileToFolderDialog(\'' + escapeAttr(fn2) + '\')">➕ 添加文件</button>';
+        html += '<button onclick="closeWindow(\'files\');openFiles();">🔄</button></div><div class="file-list">';
+        if (ff.length === 0) { html += '<div style="padding:30px;color:#888;">空</div>'; }
+        else { ff.forEach(function(fn3) { var icon = '📄'; if (fn3.endsWith('.kd')) icon = '⚡'; else if (fn3.endsWith('.sys')) icon = '⚙️'; else if (fn3.endsWith('.rf')) icon = '📜'; html += '<div class="file-item" ondblclick="openFileByType(\'' + escapeAttr(fn3) + '\')"><span class="fi-icon">' + icon + '</span><span style="flex:1">' + escapeHTML(fn3) + '</span><button onclick="event.stopPropagation();removeFileFromFolderDialog(\'' + escapeAttr(fn2) + '\',\'' + escapeAttr(fn3) + '\');">❌</button></div>'; }); }
+        html += '</div>'; createWindow('files', '文件管理', '📁', 600, 520, 100, 120, html); return;
+    }
+
+    // 默认视图（分类筛选）
+    if (_fmSelectedType) { names = names.filter(function(n) { return n.endsWith('.' + _fmSelectedType); }); }
+
+    var html = '<div class="file-manager-toolbar">';
+    html += '<button onclick="newFileDialog()">📄 新建</button>';
+    html += '<button onclick="newRFFileDialog()">📜 RF</button>';
+    html += '<button onclick="newKDFileDialog()">⚡ KD</button>';
+    html += '<button onclick="newSysFileDialog()">⚙️ SYS</button>';
+    html += '<button onclick="_fmViewMode=\'folders\';closeWindow(\'files\');openFiles();">📂 文件夹</button>';
+    html += '<select onchange="_fmSelectedType=this.value;closeWindow(\'files\');openFiles();" style="margin-left:4px;background:#3d3d3d;color:#ccc;border:1px solid #555;padding:4px 8px;border-radius:4px;font-size:11px;">';
+    html += '<option value="">全部类型</option><option value="py"' + (_fmSelectedType==='py'?' selected':'') + '>.py</option><option value="rf"' + (_fmSelectedType==='rf'?' selected':'') + '>.rf</option><option value="kd"' + (_fmSelectedType==='kd'?' selected':'') + '>.kd</option><option value="sys"' + (_fmSelectedType==='sys'?' selected':'') + '>.sys</option><option value="txt"' + (_fmSelectedType==='txt'?' selected':'') + '>.txt</option></select>';
+    html += '<input type="text" placeholder="🔍 搜索..." value="' + _fmSearchQuery + '" oninput="_fmSearchQuery=this.value;closeWindow(\'files\');openFiles();" style="width:120px;background:#3d3d3d;color:#ccc;border:1px solid #555;padding:4px 8px;border-radius:4px;font-size:11px;">';
+    html += '<button onclick="uploadFileDialog()">📤 上传</button>';
+    html += '<button onclick="closeWindow(\'files\');openFiles();">🔄</button>';
+    html += '</div><div class="file-list">';
+    if (names.length === 0) { html += '<div style="padding:30px;color:#888;">无文件</div>'; }
+    else { names.forEach(function(n) { var icon = '📄'; if (n.endsWith('.kd')) icon = '⚡'; else if (n.endsWith('.sys')) icon = '⚙️'; else if (n.endsWith('.rf')) icon = '📜'; var tag = VirtualFS.getFileTag(n); var tagLabel = tag ? ' <span style="font-size:9px;color:#0078D4;">[' + tag + ']</span>' : ''; html += '<div class="file-item" ondblclick="openFileByType(\'' + escapeAttr(n) + '\')"><span class="fi-icon">' + icon + '</span><span style="flex:1">' + escapeHTML(n) + tagLabel + '</span><button onclick="event.stopPropagation();downloadFileToLocal(\'' + escapeAttr(n) + '\');" style="background:none;border:none;cursor:pointer;font-size:12px;">📥</button><button onclick="event.stopPropagation();permanentlyHideFile(\'' + escapeAttr(n) + '\');" style="background:none;border:none;cursor:pointer;font-size:12px;">🗑</button>' + (n.endsWith('.kd') ? '<button onclick="event.stopPropagation();installKDAppFromFile(\'' + escapeAttr(n) + '\');" style="background:none;border:none;cursor:pointer;font-size:12px;">📦</button>' : '') + '</div>'; }); }
+    html += '</div>'; createWindow('files', '文件管理', '📁', 600, 520, 100, 120, html);
+};
+
+// ─────────────────────────────────────────────────────────────
+//  v1.5.2 sys更新系统重做（TI令牌 + 持久化 + 进度条）
+// ─────────────────────────────────────────────────────────────
+var SYS_TOKEN_KEY = 'tkemu_sys_tokens_v2';
+var SYS_UPDATES_KEY = 'tkemu_sys_updates_v2';
+
+function generateSysToken() { var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'; var t = 'SYS-'; for (var i=0;i<32;i++) t += chars.charAt(Math.floor(Math.random()*chars.length)); return t; }
+function getSysTokens() { try { return JSON.parse(localStorage.getItem(SYS_TOKEN_KEY) || '[]'); } catch(e) { return []; } }
+function saveSysTokens(t) { localStorage.setItem(SYS_TOKEN_KEY, JSON.stringify(t)); }
+function getSysUpdates() { try { return JSON.parse(localStorage.getItem(SYS_UPDATES_KEY) || '[]'); } catch(e) { return []; } }
+function saveSysUpdates(u) { localStorage.setItem(SYS_UPDATES_KEY, JSON.stringify(u)); }
+
+// 覆盖原有的 sysInstallUpdate 函数
+sysInstallUpdate = function() {
+    var ta = document.getElementById('sys-editor-input');
+    if (!ta || !ta.value.trim()) { showToast('没有可执行的代码'); return; }
+    var name = prompt('更新名称:', 'update_' + new Date().toISOString().slice(0,10));
+    if (!name || !name.trim()) return; name = name.trim();
+    if (!name.endsWith('.sys')) name += '.sys';
+
+    var tokens = getSysTokens(); var validToken = '';
+    if (tokens.length > 0) { validToken = prompt('需要TI级令牌。现有令牌: ' + tokens.join(', ') + '\n请输入令牌（留空生成新令牌）:', ''); }
+    if (!validToken || validToken.trim() === '') { validToken = generateSysToken(); tokens.push(validToken); saveSysTokens(tokens); alert('新令牌: ' + validToken + '\n请妥善保管！'); }
+    else { validToken = validToken.trim(); if (tokens.indexOf(validToken) === -1) { alert('令牌无效！'); return; } }
+
+    if (!confirm('安装系统更新 "' + name + '"？（TI级权限）\n令牌: ' + validToken)) return;
+
+    // 进度条
+    var overlay = document.createElement('div'); overlay.className = 'install-overlay';
+    overlay.innerHTML = '<div class="install-dialog"><div class="install-icon">⚡</div><h3>安装系统更新...</h3><div class="install-progress-bar"><div class="install-progress-fill" id="sys-update-progress" style="width:0%;"></div></div><div class="install-stats"><span id="sys-update-percent">0%</span><span id="sys-update-step">准备中...</span></div></div>';
+    document.body.appendChild(overlay);
+    var fill = document.getElementById('sys-update-progress'); var percent = document.getElementById('sys-update-percent'); var step = document.getElementById('sys-update-step');
+    var p = 0; var iv = setInterval(function() { p += 20; if (p > 100) p = 100; fill.style.width = p + '%'; percent.textContent = p + '%'; step.textContent = p < 100 ? '处理中...' : '完成'; if (p >= 100) { clearInterval(iv); setTimeout(function() { document.body.removeChild(overlay);
+        var updates = getSysUpdates(); updates.push({ name: name, content: ta.value, token: validToken, time: new Date().toISOString() }); saveSysUpdates(updates);
+        VirtualFS.writeFile('updates/' + name, ta.value);
+        try { eval(ta.value); } catch(e) { shellPrint('更新执行错误: ' + e.message, 'error'); }
+        refreshFiles(); showToast('已安装: ' + name); shellPrint('[SysUpdate] ' + name + ' 安装完成', 'success');
+    }, 300); } }, 400);
+};
+
+// 自动应用更新
+function autoApplySysUpdates() {
+    var updates = getSysUpdates(); if (updates.length === 0) return;
+    console.log('[SysUpdate] 自动应用 ' + updates.length + ' 个更新...');
+    for (var i = 0; i < updates.length; i++) { try { eval(updates[i].content); } catch(e) { console.error('[SysUpdate] 失败: ' + updates[i].name, e.message); } }
+}
+
+// 卸载更新
+function uninstallSysUpdate(index) {
+    var updates = getSysUpdates(); if (index >= 0 && index < updates.length) { var n = updates[index].name; updates.splice(index, 1); saveSysUpdates(updates); VirtualFS.deleteFile('updates/' + n); showToast('已卸载: ' + n); return true; } return false;
+}
+
+// System Control 增加"管理更新"菜单项
+var _origOpenSysManager = openSysManager;
+openSysManager = function(filePath, content) {
+    _origOpenSysManager(filePath, content);
+    setTimeout(function() {
+        var menuBar = document.querySelector('#win-sysmanager .menu-bar');
+        if (menuBar && !document.getElementById('sys-menu-updates')) {
+            var runMenu = menuBar.querySelector('.menu-item:nth-child(2) .menu-dropdown');
+            if (runMenu) {
+                var sep = document.createElement('div'); sep.className = 'menu-separator'; runMenu.appendChild(sep);
+                var item = document.createElement('div'); item.className = 'menu-dropdown-item'; item.id = 'sys-menu-updates';
+                item.textContent = '📋 管理更新'; item.onclick = function() { sysManageUpdates(); };
+                runMenu.appendChild(item);
+            }
+        }
+    }, 200);
+};
+
+function sysManageUpdates() {
+    var updates = getSysUpdates(); if (updates.length === 0) { alert('没有已安装的更新'); return; }
+    var list = updates.map(function(u, i) { return i + ': ' + u.name + ' (' + u.token.substring(0,8) + '...)'; }).join('\n');
+    var choice = prompt('已安装更新:\n\n' + list + '\n\n输入序号卸载，或取消:', '');
+    if (choice !== null && choice.trim() !== '') { var idx = parseInt(choice); if (!isNaN(idx) && idx >= 0 && idx < updates.length) { if (confirm('卸载 "' + updates[idx].name + '"?')) { uninstallSysUpdate(idx); } } }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  v1.5.2 启动自动应用
+// ─────────────────────────────────────────────────────────────
+setTimeout(function() { autoApplySysUpdates(); }, 600);
+
+// ═══════════════════════════════════════════════════════════════
+//  v1.5.2 新增功能结束
+// ═══════════════════════════════════════════════════════════════
 </script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>
 </body>
