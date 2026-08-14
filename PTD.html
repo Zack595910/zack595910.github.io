@@ -5818,6 +5818,199 @@ window.WC = WC;
         sm.appendChild(si);
     }
 })();
+// ═══════════════════════════════════════════════════════════════
+//  tkemu 存储容量监控 + 预警系统（完整版）
+//  删除之前所有存储相关代码，只贴这一份
+// ═══════════════════════════════════════════════════════════════
+
+var StorageMonitor = {
+    keys: ['tkemu_fs_v6', 'tkemu_hidden_files_v2', 'tkemu_kd_apps', 'tkemu_vfolders_v1', 'tkemu_ftags_v1', 'tkemu_sys_tokens_v2', 'tkemu_sys_updates_v2', 'tkemu_users_v1', 'tkemu_trash'],
+
+    getTotalUsage: function() {
+        var total = 0;
+        for (var i = 0; i < this.keys.length; i++) {
+            try {
+                var data = localStorage.getItem(this.keys[i]);
+                if (data) total += data.length * 2;
+            } catch (e) {}
+        }
+        return total;
+    },
+
+    getUsageByKey: function() {
+        var result = {};
+        for (var i = 0; i < this.keys.length; i++) {
+            try {
+                var data = localStorage.getItem(this.keys[i]);
+                result[this.keys[i]] = data ? data.length * 2 : 0;
+            } catch (e) {
+                result[this.keys[i]] = 0;
+            }
+        }
+        return result;
+    },
+
+    getLimit: function() { return 5 * 1024 * 1024; },
+
+    formatSize: function(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(2) + ' MB';
+    },
+
+    getUsagePercent: function() {
+        return Math.round((this.getTotalUsage() / this.getLimit()) * 100);
+    },
+
+    check: function() {
+        var percent = this.getUsagePercent();
+        if (percent >= 85) {
+            this.showWarning(percent);
+            return true;
+        }
+        return false;
+    },
+
+    showWarning: function(percent) {
+        if (confirm('⚠️ 存储空间仅剩 ' + (100 - percent) + '%！\n\n是否打开存储管理？')) {
+            this.openStorageManager();
+        }
+    },
+
+    openStorageManager: function() {
+        if (openWindows['storagemanager']) { focusWindow('storagemanager'); return; }
+
+        var usage = this.getTotalUsage();
+        var limit = this.getLimit();
+        var percent = this.getUsagePercent();
+        var byKey = this.getUsageByKey();
+
+        var html = '';
+        html += '<div style="padding:14px;background:#f0f0f0;height:100%;overflow-y:auto;color:#1a1a1a;">';
+        html += '<h3 style="margin-bottom:12px;color:#0078D4;">💿 存储管理</h3>';
+
+        html += '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:14px;margin-bottom:10px;">';
+        html += '<div style="font-size:14px;font-weight:bold;margin-bottom:8px;">' + this.formatSize(usage) + ' / ' + this.formatSize(limit) + '</div>';
+        var barColor = percent >= 90 ? '#e74c3c' : (percent >= 70 ? '#f39c12' : '#27ae60');
+        html += '<div style="height:14px;background:#e0e0e0;border-radius:7px;overflow:hidden;">';
+        html += '<div style="height:100%;background:' + barColor + ';width:' + Math.min(percent, 100) + '%;border-radius:7px;transition:width 0.3s;"></div></div>';
+        html += '<div style="font-size:12px;color:' + barColor + ';font-weight:bold;margin-top:4px;">' + percent + '%</div>';
+        html += '</div>';
+
+        var keyNames = {
+            'tkemu_fs_v6': '📁 文件系统',
+            'tkemu_hidden_files_v2': '🙈 隐藏文件',
+            'tkemu_kd_apps': '⚡ KD应用',
+            'tkemu_vfolders_v1': '📂 虚拟文件夹',
+            'tkemu_ftags_v1': '🏷️ 文件标签',
+            'tkemu_sys_tokens_v2': '🔑 sys令牌',
+            'tkemu_sys_updates_v2': '🔄 sys更新',
+            'tkemu_users_v1': '👤 用户数据',
+            'tkemu_trash': '🗑️ 回收站'
+        };
+
+        html += '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:14px;margin-bottom:10px;">';
+        html += '<div style="font-weight:bold;font-size:13px;margin-bottom:6px;">占用详情</div>';
+        Object.keys(byKey).forEach(function(k) {
+            if (byKey[k] > 0) {
+                html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">';
+                html += '<span>' + (keyNames[k] || k) + '</span>';
+                html += '<span>' + StorageMonitor.formatSize(byKey[k]) + '</span></div>';
+            }
+        });
+        html += '</div>';
+
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+        html += '<button onclick="StorageMonitor.cleanTrash()" style="padding:8px 14px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">🗑️ 清空回收站</button>';
+        html += '<button onclick="StorageMonitor.cleanUpdates()" style="padding:8px 14px;background:#8e44ad;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">🔄 清空sys更新</button>';
+        html += '<button onclick="StorageMonitor.cleanLargeFiles()" style="padding:8px 14px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">📄 清理大文件</button>';
+        html += '<button onclick="StorageMonitor.refresh()" style="padding:8px 14px;background:#0078D4;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">🔄 刷新</button>';
+        html += '</div></div>';
+
+        createWindow('storagemanager', '存储管理', '💿', 450, 480, 100, 150, html);
+    },
+
+    refresh: function() {
+        closeWindow('storagemanager');
+        this.openStorageManager();
+    },
+
+    cleanTrash: function() {
+        trashEmpty();
+        showToast('🗑️ 回收站已清空');
+        this.refresh();
+    },
+
+    cleanUpdates: function() {
+        localStorage.removeItem('tkemu_sys_updates_v2');
+        showToast('🔄 sys更新已清空');
+        this.refresh();
+    },
+
+    cleanLargeFiles: function() {
+        var files = VirtualFS.listFiles();
+        var largeFiles = [];
+        Object.keys(files).forEach(function(name) {
+            var size = new Blob([files[name]]).size;
+            if (size > 50 * 1024) largeFiles.push({ name: name, size: size });
+        });
+        if (largeFiles.length === 0) { alert('没有大于50KB的文件'); return; }
+        var list = largeFiles.map(function(f, i) { return (i + 1) + '. ' + f.name + ' (' + StorageMonitor.formatSize(f.size) + ')'; }).join('\n');
+        var choice = prompt('大文件（>50KB）:\n\n' + list + '\n\n序号删除:', '');
+        if (choice !== null && choice !== '') {
+            var idx = parseInt(choice) - 1;
+            if (idx >= 0 && idx < largeFiles.length) {
+                if (confirm('删除 ' + largeFiles[idx].name + '？')) {
+                    VirtualFS.deleteFile(largeFiles[idx].name);
+                    showToast('🗑 已删除');
+                    this.refresh();
+                }
+            }
+        }
+    }
+};
+
+window.StorageMonitor = StorageMonitor;
+
+// 写入文件后自动检查容量
+var _origWrite = VirtualFS.writeFile;
+VirtualFS.writeFile = function(path, content) {
+    _origWrite.call(this, path, content);
+    clearTimeout(window._smCheckTimer);
+    window._smCheckTimer = setTimeout(function() { StorageMonitor.check(); }, 2000);
+};
+
+// 启动时检查
+setTimeout(function() { StorageMonitor.check(); }, 3000);
+
+// 桌面右键入口
+(function() {
+    var menu = document.getElementById('desktop-context-menu');
+    if (menu && !document.getElementById('sm-ctx-item')) {
+        var item = document.createElement('div');
+        item.className = 'context-menu-item';
+        item.id = 'sm-ctx-item';
+        item.innerHTML = '<span>💿</span> 存储管理';
+        item.onclick = function() { StorageMonitor.openStorageManager(); hideAllContextMenus(); };
+        // 追加到菜单末尾
+        menu.appendChild(item);
+    }
+})();
+
+// 开始菜单入口
+(function() {
+    var sm = document.getElementById('start-menu');
+    if (sm && !document.getElementById('sm-start-item')) {
+        var item = document.createElement('div');
+        item.className = 'start-menu-item';
+        item.id = 'sm-start-item';
+        item.innerHTML = '<span class="sm-icon">💿</span> 存储管理';
+        item.onclick = function() { toggleStartMenu(); StorageMonitor.openStorageManager(); };
+        sm.appendChild(item);
+    }
+})();
+
+showToast('💿 存储管理已就绪');
 </script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>
 </body>
