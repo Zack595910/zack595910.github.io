@@ -6,26 +6,15 @@
     <title>tkemu - 浏览器中的 Windows 桌面模拟器</title>
     <style>
         :root {
-            --bg: #0a0a1e;
-            --card: #12122a;
-            --text: #e0e0e0;
-            --accent: #0078D4;
-            --accent2: #00ccff;
-            --gold: #FFD700;
-            --green: #00ff41;
-            --red: #ff4444;
-            --purple: #9944ff;
-            --orange: #ff8800;
+            --bg: #0a0a1e; --card: #12122a; --text: #e0e0e0;
+            --accent: #0078D4; --accent2: #00ccff; --gold: #FFD700;
+            --green: #00ff41; --red: #ff4444; --purple: #9944ff; --orange: #ff8800;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.8;
-            overflow-x: hidden;
+            background: var(--bg); color: var(--text); line-height: 1.8; overflow-x: hidden;
         }
-
         nav {
             position: fixed; top: 0; left: 0; right: 0; z-index: 100;
             background: rgba(10,10,30,0.9); backdrop-filter: blur(20px);
@@ -34,38 +23,26 @@
         nav .container { display: flex; justify-content: space-between; align-items: center; }
         nav .logo { font-size: 22px; font-weight: bold; color: var(--accent2); letter-spacing: 2px; }
         nav .logo span { color: var(--green); }
-        nav a { color: #aaa; text-decoration: none; margin-left: 24px; font-size: 14px; transition: color 0.2s; }
+        nav a { color: #aaa; text-decoration: none; margin-left: 20px; font-size: 13px; }
         nav a:hover { color: #fff; }
-
         .container { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
-
         .hero {
-            padding: 160px 0 80px; text-align: center;
+            padding: 150px 0 80px; text-align: center;
             background: radial-gradient(ellipse at 50% 0%, rgba(0,120,212,0.15) 0%, transparent 70%);
         }
-        .hero h1 { font-size: 48px; font-weight: 700; margin-bottom: 16px; letter-spacing: 1px; }
+        .hero h1 { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
         .hero h1 .hl { color: var(--accent2); }
         .hero .subtitle { font-size: 18px; color: #888; margin-bottom: 10px; }
-        .hero .badge {
-            display: inline-block; padding: 6px 18px; border-radius: 20px; font-size: 13px; margin: 0 4px; border: 1px solid;
-        }
+        .hero .badge { display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 13px; margin: 0 3px; border: 1px solid; }
         .badge-green { background: rgba(0,255,65,0.1); color: var(--green); border-color: rgba(0,255,65,0.2); }
         .badge-blue { background: rgba(0,204,255,0.1); color: var(--accent2); border-color: rgba(0,204,255,0.2); }
         .badge-gold { background: rgba(255,215,0,0.1); color: var(--gold); border-color: rgba(255,215,0,0.2); }
-
+        .badge-purple { background: rgba(153,68,255,0.1); color: var(--purple); border-color: rgba(153,68,255,0.2); }
         .section { padding: 60px 0; }
-        .section h2 {
-            text-align: center; font-size: 30px; margin-bottom: 40px; color: #fff;
-        }
-        .section h2::after {
-            content: ''; display: block; width: 60px; height: 3px;
-            background: var(--accent2); margin: 12px auto 0; border-radius: 2px;
-        }
+        .section h2 { text-align: center; font-size: 30px; margin-bottom: 40px; color: #fff; }
+        .section h2::after { content: ''; display: block; width: 60px; height: 3px; background: var(--accent2); margin: 12px auto 0; border-radius: 2px; }
         .section p.desc { text-align: center; color: #888; max-width: 700px; margin: -20px auto 30px; font-size: 14px; }
-
-        .features {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;
-        }
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
         .feature-card {
             background: var(--card); border: 1px solid rgba(255,255,255,0.06);
             border-radius: 12px; padding: 24px; transition: all 0.3s;
@@ -74,20 +51,17 @@
         .feature-card .icon { font-size: 36px; margin-bottom: 12px; }
         .feature-card h3 { font-size: 17px; color: var(--accent2); margin-bottom: 8px; }
         .feature-card p { font-size: 13px; color: #999; }
-
         .arch { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
         .arch-card {
-            flex: 1; min-width: 250px; max-width: 300px;
+            flex: 1; min-width: 240px; max-width: 280px;
             background: var(--card); border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 12px; padding: 28px 20px; text-align: center; transition: all 0.3s;
+            border-radius: 12px; padding: 24px 18px; text-align: center; transition: all 0.3s;
         }
         .arch-card:hover { border-color: rgba(255,215,0,0.3); }
-        .arch-card .aicon { font-size: 48px; margin-bottom: 12px; }
-        .arch-card h3 { font-size: 20px; color: var(--gold); margin-bottom: 6px; }
+        .arch-card .aicon { font-size: 44px; margin-bottom: 12px; }
+        .arch-card h3 { font-size: 19px; color: var(--gold); margin-bottom: 6px; }
         .arch-card .analogy { font-size: 12px; color: #666; margin-bottom: 10px; }
         .arch-card p { font-size: 13px; color: #aaa; }
-
-        /* 架构图 */
         .arch-diagram {
             background: var(--card); border: 1px solid rgba(255,255,255,0.1);
             border-radius: 12px; padding: 30px; font-family: 'Consolas', 'Courier New', monospace;
@@ -97,103 +71,66 @@
         .arch-diagram .hl { color: var(--accent2); }
         .arch-diagram .hl2 { color: var(--gold); }
         .arch-diagram .hl3 { color: var(--green); }
-
-        .app-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+        .app-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
         .app-item {
             background: var(--card); border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 10px; padding: 18px 10px; text-align: center; transition: all 0.2s;
+            border-radius: 10px; padding: 16px 8px; text-align: center; transition: all 0.2s;
         }
         .app-item:hover { border-color: rgba(0,255,65,0.3); }
-        .app-item .ai { font-size: 32px; margin-bottom: 6px; }
-        .app-item .an { font-size: 12px; color: #ccc; }
-
-        .tech-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; }
-        .tech-item {
-            background: var(--card); border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 8px; padding: 16px 10px; text-align: center; font-size: 13px; color: #aaa;
-        }
-        .tech-item .ti { font-size: 28px; margin-bottom: 4px; }
-
-        /* 版本更新 */
+        .app-item .ai { font-size: 30px; margin-bottom: 4px; }
+        .app-item .an { font-size: 11px; color: #ccc; }
         .changelog { max-width: 750px; margin: 0 auto; }
         .log-item {
             background: var(--card); border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 8px; padding: 18px 22px; margin-bottom: 10px; display: flex; gap: 16px;
+            border-radius: 8px; padding: 16px 20px; margin-bottom: 8px; display: flex; gap: 14px;
         }
         .log-item .ver {
             background: rgba(0,204,255,0.15); color: var(--accent2); font-weight: bold;
-            padding: 6px 14px; border-radius: 8px; font-size: 13px; white-space: nowrap;
-            height: fit-content; min-width: 80px; text-align: center;
+            padding: 5px 12px; border-radius: 8px; font-size: 13px; white-space: nowrap;
+            height: fit-content; min-width: 75px; text-align: center;
         }
-        .log-item .ver.concept {
-            background: rgba(255,136,0,0.2); color: var(--orange); border: 1px solid rgba(255,136,0,0.3);
-        }
-        .log-item .ver.concept::after { content: ' (概念)'; font-size: 9px; display: block; color: var(--orange); }
-        .log-item .log-content h4 { font-size: 15px; color: #fff; margin-bottom: 4px; }
-        .log-item .log-content p { font-size: 12px; color: #888; }
-        .log-item .log-content ul { margin: 6px 0 0 16px; font-size: 11px; color: #777; }
+        .log-item .ver.concept { background: rgba(255,136,0,0.2); color: var(--orange); border: 1px solid rgba(255,136,0,0.3); }
+        .log-item .ver.concept::after { content: ' (概念)'; font-size: 9px; display: block; }
+        .log-item .ver.latest { background: rgba(0,255,65,0.15); color: var(--green); border: 1px solid rgba(0,255,65,0.3); }
+        .log-item .log-content h4 { font-size: 14px; color: #fff; margin-bottom: 4px; }
+        .log-item .log-content ul { margin: 4px 0 0 14px; font-size: 11px; color: #777; }
         .log-item .log-content ul li { margin-bottom: 2px; }
-
-        /* tkinter 表格 */
-        .comp-table { width: 100%; border-collapse: collapse; font-size: 13px; max-width: 700px; margin: 0 auto; }
-        .comp-table th {
-            background: rgba(0,204,255,0.1); color: var(--accent2); padding: 8px 14px;
-            text-align: left; border: 1px solid rgba(255,255,255,0.06);
+        .tech-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
+        .tech-item {
+            background: var(--card); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px; padding: 14px 8px; text-align: center; font-size: 12px; color: #aaa;
         }
-        .comp-table td {
-            padding: 8px 14px; border: 1px solid rgba(255,255,255,0.04); color: #aaa;
-        }
-
-        /* rf 命令表 */
-        .cmd-table { width: 100%; border-collapse: collapse; font-size: 12px; max-width: 750px; margin: 0 auto; }
-        .cmd-table th {
-            background: rgba(0,255,65,0.08); color: var(--green); padding: 8px 12px;
-            text-align: left; border: 1px solid rgba(255,255,255,0.06);
-        }
-        .cmd-table td {
-            padding: 8px 12px; border: 1px solid rgba(255,255,255,0.04); color: #aaa;
-            font-family: 'Consolas', 'Courier New', monospace; font-size: 11px;
-        }
-
-        /* 规格表 */
-        .spec-table { width: 100%; border-collapse: collapse; font-size: 13px; max-width: 600px; margin: 0 auto; }
-        .spec-table td {
-            padding: 10px 16px; border: 1px solid rgba(255,255,255,0.04); color: #aaa;
-        }
+        .tech-item .ti { font-size: 26px; margin-bottom: 4px; }
+        .cmd-table, .comp-table, .spec-table { width: 100%; border-collapse: collapse; font-size: 12px; max-width: 750px; margin: 0 auto; }
+        .cmd-table th, .comp-table th { background: rgba(0,204,255,0.1); color: var(--accent2); padding: 8px 12px; text-align: left; border: 1px solid rgba(255,255,255,0.06); }
+        .cmd-table td, .comp-table td { padding: 8px 12px; border: 1px solid rgba(255,255,255,0.04); color: #aaa; font-family: 'Consolas', monospace; font-size: 11px; }
+        .spec-table { max-width: 600px; }
+        .spec-table td { padding: 10px 16px; border: 1px solid rgba(255,255,255,0.04); color: #aaa; }
         .spec-table td:first-child { color: var(--accent2); font-weight: bold; width: 40%; }
-
         .btn {
-            display: inline-block; padding: 14px 36px; border-radius: 30px;
-            font-size: 16px; font-weight: 600; text-decoration: none; transition: all 0.3s;
+            display: inline-block; padding: 13px 32px; border-radius: 30px;
+            font-size: 15px; font-weight: 600; text-decoration: none; transition: all 0.3s;
         }
         .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 20px rgba(0,120,212,0.4); }
-        .btn-primary:hover { background: #005A9E; transform: scale(1.05); box-shadow: 0 6px 30px rgba(0,120,212,0.6); }
+        .btn-primary:hover { background: #005A9E; transform: scale(1.05); }
         .btn-outline { border: 2px solid var(--accent2); color: var(--accent2); }
         .btn-outline:hover { background: rgba(0,204,255,0.1); }
         .btn-gold { border: 2px solid var(--gold); color: var(--gold); }
         .btn-gold:hover { background: rgba(255,215,0,0.1); }
-
-        .version-bar {
-            text-align: center; padding: 14px; background: rgba(255,255,255,0.03);
-            border-top: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: #666;
-        }
-
+        .version-bar { text-align: center; padding: 14px; background: rgba(255,255,255,0.03); border-top: 1px solid rgba(255,255,255,0.05); font-size: 12px; color: #666; }
         footer { text-align: center; padding: 40px 0 80px; border-top: 1px solid rgba(255,255,255,0.05); }
         footer .cta-text { font-size: 20px; margin-bottom: 20px; color: #fff; }
-        footer .btn-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-
-        .stats { display: flex; gap: 30px; justify-content: center; flex-wrap: wrap; margin-bottom: 30px; }
-        .stat-item { text-align: center; }
-        .stat-item .num { font-size: 42px; font-weight: bold; color: var(--accent2); }
-        .stat-item .label { font-size: 13px; color: #666; }
-
+        footer .btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .stats { display: flex; gap: 26px; justify-content: center; flex-wrap: wrap; margin-bottom: 26px; }
+        .stat-item .num { font-size: 38px; font-weight: bold; color: var(--accent2); }
+        .stat-item .label { font-size: 12px; color: #666; }
         @media (max-width: 768px) {
-            .hero h1 { font-size: 28px; }
-            nav a { margin-left: 10px; font-size: 11px; }
+            .hero h1 { font-size: 26px; }
+            nav a { margin-left: 8px; font-size: 10px; }
             .arch { flex-direction: column; align-items: center; }
-            .stats { gap: 16px; }
-            .stat-item .num { font-size: 30px; }
-            .arch-diagram { font-size: 10px; padding: 16px; }
+            .arch-diagram { font-size: 9px; padding: 12px; }
+            .stats { gap: 12px; }
+            .stat-item .num { font-size: 26px; }
         }
     </style>
 </head>
@@ -221,13 +158,15 @@
         <p style="margin-top:12px;">
             <span class="badge badge-green">🐍 Python 运行时</span>
             <span class="badge badge-blue">⚡ 三大扩展体系</span>
-            <span class="badge badge-gold">🏆 180KB 纯前端</span>
+            <span class="badge badge-gold">🏆 200KB+ 纯前端</span>
+            <span class="badge badge-purple">👥 多用户</span>
         </p>
         <div class="stats" style="margin-top:30px;">
-            <div class="stat-item"><div class="num">18+</div><div class="label">内置应用</div></div>
+            <div class="stat-item"><div class="num">25+</div><div class="label">内置应用</div></div>
             <div class="stat-item"><div class="num">20+</div><div class="label">tkinter组件</div></div>
-            <div class="stat-item"><div class="num">15+</div><div class="label">rf脚本命令</div></div>
-            <div class="stat-item"><div class="num">5000+</div><div class="label">行代码</div></div>
+            <div class="stat-item"><div class="num">15+</div><div class="label">rf命令</div></div>
+            <div class="stat-item"><div class="num">6000+</div><div class="label">行代码</div></div>
+            <div class="stat-item"><div class="num">v1.6</div><div class="label">当前版本</div></div>
         </div>
     </div>
 </section>
@@ -240,7 +179,7 @@
             <div class="feature-card">
                 <div class="icon">🖥️</div>
                 <h3>完整桌面环境</h3>
-                <p>窗口管理、任务栏、开始菜单、右键菜单、系统托盘、回收站、通知中心，还原 Windows 操作习惯</p>
+                <p>窗口管理、任务栏、开始菜单磁贴、右键菜单、系统托盘、回收站、通知中心、存储管理，还原 Windows 操作习惯</p>
             </div>
             <div class="feature-card">
                 <div class="icon">🐍</div>
@@ -248,14 +187,19 @@
                 <p>内置 Pyodide 0.27.0，支持 tkinter 模拟层（Tk/Label/Button/Entry/Frame/Canvas/Listbox/Notebook 等20+组件）</p>
             </div>
             <div class="feature-card">
+                <div class="icon">👥</div>
+                <h3>多用户系统</h3>
+                <p>每用户独立文件和设置，支持密码/无密码登录，头像标识，右键切换用户，自动保存用户数据</p>
+            </div>
+            <div class="feature-card">
                 <div class="icon">📁</div>
                 <h3>虚拟文件系统</h3>
-                <p>localStorage 持久化，文件读写删、回收站、虚拟文件夹标签、本地上传下载、搜索分类筛选</p>
+                <p>localStorage 持久化，文件读写删、回收站、虚拟文件夹、本地上传下载、搜索分类、容量监控预警</p>
             </div>
             <div class="feature-card">
                 <div class="icon">📜</div>
                 <h3>rf 脚本引擎</h3>
-                <p>类 bat 命令式脚本语言，15+命令，支持 window/label/button/canvas/draw/if/menu/msg/ask/set</p>
+                <p>类 bat 命令式脚本，15+命令，window/label/button/canvas/draw/if/menu/msg/ask/set 等</p>
             </div>
             <div class="feature-card">
                 <div class="icon">⚡</div>
@@ -265,7 +209,12 @@
             <div class="feature-card">
                 <div class="icon">🔧</div>
                 <h3>sys 系统更新</h3>
-                <p>TI 级最高权限，令牌验证保护，进度条安装，持久化存储，启动自动应用</p>
+                <p>TI 级最高权限，令牌验证，进度条安装，持久化存储，启动自动应用</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🖥️</div>
+                <h3>Windows Control</h3>
+                <p>仿 Windows 7 控制面板，类别/图标视图、搜索、侧边栏、24+设置项，全部图形化操作</p>
             </div>
         </div>
     </div>
@@ -275,43 +224,43 @@
     <div class="container">
         <h2>系统架构</h2>
         <div class="arch-diagram">
-            ┌─────────────────────────────────────────────────┐<br>
-            │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="hl">tkemu</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl2">┌───────────┐</span>&nbsp;&nbsp;<span class="hl3">┌──────────┐</span>&nbsp;&nbsp;<span class="hl">┌─────────────┐</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl2">│&nbsp;Windows&nbsp;&nbsp;│</span>&nbsp;&nbsp;<span class="hl3">│&nbsp;Python&nbsp;&nbsp;│</span>&nbsp;&nbsp;<span class="hl">│&nbsp;tkinter&nbsp;&nbsp;&nbsp;&nbsp;│</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl2">│&nbsp;桌面环境&nbsp;│</span>&nbsp;&nbsp;<span class="hl3">│&nbsp;运行时&nbsp;&nbsp;│</span>&nbsp;&nbsp;<span class="hl">│&nbsp;完整模拟层&nbsp;│</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl2">│&nbsp;·窗口管理│</span>&nbsp;&nbsp;<span class="hl3">│&nbsp;Pyodide&nbsp;│</span>&nbsp;&nbsp;<span class="hl">│&nbsp;·Tk/Top&nbsp;&nbsp;│</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl2">│&nbsp;·任务栏&nbsp;&nbsp;│</span>&nbsp;&nbsp;<span class="hl3">│&nbsp;·.py执行│</span>&nbsp;&nbsp;<span class="hl">│&nbsp;·Label&nbsp;&nbsp;&nbsp;│</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl2">│&nbsp;·开始菜单│</span>&nbsp;&nbsp;<span class="hl3">│&nbsp;·Shell&nbsp;│</span>&nbsp;&nbsp;<span class="hl">│&nbsp;·Canvas&nbsp;&nbsp;│</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl2">└───────────┘</span>&nbsp;&nbsp;<span class="hl3">└──────────┘</span>&nbsp;&nbsp;<span class="hl">└─────────────┘</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl3">┌───────────┐</span>&nbsp;&nbsp;<span class="hl2">┌──────────┐</span>&nbsp;&nbsp;<span class="hl">┌─────────────┐</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl3">│&nbsp;rf&nbsp;脚本&nbsp;&nbsp;│</span>&nbsp;&nbsp;<span class="hl2">│&nbsp;KD&nbsp;应用&nbsp;│</span>&nbsp;&nbsp;<span class="hl">│&nbsp;虚拟文件&nbsp;&nbsp;│</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl3">│&nbsp;引擎&nbsp;&nbsp;&nbsp;&nbsp;│</span>&nbsp;&nbsp;<span class="hl2">│&nbsp;系统&nbsp;&nbsp;&nbsp;│</span>&nbsp;&nbsp;<span class="hl">│&nbsp;系统&nbsp;&nbsp;&nbsp;&nbsp;│</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl3">│&nbsp;·窗口&nbsp;&nbsp;│</span>&nbsp;&nbsp;<span class="hl2">│&nbsp;·HTML&nbsp;│</span>&nbsp;&nbsp;<span class="hl">│&nbsp;·local&nbsp;&nbsp;│</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl3">│&nbsp;·Canvas│</span>&nbsp;&nbsp;<span class="hl2">│&nbsp;·安装&nbsp;│</span>&nbsp;&nbsp;<span class="hl">│&nbsp;·隐藏&nbsp;&nbsp;│</span>&nbsp;&nbsp;│<br>
-            │&nbsp;&nbsp;<span class="hl3">└───────────┘</span>&nbsp;&nbsp;<span class="hl2">└──────────┘</span>&nbsp;&nbsp;<span class="hl">└─────────────┘</span>&nbsp;&nbsp;│<br>
-            └─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐<br>
+│                      <span class="hl">tkemu</span>                          │<br>
+│                                                 │<br>
+│  <span class="hl2">┌───────────┐</span>  <span class="hl3">┌──────────┐</span>  <span class="hl">┌─────────────┐</span>  │<br>
+│  <span class="hl2">│ Windows   │</span>  <span class="hl3">│ Python   │</span>  <span class="hl">│ tkinter     │</span>  │<br>
+│  <span class="hl2">│ 桌面环境  │</span>  <span class="hl3">│ 运行时   │</span>  <span class="hl">│ 完整模拟层  │</span>  │<br>
+│  <span class="hl2">│ ·窗口管理 │</span>  <span class="hl3">│ Pyodide  │</span>  <span class="hl">│ ·Tk/Top     │</span>  │<br>
+│  <span class="hl2">│ ·任务栏   │</span>  <span class="hl3">│ ·.py执行 │</span>  <span class="hl">│ ·Label      │</span>  │<br>
+│  <span class="hl2">│ ·开始菜单 │</span>  <span class="hl3">│ ·Shell   │</span>  <span class="hl">│ ·Canvas     │</span>  │<br>
+│  <span class="hl2">└───────────┘</span>  <span class="hl3">└──────────┘</span>  <span class="hl">└─────────────┘</span>  │<br>
+│                                                 │<br>
+│  <span class="hl3">┌───────────┐</span>  <span class="hl2">┌──────────┐</span>  <span class="hl">┌─────────────┐</span>  │<br>
+│  <span class="hl3">│ rf 脚本   │</span>  <span class="hl2">│ KD 应用  │</span>  <span class="hl">│ 虚拟文件    │</span>  │<br>
+│  <span class="hl3">│ 引擎      │</span>  <span class="hl2">│ 系统     │</span>  <span class="hl">│ 系统        │</span>  │<br>
+│  <span class="hl3">│ ·窗口     │</span>  <span class="hl2">│ ·HTML   │</span>  <span class="hl">│ ·local      │</span>  │<br>
+│  <span class="hl3">│ ·Canvas   │</span>  <span class="hl2">│ ·安装   │</span>  <span class="hl">│ ·隐藏       │</span>  │<br>
+│  <span class="hl3">└───────────┘</span>  <span class="hl2">└──────────┘</span>  <span class="hl">└─────────────┘</span>  │<br>
+└─────────────────────────────────────────────────┘
         </div>
         <div class="arch">
             <div class="arch-card">
                 <div class="aicon">📜</div>
                 <h3>rf 脚本</h3>
-                <div class="analogy">≈ .bat 批处理文件</div>
-                <p>简单命令式脚本语言，适合快速自动化任务，支持15+命令</p>
+                <div class="analogy">≈ .bat 批处理</div>
+                <p>简单命令式脚本，快速自动化任务，15+命令</p>
             </div>
             <div class="arch-card">
                 <div class="aicon">⚡</div>
                 <h3>KD 应用</h3>
                 <div class="analogy">≈ .exe 可执行程序</div>
-                <p>完整 HTML/CSS/JS 应用，通过 iframe 运行，功能最强大</p>
+                <p>完整 HTML/CSS/JS 应用，iframe 运行，功能最强</p>
             </div>
             <div class="arch-card">
                 <div class="aicon">🛡️</div>
                 <h3>sys 更新</h3>
-                <div class="analogy">≈ 驱动程序 / 内核模块</div>
-                <p>直接 eval 执行，TI 令牌保护，可修改全局资源，持久化自动应用</p>
+                <div class="analogy">≈ 驱动/内核模块</div>
+                <p>TI 令牌保护，可修改全局资源，持久化自动应用</p>
             </div>
         </div>
     </div>
@@ -322,6 +271,21 @@
         <h2>版本更新记录</h2>
         <div class="changelog">
             <div class="log-item">
+                <div class="ver latest">v1.6.0</div>
+                <div class="log-content">
+                    <h4>🚀 大规模功能更新</h4>
+                    <ul>
+                        <li>👥 多用户系统（独立文件/密码登录/切换用户）</li>
+                        <li>🖥️ Windows Control（仿Win7控制面板，24+设置项）</li>
+                        <li>💿 存储容量监控与预警系统</li>
+                        <li>📂 文件夹嵌套支持 + 🏷️ 文件标签</li>
+                        <li>💬 聊天室 + 📌 快捷磁贴</li>
+                        <li>🔒 锁屏界面 + 📱 移动端优化</li>
+                        <li>🎨 个性化面板（壁纸/动态视频壁纸/屏保）</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="log-item">
                 <div class="ver">v1.5.2</div>
                 <div class="log-content">
                     <h4>文件系统 + sys 更新大增强</h4>
@@ -329,7 +293,7 @@
                         <li>📁 虚拟文件夹（标签分类，不创建真实目录）</li>
                         <li>🔍 文件搜索 + 📤 本地上传 + 📥 下载到本地 + 🏷️ 分类筛选</li>
                         <li>🛡️ sys TI 令牌验证 + 📊 进度条安装 + 💾 持久化 + 🚀 启动自动应用</li>
-                        <li>📋 更新管理器（控制面板新增"更新"标签）</li>
+                        <li>📋 更新管理器</li>
                     </ul>
                 </div>
             </div>
@@ -341,7 +305,7 @@
                         <li>⚡ System Control 桌面图标和开始菜单入口</li>
                         <li>📝 .sys 脚本编辑器（新建/打开/保存/运行）</li>
                         <li>📦 安装为系统更新（保存在 updates/ 目录）</li>
-                        <li>🔧 _SYS 全局 API（窗口/文件/KD应用/DOM/回收站操作）</li>
+                        <li>🔧 _SYS 全局 API（窗口/文件/KD应用/DOM/回收站）</li>
                     </ul>
                 </div>
             </div>
@@ -358,7 +322,7 @@
                         <li>📁 文件管理器增强（视图切换、类型筛选、批量选择）</li>
                         <li>📝 代码编辑器增强（行号、语法高亮、多标签页）</li>
                         <li>🔔 通知中心（Toast 历史记录）</li>
-                        <li>🎨 主题系统（深色模式/Windows 经典/自定义壁纸）</li>
+                        <li>🎨 主题系统（深色模式/Windows经典/自定义壁纸）</li>
                         <li>⚙️ 系统设置增强 + ⚡ 性能优化</li>
                         <li>📝 写字板预装 + 🎨 画图预装</li>
                     </ul>
@@ -380,7 +344,7 @@
                 <div class="log-content">
                     <h4>控制面板与启动优化</h4>
                     <ul>
-                        <li>⚙️ 控制面板（系统/关于/设置）+ Pyodide 窗口内安装（真实进度+网速）</li>
+                        <li>⚙️ 控制面板 + Pyodide 窗口内安装（真实进度+网速）</li>
                         <li>🚀 按需加载 Pyodide + 升级到 0.27.0</li>
                         <li>📦 KD/rf 预装示例文件</li>
                     </ul>
@@ -425,28 +389,29 @@
 
 <section class="section" id="apps" style="background:rgba(255,255,255,0.02);">
     <div class="container">
-        <h2>预装应用清单</h2>
+        <h2>内置应用</h2>
         <div class="app-grid">
             <div class="app-item"><div class="ai">📝</div><div class="an">代码编辑器</div></div>
             <div class="app-item"><div class="ai">⬛</div><div class="an">Python Shell</div></div>
             <div class="app-item"><div class="ai">📁</div><div class="an">文件管理</div></div>
             <div class="app-item"><div class="ai">🎮</div><div class="an">KSD 3D</div></div>
             <div class="app-item"><div class="ai">💻</div><div class="an">VS Code Web</div></div>
+            <div class="app-item"><div class="ai">🖥️</div><div class="an">Windows Control</div></div>
             <div class="app-item"><div class="ai">⚙️</div><div class="an">控制面板</div></div>
-            <div class="app-item"><div class="ai">ℹ️</div><div class="an">关于系统</div></div>
-            <div class="app-item"><div class="ai">🗑️</div><div class="an">回收站</div></div>
             <div class="app-item"><div class="ai">⚡</div><div class="an">System Control</div></div>
             <div class="app-item"><div class="ai">📝</div><div class="an">写字板</div></div>
             <div class="app-item"><div class="ai">🎨</div><div class="an">画图</div></div>
             <div class="app-item"><div class="ai">📊</div><div class="an">Excel</div></div>
             <div class="app-item"><div class="ai">📽️</div><div class="an">PowerPoint</div></div>
-            <div class="app-item"><div class="ai">🧰</div><div class="an">增强工具包</div></div>
+            <div class="app-item"><div class="ai">💬</div><div class="an">聊天室</div></div>
+            <div class="app-item"><div class="ai">💿</div><div class="an">存储管理</div></div>
+            <div class="app-item"><div class="ai">🎨</div><div class="an">个性化</div></div>
             <div class="app-item"><div class="ai">📦</div><div class="an">更新管理器</div></div>
-            <div class="app-item"><div class="ai">🎨</div><div class="an">个性化面板</div></div>
             <div class="app-item"><div class="ai">📤</div><div class="an">文件上传</div></div>
-            <div class="app-item"><div class="ai">🕷️</div><div class="an">蜘蛛纸牌</div></div>
-            <div class="app-item"><div class="ai">💣</div><div class="an">扫雷</div></div>
             <div class="app-item"><div class="ai">🔗</div><div class="an">文件互传</div></div>
+            <div class="app-item"><div class="ai">👥</div><div class="an">多用户</div></div>
+            <div class="app-item"><div class="ai">🔒</div><div class="an">锁屏</div></div>
+            <div class="app-item"><div class="ai">🗑️</div><div class="an">回收站</div></div>
         </div>
     </div>
 </section>
@@ -480,16 +445,16 @@
     <div class="container">
         <h2>技术规格</h2>
         <table class="spec-table">
-            <tr><td>应用程序版本</td><td>v1.5.2</td></tr>
+            <tr><td>应用程序版本</td><td>v1.6.0</td></tr>
             <tr><td>Python 运行时</td><td>Pyodide 0.27.0</td></tr>
             <tr><td>rf 脚本引擎</td><td>v2.0（支持 Canvas 绘制）</td></tr>
-            <tr><td>KD 内核驱动</td><td>v1.5</td></tr>
+            <tr><td>KD 内核驱动</td><td>v1.6</td></tr>
             <tr><td>tkinter 模拟层</td><td>完整版（20+ 组件）</td></tr>
             <tr><td>任务栏槽位</td><td>10 个固定槽位</td></tr>
             <tr><td>虚拟文件系统</td><td>localStorage 持久化</td></tr>
             <tr><td>窗口动画</td><td>CSS 缩放 + 淡入动画</td></tr>
             <tr><td>主题风格</td><td>Windows 10 扁平化</td></tr>
-            <tr><td>总代码量</td><td>约 180KB（5000+ 行）</td></tr>
+            <tr><td>总代码量</td><td>约 200KB（6000+ 行）</td></tr>
             <tr><td>许可证</td><td>MIT License</td></tr>
             <tr><td>开发者</td><td>闪讯工作社 Snxth. 2026</td></tr>
         </table>
@@ -519,7 +484,7 @@
 </footer>
 
 <div class="version-bar">
-    tkemu v1.5.2 · Pyodide 0.27.0 · 闪讯工作社 Snxth. · MIT License · © 2026
+    tkemu v1.6.0 · Pyodide 0.27.0 · 闪讯工作社 Snxth. · MIT License · © 2026
 </div>
 
 </body>
