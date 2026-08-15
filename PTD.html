@@ -8287,11 +8287,587 @@ showToast('✅ v1.7.2 增量已加载');
     // WC.cats 中的 appearance 已经有分辨率入口
     console.log('📐 分辨率设置已添加到 Windows Control');
 })();
+// ═══════════════════════════════════════════════════════════════
+//  v1.8.0 增量 - 右键菜单全面增强
+//  1. 桌面右键：创建快捷方式（可视化向导，KD应用/文件，自选图标）
+//  2. 桌面右键：个性化入口
+//  3. 文件右键：用代码编辑器打开
+//  4. 任务栏右键：打开任务管理器
+//  5. 输入框右键：剪切/复制/粘贴
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._v180_context_menu) return;
+    window._v180_context_menu = true;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  1. 桌面右键 - 创建快捷方式向导
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * 打开创建快捷方式向导
+     */
+    window.v180OpenShortcutWizard = function() {
+        if (openWindows['shortcutwizard']) {
+            focusWindow('shortcutwizard');
+            return;
+        }
+        v180ShowWizardStep('type');
+    };
+
+    /**
+     * 显示向导步骤
+     * @param {string} step - 步骤: type / select / icon / done
+     * @param {object} data - 传递的数据
+     */
+    window.v180ShowWizardStep = function(step, data) {
+        data = data || {};
+        if (step === 'type') {
+            // 第一步：选择创建类型
+            var html = '' +
+                '<div style="padding:24px;background:#f9f9f9;height:100%;overflow-y:auto;color:#1a1a1a;">' +
+                '  <h3 style="margin-bottom:6px;color:#0078D4;">🪄 创建快捷方式</h3>' +
+                '  <p style="font-size:12px;color:#888;margin-bottom:18px;">选择要创建的快捷方式类型</p>' +
+                '  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">' +
+                '    <div onclick="v180WizardSelectType(\'kd\')" style="background:#fff;border:2px solid #e0e0e0;border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor=\'#0078D4\';this.style.background=\'#f0f7ff\'" onmouseout="this.style.borderColor=\'#e0e0e0\';this.style.background=\'#fff\'">' +
+                '      <div style="font-size:36px;margin-bottom:8px;">⚡</div>' +
+                '      <div style="font-weight:bold;font-size:14px;">KD 应用</div>' +
+                '      <div style="font-size:11px;color:#888;margin-top:4px;">已安装的应用</div>' +
+                '    </div>' +
+                '    <div onclick="v180WizardSelectType(\'file\')" style="background:#fff;border:2px solid #e0e0e0;border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor=\'#0078D4\';this.style.background=\'#f0f7ff\'" onmouseout="this.style.borderColor=\'#e0e0e0\';this.style.background=\'#fff\'">' +
+                '      <div style="font-size:36px;margin-bottom:8px;">📄</div>' +
+                '      <div style="font-weight:bold;font-size:14px;">文件</div>' +
+                '      <div style="font-size:11px;color:#888;margin-top:4px;">虚拟文件系统中的文件</div>' +
+                '    </div>' +
+                '  </div>' +
+                '  <div style="margin-top:16px;display:flex;justify-content:flex-end;">' +
+                '    <button onclick="closeWindow(\'shortcutwizard\')" style="padding:8px 20px;background:#e0e0e0;border:none;border-radius:6px;cursor:pointer;font-size:12px;">取消</button>' +
+                '  </div>' +
+                '</div>';
+            createWindow('shortcutwizard', '创建快捷方式', '🪄', 420, 320, 100, 160, html);
+            return;
+        }
+
+        if (step === 'select') {
+            var type = data.type;
+            var title = type === 'kd' ? '选择 KD 应用' : '选择文件';
+            var icon = type === 'kd' ? '⚡' : '📄';
+            var items = [];
+
+            if (type === 'kd') {
+                var apps = VirtualFS.getInstalledKDApps();
+                apps.forEach(function(app) {
+                    items.push({
+                        name: app.name,
+                        icon: '⚡',
+                        desc: '已安装的 KD 应用'
+                    });
+                });
+                if (items.length === 0) {
+                    showToast('没有已安装的 KD 应用');
+                    closeWindow('shortcutwizard');
+                    return;
+                }
+            } else {
+                var files = VirtualFS.listFiles();
+                Object.keys(files).sort().forEach(function(name) {
+                    if (name.indexOf('/') !== -1) return; // 跳过文件夹
+                    var icon = '📄';
+                    if (name.endsWith('.kd')) icon = '⚡';
+                    else if (name.endsWith('.sys')) icon = '⚙️';
+                    else if (name.endsWith('.rf')) icon = '📜';
+                    else if (name.endsWith('.py')) icon = '🐍';
+                    else if (name.endsWith('.txt')) icon = '📃';
+                    items.push({
+                        name: name,
+                        icon: icon,
+                        desc: VirtualFS.getFileTag(name) || name.split('.').pop().toUpperCase() + ' 文件'
+                    });
+                });
+                if (items.length === 0) {
+                    showToast('没有可用的文件');
+                    closeWindow('shortcutwizard');
+                    return;
+                }
+            }
+
+            var h = '' +
+                '<div style="padding:24px;background:#f9f9f9;height:100%;overflow-y:auto;color:#1a1a1a;display:flex;flex-direction:column;">' +
+                '  <h3 style="margin-bottom:4px;color:#0078D4;">' + icon + ' ' + title + '</h3>' +
+                '  <p style="font-size:12px;color:#888;margin-bottom:14px;">从列表中选择</p>' +
+                '  <div style="flex:1;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;background:#fff;">';
+            items.forEach(function(item, idx) {
+                h += '<div onclick="v180WizardSelectItem(' + idx + ')" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background 0.1s;" onmouseover="this.style.background=\'#f0f7ff\'" onmouseout="this.style.background=\'#fff\'" data-item-index="' + idx + '">';
+                h += '  <span style="font-size:22px;">' + item.icon + '</span>';
+                h += '  <div style="flex:1;">';
+                h += '    <div style="font-size:13px;font-weight:500;">' + escapeHTML(item.name) + '</div>';
+                h += '    <div style="font-size:10px;color:#888;">' + escapeHTML(item.desc) + '</div>';
+                h += '  </div>';
+                h += '  <span style="color:#ccc;">→</span>';
+                h += '</div>';
+            });
+            h += '  </div>';
+            h += '  <div style="margin-top:12px;display:flex;justify-content:space-between;">';
+            h += '    <button onclick="v180ShowWizardStep(\'type\')" style="padding:8px 16px;background:#e0e0e0;border:none;border-radius:6px;cursor:pointer;font-size:12px;">← 上一步</button>';
+            h += '    <button onclick="closeWindow(\'shortcutwizard\')" style="padding:8px 16px;background:#e0e0e0;border:none;border-radius:6px;cursor:pointer;font-size:12px;">取消</button>';
+            h += '  </div>' +
+                '</div>';
+
+            closeWindow('shortcutwizard');
+            createWindow('shortcutwizard', '创建快捷方式', '🪄', 400, 420, 100, 160, h);
+
+            // 保存当前步骤数据
+            window._v180WizardData = { type: type, items: items };
+            return;
+        }
+
+        if (step === 'icon') {
+            var selectedItem = window._v180WizardData.items[data.selectedIndex];
+            var icons = ['📄', '📝', '📁', '⚡', '🎮', '💻', '🖥️', '⚙️', '📜', '🐍', '📃', '🎨', '📊', '📽️', '💬', '🔧', '🔒', '📦', '🌟', '🔥', '💎', '🚀', '🎯', '🏆'];
+
+            var h = '' +
+                '<div style="padding:24px;background:#f9f9f9;height:100%;overflow-y:auto;color:#1a1a1a;">' +
+                '  <h3 style="margin-bottom:4px;color:#0078D4;">🎨 选择图标</h3>' +
+                '  <p style="font-size:12px;color:#888;margin-bottom:6px;">' + escapeHTML(selectedItem.name) + '</p>' +
+                '  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:12px;">';
+            icons.forEach(function(ic) {
+                h += '<div onclick="v180WizardSelectIcon(\'' + ic + '\')" style="background:#fff;border:2px solid #e0e0e0;border-radius:8px;padding:10px 4px;text-align:center;cursor:pointer;font-size:24px;transition:all 0.15s;" onmouseover="this.style.borderColor=\'#0078D4\';this.style.background=\'#f0f7ff\'" onmouseout="this.style.borderColor=\'#e0e0e0\';this.style.background=\'#fff\'">' + ic + '</div>';
+            });
+            h += '  </div>';
+            h += '  <div style="margin-bottom:12px;">';
+            h += '    <label style="font-size:11px;color:#666;display:block;margin-bottom:4px;">快捷方式名称</label>';
+            h += '    <input type="text" id="v180-shortcut-name" value="' + escapeHTML(selectedItem.name) + '" style="width:100%;padding:8px 12px;border:1px solid #d0d0d0;border-radius:6px;font-size:13px;outline:none;">';
+            h += '  </div>';
+            h += '  <div style="display:flex;justify-content:space-between;">';
+            h += '    <button onclick="v180WizardBackToSelect()" style="padding:8px 16px;background:#e0e0e0;border:none;border-radius:6px;cursor:pointer;font-size:12px;">← 上一步</button>';
+            h += '    <button onclick="v180WizardCreate()" style="padding:8px 24px;background:#0078D4;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold;">✅ 创建</button>';
+            h += '  </div>' +
+                '</div>';
+
+            closeWindow('shortcutwizard');
+            createWindow('shortcutwizard', '创建快捷方式', '🪄', 420, 400, 100, 160, h);
+            return;
+        }
+    };
+
+    /**
+     * 向导 - 选择类型
+     */
+    window.v180WizardSelectType = function(type) {
+        v180ShowWizardStep('select', { type: type });
+    };
+
+    /**
+     * 向导 - 选择项目
+     */
+    window.v180WizardSelectItem = function(index) {
+        v180ShowWizardStep('icon', { selectedIndex: index });
+    };
+
+    /**
+     * 向导 - 返回选择
+     */
+    window.v180WizardBackToSelect = function() {
+        var data = window._v180WizardData || { type: 'kd' };
+        v180ShowWizardStep('select', { type: data.type });
+    };
+
+    /**
+     * 向导 - 选择图标
+     */
+    window.v180WizardSelectIcon = function(icon) {
+        window._v180WizardIcon = icon;
+        // 高亮选中的图标
+        var buttons = document.querySelectorAll('#win-shortcutwizard .window-body div[style*="border-radius:8px"]');
+        buttons.forEach(function(btn) {
+            btn.style.borderColor = '#e0e0e0';
+            btn.style.background = '#fff';
+        });
+        // 标记选中（通过事件目标）
+        if (event && event.target) {
+            event.target.style.borderColor = '#0078D4';
+            event.target.style.background = '#f0f7ff';
+        }
+    };
+
+    /**
+     * 向导 - 创建快捷方式
+     */
+    window.v180WizardCreate = function() {
+        var data = window._v180WizardData;
+        if (!data) {
+            showToast('❌ 数据丢失');
+            closeWindow('shortcutwizard');
+            return;
+        }
+
+        var selectedItem = data.items[window._v180LastSelectedIndex];
+        var nameInput = document.getElementById('v180-shortcut-name');
+        var name = nameInput ? nameInput.value.trim() : selectedItem.name;
+        var icon = window._v180WizardIcon || selectedItem.icon;
+
+        if (!name) name = selectedItem.name;
+
+        // 创建桌面快捷方式
+        createDesktopShortcut(name, icon, data.type, selectedItem.name);
+        closeWindow('shortcutwizard');
+        showToast('✅ 快捷方式已创建: ' + name);
+    };
+
+    /**
+     * 在桌面上创建快捷方式
+     */
+    function createDesktopShortcut(name, icon, type, target) {
+        var desktop = document.getElementById('desktop');
+        if (!desktop) return;
+
+        var shortcut = document.createElement('div');
+        shortcut.className = 'desktop-icon';
+        shortcut.style.cssText = 'top:calc(' + (20 + Math.random() * 400) + 'px * var(--ui-scale,1));left:calc(' + (20 + Math.random() * 200) + 'px * var(--ui-scale,1));position:absolute;';
+        shortcut.innerHTML = '<div class="icon-img">' + icon + '</div><div>' + escapeHTML(name) + '</div>';
+
+        if (type === 'kd') {
+            shortcut.ondblclick = function() {
+                var apps = VirtualFS.getInstalledKDApps();
+                var app = apps.find(function(a) { return a.name === target; });
+                if (app) {
+                    openKDApp(app.content, app.name);
+                } else {
+                    showToast('❌ 应用不存在: ' + target);
+                }
+            };
+        } else {
+            shortcut.ondblclick = function() {
+                openFileByType(target);
+            };
+        }
+
+        // 右键菜单
+        shortcut.oncontextmenu = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            hideAllContextMenus();
+            var menu = document.createElement('div');
+            menu.className = 'context-menu';
+            menu.style.cssText = 'position:absolute;display:block;z-index:3000;';
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = e.clientY + 'px';
+            menu.innerHTML = '' +
+                '<div class="context-menu-item" onclick="this.parentElement.remove();openFileByType(\'' + escapeAttr(target) + '\');"><span>📄</span> 打开</div>' +
+                '<div class="context-menu-item" onclick="this.parentElement.remove();if(confirm(\'删除快捷方式？\')){this.closest(\'.desktop-icon\').remove();}"><span>🗑</span> 删除快捷方式</div>';
+            document.body.appendChild(menu);
+            setTimeout(function() {
+                document.addEventListener('click', function rm() {
+                    if (menu.parentNode) menu.remove();
+                    document.removeEventListener('click', rm);
+                });
+            }, 50);
+        };
+
+        desktop.appendChild(shortcut);
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  2. 桌面右键 - 添加创建快捷方式 + 个性化入口
+    // ═══════════════════════════════════════════════════════════════
+
+    function enhanceDesktopContextMenu() {
+        var menu = document.getElementById('desktop-context-menu');
+        if (!menu || menu._v180_enhanced) return;
+        menu._v180_enhanced = true;
+
+        // 找到第一个分隔线
+        var sep = menu.querySelector('div[style*="border-top"]');
+
+        // 创建快捷方式按钮
+        var shortcutItem = document.createElement('div');
+        shortcutItem.className = 'context-menu-item';
+        shortcutItem.innerHTML = '<span>🪄</span> 创建快捷方式';
+        shortcutItem.onclick = function() {
+            hideAllContextMenus();
+            v180OpenShortcutWizard();
+        };
+        menu.insertBefore(shortcutItem, sep);
+
+        // 个性化按钮
+        var personalizeItem = document.createElement('div');
+        personalizeItem.className = 'context-menu-item';
+        personalizeItem.innerHTML = '<span>🎨</span> 个性化';
+        personalizeItem.onclick = function() {
+            hideAllContextMenus();
+            if (typeof openWindowsControl === 'function') {
+                openWindowsControl();
+                setTimeout(function() {
+                    if (typeof WC !== 'undefined' && WC.showPersonalize) {
+                        var content = document.getElementById('wc-content');
+                        if (content) WC.showPersonalize(content);
+                    }
+                }, 200);
+            } else {
+                showToast('Windows Control 未加载');
+            }
+        };
+        menu.insertBefore(personalizeItem, sep);
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  3. 文件右键 - 用代码编辑器打开
+    // ═══════════════════════════════════════════════════════════════
+
+    function enhanceFileContextMenu() {
+        // 检查 v172 的文件右键菜单是否存在
+        var _origShowFileCtx = window.v172ShowFileContextMenu;
+        if (!_origShowFileCtx) return;
+
+        window.v172ShowFileContextMenu = function(e, filePath) {
+            _origShowFileCtx(e, filePath);
+            // 在打开后添加"用代码编辑器打开"
+            setTimeout(function() {
+                var menu = document.getElementById('v172-file-context-menu');
+                if (!menu || menu._v180_editor_added) return;
+                menu._v180_editor_added = true;
+
+                // 找到"打开"项后面的位置
+                var firstItem = menu.querySelector('.context-menu-item');
+                var editorItem = document.createElement('div');
+                editorItem.className = 'context-menu-item';
+                editorItem.innerHTML = '<span>📝</span> 用代码编辑器打开';
+                editorItem.onclick = function() {
+                    var path = window._v180_current_file || '';
+                    if (path) {
+                        openEditor(path);
+                    }
+                    menu.classList.remove('open');
+                };
+                if (firstItem) {
+                    menu.insertBefore(editorItem, firstItem.nextSibling);
+                } else {
+                    menu.appendChild(editorItem);
+                }
+            }, 50);
+        };
+
+        // 跟踪当前文件
+        var _origFileCtxShow = window.v172ShowFileContextMenu;
+        if (_origFileCtxShow) {
+            window.v172ShowFileContextMenu = function(e, filePath) {
+                window._v180_current_file = filePath;
+                _origFileCtxShow(e, filePath);
+            };
+        }
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  4. 任务栏右键 - 打开任务管理器
+    // ═══════════════════════════════════════════════════════════════
+
+    function enhanceTaskbarContextMenu() {
+        var taskbar = document.getElementById('taskbar');
+        if (!taskbar || taskbar._v180_taskmgr) return;
+        taskbar._v180_taskmgr = true;
+
+        // 保存现有的右键处理
+        var existingHandler = taskbar._v180_ctx_handler;
+
+        taskbar.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            hideAllContextMenus();
+
+            var menu = document.createElement('div');
+            menu.className = 'context-menu';
+            menu.style.cssText = 'position:absolute;display:block;z-index:3000;min-width:180px;';
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = (e.clientY - 120) + 'px';
+            menu.innerHTML = '' +
+                '<div class="context-menu-item" onclick="this.parentElement.remove();v172OpenTaskManager();"><span>📊</span> 任务管理器</div>' +
+                '<div class="context-menu-item" onclick="this.parentElement.remove();restartSystem();"><span>🔄</span> 重启系统</div>' +
+                '<div class="context-menu-item" onclick="this.parentElement.remove();openControlPanel();"><span>⚙️</span> 控制面板</div>' +
+                '<div class="context-menu-item" onclick="this.parentElement.remove();v180OpenShortcutWizard();"><span>🪄</span> 创建快捷方式</div>';
+            document.body.appendChild(menu);
+
+            setTimeout(function() {
+                document.addEventListener('click', function rm() {
+                    if (menu.parentNode) menu.remove();
+                    document.removeEventListener('click', rm);
+                });
+            }, 50);
+        });
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  5. 输入框右键 - 剪切/复制/粘贴
+    // ═══════════════════════════════════════════════════════════════
+
+    function enhanceInputContextMenu() {
+        document.addEventListener('contextmenu', function(e) {
+            var target = e.target;
+            if (!target || !(target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+
+            // 不拦截已处理的右键菜单
+            if (target.closest('.preview-item') || target.closest('.file-item')) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            hideAllContextMenus();
+
+            var menu = document.createElement('div');
+            menu.className = 'context-menu';
+            menu.style.cssText = 'position:absolute;display:block;z-index:3000;min-width:160px;';
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = e.clientY + 'px';
+
+            var hasSelection = target.selectionStart !== target.selectionEnd;
+            var hasClipboard = false;
+            try {
+                hasClipboard = navigator.clipboard && navigator.clipboard.readText;
+            } catch(err) {}
+
+            menu.innerHTML = '' +
+                '<div class="context-menu-item" onclick="v180InputCut(this);" style="' + (hasSelection ? '' : 'opacity:0.4;pointer-events:none;') + '"><span>✂️</span> 剪切</div>' +
+                '<div class="context-menu-item" onclick="v180InputCopy(this);" style="' + (hasSelection ? '' : 'opacity:0.4;pointer-events:none;') + '"><span>📋</span> 复制</div>' +
+                '<div class="context-menu-item" onclick="v180InputPaste(this);"><span>📥</span> 粘贴</div>' +
+                '<div style="border-top:1px solid #444;margin:4px 0;"></div>' +
+                '<div class="context-menu-item" onclick="v180InputSelectAll(this);"><span>✅</span> 全选</div>';
+
+            document.body.appendChild(menu);
+
+            // 保存目标
+            window._v180InputTarget = target;
+
+            setTimeout(function() {
+                document.addEventListener('click', function rm() {
+                    if (menu.parentNode) menu.remove();
+                    document.removeEventListener('click', rm);
+                });
+            }, 50);
+        });
+    }
+
+    // 输入框操作
+    window.v180InputCut = function(btn) {
+        var target = window._v180InputTarget;
+        if (target) {
+            document.execCommand('cut');
+        }
+        btn.closest('.context-menu').remove();
+    };
+
+    window.v180InputCopy = function(btn) {
+        var target = window._v180InputTarget;
+        if (target) {
+            document.execCommand('copy');
+        }
+        btn.closest('.context-menu').remove();
+    };
+
+    window.v180InputPaste = function(btn) {
+        var target = window._v180InputTarget;
+        if (target) {
+            target.focus();
+            document.execCommand('paste');
+        }
+        btn.closest('.context-menu').remove();
+    };
+
+    window.v180InputSelectAll = function(btn) {
+        var target = window._v180InputTarget;
+        if (target) {
+            target.focus();
+            target.select();
+        }
+        btn.closest('.context-menu').remove();
+    };
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  初始化
+    // ═══════════════════════════════════════════════════════════════
+
+    setTimeout(function() {
+        enhanceDesktopContextMenu();
+        enhanceFileContextMenu();
+        enhanceTaskbarContextMenu();
+        enhanceInputContextMenu();
+    }, 500);
+
+    console.log('[v1.8.0] 右键菜单全面增强已加载');
+    showToast('✅ 右键菜单已增强');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  修复 - 文件右键"用代码编辑器打开"
+// ═══════════════════════════════════════════════════════════════
+
+function enhanceFileContextMenu() {
+    var _origShowFileCtx = window.v172ShowFileContextMenu;
+    if (!_origShowFileCtx) return;
+
+    // 直接重写，每次打开右键菜单时都添加
+    window.v172ShowFileContextMenu = function(e, filePath) {
+        // 保存当前文件路径
+        window._v180_current_file = filePath;
+        
+        // 调用原始函数生成菜单
+        _origShowFileCtx(e, filePath);
+        
+        // 立即添加"用代码编辑器打开"（在菜单显示前）
+        setTimeout(function() {
+            var menu = document.getElementById('v172-file-context-menu');
+            if (!menu || !menu.classList.contains('open')) return;
+            
+            // 移除之前添加的（如果有）
+            var existing = menu.querySelector('.v180-editor-item');
+            if (existing) existing.remove();
+            
+            // 找到"打开"项
+            var openItem = null;
+            var items = menu.querySelectorAll('.context-menu-item');
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].textContent.indexOf('打开') !== -1) {
+                    openItem = items[i];
+                    break;
+                }
+            }
+            
+            // 创建"用代码编辑器打开"项
+            var editorItem = document.createElement('div');
+            editorItem.className = 'context-menu-item v180-editor-item';
+            editorItem.innerHTML = '<span>📝</span> 用代码编辑器打开';
+            editorItem.onclick = function() {
+                var path = window._v180_current_file;
+                menu.classList.remove('open');
+                if (path) {
+                    openEditor(path);
+                    showToast('📝 已用代码编辑器打开: ' + path);
+                }
+            };
+            
+            // 插入到"打开"项后面
+            if (openItem && openItem.nextSibling) {
+                menu.insertBefore(editorItem, openItem.nextSibling);
+            } else if (openItem) {
+                openItem.parentNode.insertBefore(editorItem, openItem.nextSibling);
+            } else {
+                menu.insertBefore(editorItem, menu.firstChild);
+            }
+        }, 10);
+    };
+}
+
+// 重新初始化
+setTimeout(function() {
+    enhanceFileContextMenu();
+}, 600);
 
     // 同时更新 APP_VERSION
-    APP_VERSION = '1.7.2';
+    APP_VERSION = '1.8.0';
 
-    console.log('[v1.7.2] 关于系统版本号已更新为 ' + APP_VERSION);
+    console.log('[v1.8.0] 关于系统版本号已更新为 ' + APP_VERSION);
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>
