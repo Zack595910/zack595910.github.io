@@ -8047,6 +8047,246 @@ showToast('✅ v1.7.2 增量已加载');
             }
         }, 100);
     };
+// ═══════════════════════════════════════════════════════════════
+//  开始菜单滚动修复
+//  安装过多应用时，开始菜单可滚动，不会超出屏幕
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (document.getElementById('startmenu-scroll-fix')) return;
+
+    var style = document.createElement('style');
+    style.id = 'startmenu-scroll-fix';
+    style.textContent = '' +
+        '#start-menu {\n' +
+        '    max-height: calc(70vh - 48px) !important;\n' +
+        '    overflow-y: auto !important;\n' +
+        '    overflow-x: hidden !important;\n' +
+        '}\n' +
+        '\n' +
+        '/* 美化滚动条 */\n' +
+        '#start-menu::-webkit-scrollbar {\n' +
+        '    width: 6px;\n' +
+        '}\n' +
+        '#start-menu::-webkit-scrollbar-track {\n' +
+        '    background: transparent;\n' +
+        '}\n' +
+        '#start-menu::-webkit-scrollbar-thumb {\n' +
+        '    background: rgba(255,255,255,0.2);\n' +
+        '    border-radius: 3px;\n' +
+        '}\n' +
+        '#start-menu::-webkit-scrollbar-thumb:hover {\n' +
+        '    background: rgba(255,255,255,0.35);\n' +
+        '}\n' +
+        '\n' +
+        '/* 移动端适配 */\n' +
+        '@media (max-width: 768px) {\n' +
+        '    #start-menu {\n' +
+        '        max-height: calc(60vh - 48px) !important;\n' +
+        '    }\n' +
+        '}\n';
+
+    document.head.appendChild(style);
+    showToast('✅ 开始菜单滚动已修复');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  Windows Control 分辨率设置
+//  新增"分辨率"设置项：手动选择 + 自适应
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._resolution_setting) return;
+    window._resolution_setting = true;
+
+    // 分辨率预设列表
+    var RESOLUTIONS = [
+        { label: '1280 × 720 (HD)', scale: 0.67 },
+        { label: '1366 × 768', scale: 0.71 },
+        { label: '1600 × 900', scale: 0.83 },
+        { label: '1920 × 1080 (Full HD)', scale: 1.0 },
+        { label: '2560 × 1440 (2K)', scale: 1.33 },
+        { label: '3840 × 2160 (4K)', scale: 2.0 }
+    ];
+
+    var RES_KEY = 'tkemu_resolution_v1';
+    var currentMode = 'auto'; // auto / manual
+    var currentScale = SCALE_FACTOR;
+
+    // 加载设置
+    try {
+        var saved = JSON.parse(localStorage.getItem(RES_KEY) || '{}');
+        if (saved.mode) currentMode = saved.mode;
+        if (saved.scale) currentScale = saved.scale;
+    } catch(e) {}
+
+    // 保存设置
+    function saveResSettings() {
+        localStorage.setItem(RES_KEY, JSON.stringify({
+            mode: currentMode,
+            scale: currentScale
+        }));
+    }
+
+    // 应用缩放
+    function applyScale(scale) {
+        scale = Math.max(0.5, Math.min(2.0, scale));
+        SCALE_FACTOR = scale;
+        document.documentElement.style.setProperty('--ui-scale', scale);
+        document.body.style.fontSize = (13 * scale) + 'px';
+        saveResSettings();
+        showToast('📐 分辨率已应用: ' + Math.round(scale * 100) + '%');
+    }
+
+    // 自适应模式
+    function applyAutoScale() {
+        var w = window.innerWidth;
+        var h = window.innerHeight;
+        var baseW = 1920, baseH = 1080;
+        var scaleByWidth = w / baseW;
+        var scaleByHeight = h / baseH;
+        var scale = Math.min(scaleByWidth, scaleByHeight);
+        scale = Math.max(0.5, Math.min(2.0, scale));
+        applyScale(scale);
+    }
+
+    // 在 WC.items 中添加分辨率项目
+    WC.items.push({
+        id: 'resolution',
+        name: '分辨率',
+        icon: '📐',
+        desc: '调整屏幕分辨率',
+        cat: 'appearance'
+    });
+
+    // 扩展 WC.runItem
+    var _origRunItem = WC.runItem;
+    WC.runItem = function(id) {
+        if (id === 'resolution') {
+            showResolutionPanel(document.getElementById('wc-content'));
+            return;
+        }
+        _origRunItem(id);
+    };
+
+    // 分辨率设置面板
+    function showResolutionPanel(content) {
+        if (!content) return;
+
+        var h = '<div style="font-weight:bold;font-size:14px;margin-bottom:12px;">📐 分辨率设置</div>';
+
+        // 当前信息
+        h += '<div style="background:#e8f4fd;border:1px solid #b8d4e8;border-radius:8px;padding:12px;margin-bottom:14px;">';
+        h += '  <div style="font-size:12px;color:#333;margin-bottom:4px;">当前显示</div>';
+        h += '  <div style="font-size:18px;font-weight:bold;color:#0078D4;">' + window.innerWidth + ' × ' + window.innerHeight + '</div>';
+        h += '  <div style="font-size:11px;color:#666;margin-top:2px;">缩放因子: ' + SCALE_FACTOR.toFixed(2) + ' (' + Math.round(SCALE_FACTOR * 100) + '%)</div>';
+        h += '</div>';
+
+        // 模式选择
+        h += '<div style="margin-bottom:12px;">';
+        h += '  <div style="font-weight:bold;font-size:12px;margin-bottom:8px;">显示模式</div>';
+        h += '  <div style="display:flex;gap:8px;">';
+        h += '    <button onclick="resSetMode(\'auto\')" id="res-mode-auto" style="flex:1;padding:10px;border:2px solid ' + (currentMode === 'auto' ? '#0078D4' : '#d0d0d0') + ';background:' + (currentMode === 'auto' ? '#f0f7ff' : '#fff') + ';border-radius:8px;cursor:pointer;font-size:12px;color:' + (currentMode === 'auto' ? '#0078D4' : '#666') + ';">\n' +
+        '      <div style="font-size:20px;">🔄</div>\n' +
+        '      <div style="font-weight:bold;margin-top:2px;">自适应</div>\n' +
+        '      <div style="font-size:10px;color:#999;">跟随窗口大小</div>\n' +
+        '    </button>';
+        h += '    <button onclick="resSetMode(\'manual\')" id="res-mode-manual" style="flex:1;padding:10px;border:2px solid ' + (currentMode === 'manual' ? '#0078D4' : '#d0d0d0') + ';background:' + (currentMode === 'manual' ? '#f0f7ff' : '#fff') + ';border-radius:8px;cursor:pointer;font-size:12px;color:' + (currentMode === 'manual' ? '#0078D4' : '#666') + ';">\n' +
+        '      <div style="font-size:20px;">🎯</div>\n' +
+        '      <div style="font-weight:bold;margin-top:2px;">手动选择</div>\n' +
+        '      <div style="font-size:10px;color:#999;">固定缩放比例</div>\n' +
+        '    </button>';
+        h += '  </div>';
+        h += '</div>';
+
+        // 手动选择
+        h += '<div id="res-manual-section" style="display:' + (currentMode === 'manual' ? 'block' : 'none') + ';">';
+        h += '  <div style="font-weight:bold;font-size:12px;margin-bottom:6px;">选择预设分辨率</div>';
+        h += '  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;">';
+        RESOLUTIONS.forEach(function(res) {
+            var isActive = Math.abs(currentScale - res.scale) < 0.01;
+            h += '<button onclick="resApplyPreset(' + res.scale + ')" style="padding:8px 10px;border:2px solid ' + (isActive ? '#0078D4' : '#d0d0d0') + ';background:' + (isActive ? '#f0f7ff' : '#fff') + ';border-radius:6px;cursor:pointer;font-size:11px;color:' + (isActive ? '#0078D4' : '#333') + ';">' + res.label + '</button>';
+        });
+        h += '  </div>';
+
+        // 自定义滑块
+        h += '  <div style="margin-top:12px;">';
+        h += '    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">';
+        h += '      <span>自定义缩放</span>';
+        h += '      <span id="res-custom-label">' + Math.round(currentScale * 100) + '%</span>';
+        h += '    </div>';
+        h += '    <input type="range" min="50" max="200" value="' + Math.round(currentScale * 100) + '" oninput="resApplyCustom(this.value)" style="width:100%;accent-color:#0078D4;">';
+        h += '  </div>';
+        h += '</div>';
+
+        // 提示
+        h += '<div style="margin-top:14px;padding:10px;background:#f9f9f9;border-radius:8px;font-size:10px;color:#888;">';
+        h += '💡 缩放因子基于 1920×1080 基准计算。自适应模式会随浏览器窗口大小自动调整。';
+        h += '</div>';
+
+        content.innerHTML = h;
+    }
+
+    // 全局函数供 onclick 调用
+    window.resSetMode = function(mode) {
+        currentMode = mode;
+        saveResSettings();
+
+        var autoBtn = document.getElementById('res-mode-auto');
+        var manualBtn = document.getElementById('res-mode-manual');
+        var section = document.getElementById('res-manual-section');
+
+        if (autoBtn && manualBtn) {
+            autoBtn.style.borderColor = mode === 'auto' ? '#0078D4' : '#d0d0d0';
+            autoBtn.style.background = mode === 'auto' ? '#f0f7ff' : '#fff';
+            autoBtn.style.color = mode === 'auto' ? '#0078D4' : '#666';
+            manualBtn.style.borderColor = mode === 'manual' ? '#0078D4' : '#d0d0d0';
+            manualBtn.style.background = mode === 'manual' ? '#f0f7ff' : '#fff';
+            manualBtn.style.color = mode === 'manual' ? '#0078D4' : '#666';
+        }
+        if (section) {
+            section.style.display = mode === 'manual' ? 'block' : 'none';
+        }
+
+        if (mode === 'auto') {
+            applyAutoScale();
+        }
+    };
+
+    window.resApplyPreset = function(scale) {
+        currentMode = 'manual';
+        currentScale = scale;
+        applyScale(scale);
+        showResolutionPanel(document.getElementById('wc-content'));
+    };
+
+    window.resApplyCustom = function(value) {
+        var scale = parseInt(value) / 100;
+        currentScale = scale;
+        applyScale(scale);
+        var label = document.getElementById('res-custom-label');
+        if (label) label.textContent = value + '%';
+    };
+
+    // 启动时应用保存的设置
+    setTimeout(function() {
+        if (currentMode === 'manual') {
+            applyScale(currentScale);
+        } else {
+            applyAutoScale();
+        }
+    }, 300);
+
+    // 窗口大小变化时，如果是自适应模式则重新计算
+    window.addEventListener('resize', function() {
+        if (currentMode === 'auto') {
+            applyAutoScale();
+        }
+    });
+
+    // 添加到 Windows Control 侧边栏
+    // WC.cats 中的 appearance 已经有分辨率入口
+    console.log('📐 分辨率设置已添加到 Windows Control');
+})();
 
     // 同时更新 APP_VERSION
     APP_VERSION = '1.7.2';
