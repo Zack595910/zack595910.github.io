@@ -158,15 +158,15 @@
         <p style="margin-top:12px;">
             <span class="badge badge-green">🐍 Python 运行时</span>
             <span class="badge badge-blue">⚡ 三大扩展体系</span>
-            <span class="badge badge-gold">🏆 200KB+ 纯前端</span>
+            <span class="badge badge-gold">🏆 320KB+ 纯前端</span>
             <span class="badge badge-purple">👥 多用户</span>
         </p>
         <div class="stats" style="margin-top:30px;">
-            <div class="stat-item"><div class="num">25+</div><div class="label">内置应用</div></div>
+            <div class="stat-item"><div class="num">30+</div><div class="label">内置应用</div></div>
             <div class="stat-item"><div class="num">20+</div><div class="label">tkinter组件</div></div>
             <div class="stat-item"><div class="num">15+</div><div class="label">rf命令</div></div>
-            <div class="stat-item"><div class="num">6000+</div><div class="label">行代码</div></div>
-            <div class="stat-item"><div class="num">v1.6</div><div class="label">当前版本</div></div>
+            <div class="stat-item"><div class="num">10000+</div><div class="label">行代码</div></div>
+            <div class="stat-item"><div class="num">v1.7.2</div><div class="label">当前版本</div></div>
         </div>
     </div>
 </section>
@@ -179,7 +179,7 @@
             <div class="feature-card">
                 <div class="icon">🖥️</div>
                 <h3>完整桌面环境</h3>
-                <p>窗口管理、任务栏、开始菜单磁贴、右键菜单、系统托盘、回收站、通知中心、存储管理，还原 Windows 操作习惯</p>
+                <p>窗口管理（拖拽/缩放/贴边/最小化动画）、任务栏、开始菜单磁贴、右键菜单、系统托盘、回收站、通知中心、存储管理，还原 Windows 操作习惯</p>
             </div>
             <div class="feature-card">
                 <div class="icon">🐍</div>
@@ -189,12 +189,12 @@
             <div class="feature-card">
                 <div class="icon">👥</div>
                 <h3>多用户系统</h3>
-                <p>每用户独立文件和设置，支持密码/无密码登录，头像标识，右键切换用户，自动保存用户数据</p>
+                <p>每用户独立文件和设置，支持密码/无密码登录，头像标识，右键切换用户，自动保存用户数据，锁屏保护</p>
             </div>
             <div class="feature-card">
                 <div class="icon">📁</div>
                 <h3>虚拟文件系统</h3>
-                <p>localStorage 持久化，文件读写删、回收站、虚拟文件夹、本地上传下载、搜索分类、容量监控预警</p>
+                <p>localStorage 持久化，文件读写删、回收站、虚拟文件夹、拖拽上传、本地上传下载、搜索分类、容量监控预警</p>
             </div>
             <div class="feature-card">
                 <div class="icon">📜</div>
@@ -215,6 +215,26 @@
                 <div class="icon">🖥️</div>
                 <h3>Windows Control</h3>
                 <p>仿 Windows 7 控制面板，类别/图标视图、搜索、侧边栏、24+设置项，全部图形化操作</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📊</div>
+                <h3>任务管理器</h3>
+                <p>窗口列表管理、结束进程、CPU/内存/存储性能图表，Ctrl+Shift+Esc 快速打开</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📐</div>
+                <h3>Aero Snap 贴边</h3>
+                <p>窗口拖到屏幕顶部自动最大化，拖到左右边缘自动半屏，拖离还原</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📤</div>
+                <h3>拖拽上传</h3>
+                <p>拖文件到桌面任意位置自动上传，带进度条显示，支持多文件</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">💾</div>
+                <h3>系统备份</h3>
+                <p>一键导出完整 JSON 备份（文件/用户/设置/日志），一键导入恢复</p>
             </div>
         </div>
     </div>
@@ -241,6 +261,11 @@
 │  <span class="hl3">│ ·窗口     │</span>  <span class="hl2">│ ·HTML   │</span>  <span class="hl">│ ·local      │</span>  │<br>
 │  <span class="hl3">│ ·Canvas   │</span>  <span class="hl2">│ ·安装   │</span>  <span class="hl">│ ·隐藏       │</span>  │<br>
 │  <span class="hl3">└───────────┘</span>  <span class="hl2">└──────────┘</span>  <span class="hl">└─────────────┘</span>  │<br>
+│                                                 │<br>
+│  <span class="hl">┌─────────────────────────────────────────┐</span>  │<br>
+│  <span class="hl">│ 系统服务层                                 │</span>  │<br>
+│  <span class="hl">│ ·多用户 ·锁屏 ·备份 ·通知 ·任务管理 ·存储     │</span>  │<br>
+│  <span class="hl">└─────────────────────────────────────────┘</span>  │<br>
 └─────────────────────────────────────────────────┘
         </div>
         <div class="arch">
@@ -271,7 +296,44 @@
         <h2>版本更新记录</h2>
         <div class="changelog">
             <div class="log-item">
-                <div class="ver latest">v1.6.0</div>
+                <div class="ver latest">v1.7.2</div>
+                <div class="log-content">
+                    <h4>🚀 窗口体验 + 系统工具大更新</h4>
+                    <ul>
+                        <li>📐 窗口缩放拖拽（8方向手柄）</li>
+                        <li>📤 拖拽上传（拖文件到桌面/文件管理器，带进度条）</li>
+                        <li>📊 任务管理器（窗口列表/结束进程/性能图表）</li>
+                        <li>🪟 Aero Snap 贴边最大化（拖到顶部最大化/左右半屏）</li>
+                        <li>📁 文件右键菜单（重命名/复制路径/标签/属性/删除）</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="log-item">
+                <div class="ver">v1.7.1</div>
+                <div class="log-content">
+                    <h4>桌面体验 + 安全备份</h4>
+                    <ul>
+                        <li>🖱️ 桌面图标拖动排列（位置持久化）</li>
+                        <li>🔒 锁屏功能（Win+L 快捷键，密码解锁）</li>
+                        <li>🚀 系统开机动画（logo + 进度条）</li>
+                        <li>🔔 通知中心（任务栏图标 + 未读角标 + 通知面板）</li>
+                        <li>💾 系统备份（一键导出/导入 JSON，13个数据项）</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="log-item">
+                <div class="ver">v1.7.0</div>
+                <div class="log-content">
+                    <h4>基础体验补全</h4>
+                    <ul>
+                        <li>📐 窗口缩放拖拽</li>
+                        <li>📤 拖拽上传系统</li>
+                        <li>📋 系统日志（记录文件/窗口/用户操作）</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="log-item">
+                <div class="ver">v1.6.0</div>
                 <div class="log-content">
                     <h4>🚀 大规模功能更新</h4>
                     <ul>
@@ -412,6 +474,13 @@
             <div class="app-item"><div class="ai">👥</div><div class="an">多用户</div></div>
             <div class="app-item"><div class="ai">🔒</div><div class="an">锁屏</div></div>
             <div class="app-item"><div class="ai">🗑️</div><div class="an">回收站</div></div>
+            <div class="app-item"><div class="ai">📊</div><div class="an">任务管理器</div></div>
+            <div class="app-item"><div class="ai">📬</div><div class="an">通知中心</div></div>
+            <div class="app-item"><div class="ai">💾</div><div class="an">系统备份</div></div>
+            <div class="app-item"><div class="ai">📐</div><div class="an">窗口缩放</div></div>
+            <div class="app-item"><div class="ai">🪟</div><div class="an">Aero Snap</div></div>
+            <div class="app-item"><div class="ai">📤</div><div class="an">拖拽上传</div></div>
+            <div class="app-item"><div class="ai">🚀</div><div class="an">开机动画</div></div>
         </div>
     </div>
 </section>
@@ -445,16 +514,16 @@
     <div class="container">
         <h2>技术规格</h2>
         <table class="spec-table">
-            <tr><td>应用程序版本</td><td>v1.6.0</td></tr>
+            <tr><td>应用程序版本</td><td>v1.7.2</td></tr>
             <tr><td>Python 运行时</td><td>Pyodide 0.27.0</td></tr>
             <tr><td>rf 脚本引擎</td><td>v2.0（支持 Canvas 绘制）</td></tr>
-            <tr><td>KD 内核驱动</td><td>v1.6</td></tr>
+            <tr><td>KD 内核驱动</td><td>v1.7</td></tr>
             <tr><td>tkinter 模拟层</td><td>完整版（20+ 组件）</td></tr>
             <tr><td>任务栏槽位</td><td>10 个固定槽位</td></tr>
             <tr><td>虚拟文件系统</td><td>localStorage 持久化</td></tr>
-            <tr><td>窗口动画</td><td>CSS 缩放 + 淡入动画</td></tr>
+            <tr><td>窗口动画</td><td>CSS 缩放 + 淡入 + 最小化过渡</td></tr>
             <tr><td>主题风格</td><td>Windows 10 扁平化</td></tr>
-            <tr><td>总代码量</td><td>约 200KB（6000+ 行）</td></tr>
+            <tr><td>总代码量</td><td>约 320KB（10000+ 行）</td></tr>
             <tr><td>许可证</td><td>MIT License</td></tr>
             <tr><td>开发者</td><td>闪讯工作社 Snxth. 2026</td></tr>
         </table>
@@ -484,7 +553,7 @@
 </footer>
 
 <div class="version-bar">
-    tkemu v1.6.0 · Pyodide 0.27.0 · 闪讯工作社 Snxth. · MIT License · © 2026
+    tkemu v1.7.2 · Pyodide 0.27.0 · 闪讯工作社 Snxth. · MIT License · © 2026
 </div>
 
 </body>

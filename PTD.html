@@ -6011,6 +6011,2048 @@ setTimeout(function() { StorageMonitor.check(); }, 3000);
 })();
 
 showToast('💿 存储管理已就绪');
+// ═══════════════════════════════════════════════════════════════
+//  v1.7.0 增量 - 窗口缩放拖拽 + 拖拽上传
+//  纯增量，不覆盖任何现有函数
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────
+//  1. 窗口缩放拖拽系统
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v170_resize) return;
+    window._v170_resize = true;
+
+    var RESIZE_HANDLE_SIZE = 8;
+    var MIN_WIDTH = 260;
+    var MIN_HEIGHT = 150;
+    var _resizeInfo = null;
+    var _resizeHandles = {};
+
+    /**
+     * 为窗口添加缩放拖拽手柄
+     */
+    function addResizeHandles(winId) {
+        var winData = openWindows[winId];
+        if (!winData) return;
+        var win = winData.el;
+        if (win.querySelector('.v170-resize-handle')) return;
+
+        // 8个方向的手柄
+        var directions = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+        var handleStyles = {
+            'n':  { top: '-3px', left: '12px', right: '12px', height: '6px', cursor: 'ns-resize', width: 'auto' },
+            's':  { bottom: '-3px', left: '12px', right: '12px', height: '6px', cursor: 'ns-resize', width: 'auto' },
+            'e':  { right: '-3px', top: '12px', bottom: '12px', width: '6px', cursor: 'ew-resize', height: 'auto' },
+            'w':  { left: '-3px', top: '12px', bottom: '12px', width: '6px', cursor: 'ew-resize', height: 'auto' },
+            'ne': { top: '-3px', right: '-3px', width: '12px', height: '12px', cursor: 'nesw-resize' },
+            'nw': { top: '-3px', left: '-3px', width: '12px', height: '12px', cursor: 'nwse-resize' },
+            'se': { bottom: '-3px', right: '-3px', width: '12px', height: '12px', cursor: 'nwse-resize' },
+            'sw': { bottom: '-3px', left: '-3px', width: '12px', height: '12px', cursor: 'nesw-resize' }
+        };
+
+        for (var i = 0; i < directions.length; i++) {
+            var dir = directions[i];
+            var handle = document.createElement('div');
+            handle.className = 'v170-resize-handle';
+            handle.style.cssText = 'position:absolute;z-index:10;background:transparent;';
+            var hs = handleStyles[dir];
+            if (hs.top !== undefined) handle.style.top = hs.top;
+            if (hs.left !== undefined) handle.style.left = hs.left;
+            if (hs.right !== undefined) handle.style.right = hs.right;
+            if (hs.bottom !== undefined) handle.style.bottom = hs.bottom;
+            if (hs.width !== undefined) handle.style.width = hs.width;
+            if (hs.height !== undefined) handle.style.height = hs.height;
+            handle.style.cursor = hs.cursor;
+            handle.dataset.direction = dir;
+            handle.dataset.winId = winId;
+
+            handle.addEventListener('pointerdown', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                startResize(e, winId, this.dataset.direction);
+            });
+
+            win.appendChild(handle);
+        }
+    }
+
+    /**
+     * 开始缩放
+     */
+    function startResize(e, winId, direction) {
+        var winData = openWindows[winId];
+        if (!winData || winData.maximized) return;
+        var win = winData.el;
+
+        _resizeInfo = {
+            winId: winId,
+            direction: direction,
+            startX: e.clientX,
+            startY: e.clientY,
+            origLeft: win.offsetLeft,
+            origTop: win.offsetTop,
+            origWidth: win.offsetWidth,
+            origHeight: win.offsetHeight
+        };
+
+        // 捕获指针
+        try {
+            e.target.setPointerCapture(e.pointerId);
+        } catch(err) {}
+
+        // 防止拖动窗口
+        if (dragInfo) dragInfo = null;
+    }
+
+    /**
+     * 处理缩放移动
+     */
+    document.addEventListener('pointermove', function(e) {
+        if (!_resizeInfo) return;
+        e.preventDefault();
+
+        var winData = openWindows[_resizeInfo.winId];
+        if (!winData) {
+            _resizeInfo = null;
+            return;
+        }
+        var win = winData.el;
+        var dx = e.clientX - _resizeInfo.startX;
+        var dy = e.clientY - _resizeInfo.startY;
+        var dir = _resizeInfo.direction;
+
+        var newLeft = _resizeInfo.origLeft;
+        var newTop = _resizeInfo.origTop;
+        var newWidth = _resizeInfo.origWidth;
+        var newHeight = _resizeInfo.origHeight;
+
+        // 水平方向
+        if (dir.indexOf('e') !== -1) {
+            newWidth = _resizeInfo.origWidth + dx;
+        }
+        if (dir.indexOf('w') !== -1) {
+            newWidth = _resizeInfo.origWidth - dx;
+            newLeft = _resizeInfo.origLeft + dx;
+        }
+
+        // 垂直方向
+        if (dir.indexOf('s') !== -1) {
+            newHeight = _resizeInfo.origHeight + dy;
+        }
+        if (dir.indexOf('n') !== -1) {
+            newHeight = _resizeInfo.origHeight - dy;
+            newTop = _resizeInfo.origTop + dy;
+        }
+
+        // 应用最小尺寸约束
+        if (newWidth < MIN_WIDTH * SCALE_FACTOR) {
+            if (dir.indexOf('w') !== -1) {
+                newLeft = _resizeInfo.origLeft + _resizeInfo.origWidth - MIN_WIDTH * SCALE_FACTOR;
+            }
+            newWidth = MIN_WIDTH * SCALE_FACTOR;
+        }
+        if (newHeight < MIN_HEIGHT * SCALE_FACTOR) {
+            if (dir.indexOf('n') !== -1) {
+                newTop = _resizeInfo.origTop + _resizeInfo.origHeight - MIN_HEIGHT * SCALE_FACTOR;
+            }
+            newHeight = MIN_HEIGHT * SCALE_FACTOR;
+        }
+
+        // 防止拖出屏幕
+        var maxLeft = window.innerWidth - 50;
+        var maxTop = window.innerHeight - 80;
+        if (newLeft < -newWidth + 60) newLeft = -newWidth + 60;
+        if (newLeft > maxLeft) newLeft = maxLeft;
+        if (newTop < 0) newTop = 0;
+        if (newTop > maxTop) newTop = maxTop;
+
+        // 应用
+        win.style.left = newLeft + 'px';
+        win.style.top = newTop + 'px';
+        win.style.width = newWidth + 'px';
+        win.style.height = newHeight + 'px';
+
+        // 触发子元素自适应
+        var iframe = win.querySelector('iframe');
+        if (iframe) {
+            iframe.style.width = '100%';
+            iframe.style.height = '100%';
+        }
+    });
+
+    /**
+     * 结束缩放
+     */
+    document.addEventListener('pointerup', function() {
+        _resizeInfo = null;
+    });
+
+    // 监听 createWindow，自动添加缩放手柄
+    var _origCreateWindow = createWindow;
+    createWindow = function(id, title, icon, width, height, top, left, bodyHTML) {
+        _origCreateWindow(id, title, icon, width, height, top, left, bodyHTML);
+        setTimeout(function() {
+            addResizeHandles(id);
+        }, 50);
+        return openWindows[id] ? openWindows[id].el : null;
+    };
+
+    // 为已存在的窗口添加手柄
+    setTimeout(function() {
+        var ids = Object.keys(openWindows);
+        for (var i = 0; i < ids.length; i++) {
+            addResizeHandles(ids[i]);
+        }
+    }, 500);
+
+    // 窗口最大化时隐藏手柄
+    var _origToggleMaximize = toggleMaximize;
+    toggleMaximize = function(id) {
+        _origToggleMaximize(id);
+        var winData = openWindows[id];
+        if (!winData) return;
+        var handles = winData.el.querySelectorAll('.v170-resize-handle');
+        for (var i = 0; i < handles.length; i++) {
+            handles[i].style.display = winData.maximized ? 'none' : 'block';
+        }
+    };
+
+    console.log('[v1.7.0] 窗口缩放拖拽已加载');
+})();
+
+// ─────────────────────────────────────────────────────────────
+//  2. 拖拽上传系统
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v170_upload) return;
+    window._v170_upload = true;
+
+    var _uploadOverlay = null;
+    var _uploadCount = 0;
+    var _uploadTotal = 0;
+
+    /**
+     * 创建上传遮罩
+     */
+    function createUploadOverlay() {
+        if (_uploadOverlay) return _uploadOverlay;
+
+        _uploadOverlay = document.createElement('div');
+        _uploadOverlay.id = 'v170-upload-overlay';
+        _uploadOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:99998;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px);';
+        _uploadOverlay.innerHTML = '' +
+            '<div style="background:#1f1f1f;border:2px dashed #0078D4;border-radius:20px;padding:40px 60px;text-align:center;color:#fff;pointer-events:none;">' +
+            '  <div style="font-size:60px;margin-bottom:15px;">📤</div>' +
+            '  <div style="font-size:20px;font-weight:bold;margin-bottom:10px;">释放文件以上传</div>' +
+            '  <div style="font-size:13px;color:#aaa;" id="v170-upload-status">准备上传...</div>' +
+            '  <div style="margin-top:15px;height:6px;background:#333;border-radius:3px;overflow:hidden;">' +
+            '    <div id="v170-upload-progress" style="height:100%;background:#0078D4;width:0%;border-radius:3px;transition:width 0.2s;"></div>' +
+            '  </div>' +
+            '</div>';
+        document.body.appendChild(_uploadOverlay);
+        return _uploadOverlay;
+    }
+
+    /**
+     * 显示上传遮罩
+     */
+    function showUploadOverlay() {
+        var overlay = createUploadOverlay();
+        overlay.style.display = 'flex';
+    }
+
+    /**
+     * 隐藏上传遮罩
+     */
+    function hideUploadOverlay() {
+        if (_uploadOverlay) {
+            _uploadOverlay.style.display = 'none';
+        }
+    }
+
+    /**
+     * 更新上传进度
+     */
+    function updateUploadProgress(current, total, fileName) {
+        var statusEl = document.getElementById('v170-upload-status');
+        var progressEl = document.getElementById('v170-upload-progress');
+        if (statusEl) {
+            statusEl.textContent = '正在上传: ' + fileName + ' (' + current + '/' + total + ')';
+        }
+        if (progressEl) {
+            var pct = total > 0 ? Math.round((current / total) * 100) : 0;
+            progressEl.style.width = pct + '%';
+        }
+    }
+
+    /**
+     * 处理文件上传
+     */
+    function handleFiles(files) {
+        if (!files || files.length === 0) return;
+
+        _uploadCount = 0;
+        _uploadTotal = files.length;
+        showUploadOverlay();
+
+        var uploadedCount = 0;
+        var failedCount = 0;
+
+        for (var i = 0; i < files.length; i++) {
+            (function(file) {
+                var reader = new FileReader();
+                var fileName = file.name;
+
+                reader.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        var pct = Math.round((e.loaded / e.total) * 100);
+                        updateUploadProgress(uploadedCount + 1, _uploadTotal, fileName + ' (' + pct + '%)');
+                    }
+                };
+
+                reader.onload = function(e) {
+                    try {
+                        var content = e.target.result;
+                        VirtualFS.writeFile(fileName, content);
+                        uploadedCount++;
+                        updateUploadProgress(uploadedCount, _uploadTotal, fileName);
+                    } catch (err) {
+                        failedCount++;
+                        console.error('上传失败: ' + fileName, err);
+                    }
+
+                    _uploadCount++;
+                    if (_uploadCount >= _uploadTotal) {
+                        // 全部完成
+                        setTimeout(function() {
+                            hideUploadOverlay();
+                            if (failedCount === 0) {
+                                showToast('✅ 已上传 ' + uploadedCount + ' 个文件');
+                            } else {
+                                showToast('⚠️ 上传完成: ' + uploadedCount + ' 成功, ' + failedCount + ' 失败');
+                            }
+                            refreshFiles();
+                            _uploadCount = 0;
+                            _uploadTotal = 0;
+                        }, 500);
+                    }
+                };
+
+                reader.onerror = function() {
+                    failedCount++;
+                    _uploadCount++;
+                    if (_uploadCount >= _uploadTotal) {
+                        setTimeout(function() {
+                            hideUploadOverlay();
+                            showToast('⚠️ 上传完成: ' + uploadedCount + ' 成功, ' + failedCount + ' 失败');
+                            refreshFiles();
+                            _uploadCount = 0;
+                            _uploadTotal = 0;
+                        }, 500);
+                    }
+                };
+
+                reader.readAsText(file);
+            })(files[i]);
+        }
+    }
+
+    // 全局拖拽事件
+    var _dragCounter = 0;
+
+    document.addEventListener('dragenter', function(e) {
+        e.preventDefault();
+        _dragCounter++;
+        if (_dragCounter === 1) {
+            showUploadOverlay();
+            var statusEl = document.getElementById('v170-upload-status');
+            if (statusEl) statusEl.textContent = '释放文件以上传';
+        }
+    });
+
+    document.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    });
+
+    document.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        _dragCounter--;
+        if (_dragCounter <= 0) {
+            _dragCounter = 0;
+            hideUploadOverlay();
+        }
+    });
+
+    document.addEventListener('drop', function(e) {
+        e.preventDefault();
+        _dragCounter = 0;
+        hideUploadOverlay();
+
+        var files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            handleFiles(files);
+        }
+    });
+
+    // 文件管理器窗口内拖拽上传
+    document.addEventListener('drop', function(e) {
+        if (e.target.closest && e.target.closest('#win-files')) {
+            e.preventDefault();
+            e.stopPropagation();
+            var files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+                handleFiles(files);
+            }
+        }
+    }, true);
+
+    // 桌面区域拖拽上传
+    var desktop = document.getElementById('desktop');
+    if (desktop) {
+        desktop.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'copy';
+        });
+        desktop.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            _dragCounter = 0;
+            hideUploadOverlay();
+            var files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+                handleFiles(files);
+            }
+        });
+    }
+
+    console.log('[v1.7.0] 拖拽上传已加载');
+    showToast('📤 拖拽上传已启用');
+})();
+
+console.log('[v1.7.0] 增量加载完成');
+// ═══════════════════════════════════════════════════════════════
+//  v1.7.0 增量结束
+// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  v1.7.1 增量 - 桌面图标拖动 + 锁屏 + 开机动画 + 通知中心 + 系统备份
+//  纯增量，不覆盖任何现有函数
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────
+//  1. 桌面图标拖动排列
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v171_desktopDrag) return;
+    window._v171_desktopDrag = true;
+
+    var ICON_POS_KEY = 'tkemu_icon_positions_v1';
+    var _iconDragInfo = null;
+
+    // 加载已保存的图标位置
+    function loadIconPositions() {
+        try {
+            var saved = JSON.parse(localStorage.getItem(ICON_POS_KEY) || '{}');
+            var icons = document.querySelectorAll('.desktop-icon');
+            icons.forEach(function(icon) {
+                var id = icon.id || icon.textContent.trim();
+                if (saved[id]) {
+                    icon.style.top = saved[id].top;
+                    icon.style.left = saved[id].left;
+                    icon.style.right = 'auto';
+                    icon.style.bottom = 'auto';
+                }
+            });
+        } catch(e) {}
+    }
+
+    // 保存图标位置
+    function saveIconPositions() {
+        var positions = {};
+        var icons = document.querySelectorAll('.desktop-icon');
+        icons.forEach(function(icon) {
+            var id = icon.id || icon.textContent.trim();
+            var top = icon.style.top;
+            var left = icon.style.left;
+            if (top && left) {
+                positions[id] = { top: top, left: left };
+            } else {
+                // 用 right/bottom 定位的图标，读取计算后的位置
+                var rect = icon.getBoundingClientRect();
+                var desktopRect = document.getElementById('desktop').getBoundingClientRect();
+                positions[id] = {
+                    top: (rect.top - desktopRect.top) + 'px',
+                    left: (rect.left - desktopRect.left) + 'px'
+                };
+            }
+        });
+        localStorage.setItem(ICON_POS_KEY, JSON.stringify(positions));
+    }
+
+    // 为所有桌面图标添加拖动
+    function initIconDrag() {
+        var icons = document.querySelectorAll('.desktop-icon');
+        icons.forEach(function(icon) {
+            icon.style.position = 'absolute';
+
+            icon.addEventListener('pointerdown', function(e) {
+                // 不拦截双击
+                if (e.detail > 1) return;
+                e.preventDefault();
+                e.stopPropagation();
+
+                var desktopRect = document.getElementById('desktop').getBoundingClientRect();
+                var iconRect = icon.getBoundingClientRect();
+
+                _iconDragInfo = {
+                    icon: icon,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    origLeft: iconRect.left - desktopRect.left,
+                    origTop: iconRect.top - desktopRect.top,
+                    moved: false
+                };
+
+                icon.style.right = 'auto';
+                icon.style.bottom = 'auto';
+                icon.style.left = _iconDragInfo.origLeft + 'px';
+                icon.style.top = _iconDragInfo.origTop + 'px';
+                icon.style.zIndex = '500';
+                icon.style.opacity = '0.85';
+                icon.style.cursor = 'grabbing';
+
+                try {
+                    icon.setPointerCapture(e.pointerId);
+                } catch(err) {}
+            });
+
+            icon.addEventListener('pointermove', function(e) {
+                if (!_iconDragInfo || _iconDragInfo.icon !== icon) return;
+                e.preventDefault();
+
+                var desktopRect = document.getElementById('desktop').getBoundingClientRect();
+                var dx = e.clientX - _iconDragInfo.startX;
+                var dy = e.clientY - _iconDragInfo.startY;
+
+                var newLeft = _iconDragInfo.origLeft + dx;
+                var newTop = _iconDragInfo.origTop + dy;
+
+                // 边界限制
+                var maxLeft = desktopRect.width - icon.offsetWidth - 8;
+                var maxTop = desktopRect.height - icon.offsetHeight - 8;
+                if (newLeft < 4) newLeft = 4;
+                if (newTop < 4) newTop = 4;
+                if (newLeft > maxLeft) newLeft = maxLeft;
+                if (newTop > maxTop) newTop = maxTop;
+
+                icon.style.left = newLeft + 'px';
+                icon.style.top = newTop + 'px';
+
+                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                    _iconDragInfo.moved = true;
+                }
+            });
+
+            icon.addEventListener('pointerup', function(e) {
+                if (!_iconDragInfo || _iconDragInfo.icon !== icon) return;
+                icon.style.zIndex = '';
+                icon.style.opacity = '1';
+                icon.style.cursor = 'pointer';
+                saveIconPositions();
+                _iconDragInfo = null;
+            });
+        });
+    }
+
+    // 初始化
+    setTimeout(function() {
+        loadIconPositions();
+        initIconDrag();
+    }, 500);
+
+    console.log('[v1.7.1] 桌面图标拖动已加载');
+})();
+
+// ─────────────────────────────────────────────────────────────
+//  2. 锁屏功能
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v171_lockscreen) return;
+    window._v171_lockscreen = true;
+
+    /**
+     * 锁屏
+     */
+    window.v171LockScreen = function() {
+        // 如果已锁屏，忽略
+        if (document.getElementById('v171-lockscreen')) return;
+
+        // 获取当前用户
+        var userName = '';
+        var userPassword = '';
+        if (typeof v160CurrentUser !== 'undefined' && v160CurrentUser) {
+            userName = v160CurrentUser;
+            if (typeof v160Users !== 'undefined') {
+                var u = v160Users.find(function(x) { return x.name === userName; });
+                if (u) userPassword = u.password || '';
+            }
+        }
+
+        var overlay = document.createElement('div');
+        overlay.id = 'v171-lockscreen';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+            'background:linear-gradient(135deg,#0a1a3a 0%,#1a3a6a 50%,#0a2a4a 100%);';
+
+        var now = new Date();
+        var timeStr = now.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+        var dateStr = now.toLocaleDateString('zh-CN', {year:'numeric',month:'long',day:'numeric',weekday:'long'});
+
+        overlay.innerHTML = '' +
+            '<div style="text-align:center;color:#fff;user-select:none;">' +
+            '  <div style="font-size:90px;font-weight:100;margin-bottom:8px;" id="v171-lock-time">' + timeStr + '</div>' +
+            '  <div style="font-size:16px;color:#aaa;margin-bottom:40px;">' + dateStr + '</div>' +
+            '  <div style="font-size:50px;margin-bottom:20px;">' + (userName ? '👤' : '🔒') + '</div>' +
+            '  <div style="font-size:18px;margin-bottom:20px;">' + (userName || '已锁定') + '</div>' +
+            (userPassword !== '' ? '<input type="password" id="v171-lock-input" placeholder="输入密码解锁" style="padding:12px 24px;border:2px solid rgba(255,255,255,0.3);border-radius:30px;background:rgba(255,255,255,0.1);color:#fff;font-size:15px;width:260px;text-align:center;outline:none;transition:border 0.3s;" onfocus="this.style.borderColor=\'#00ccff\'" onblur="this.style.borderColor=\'rgba(255,255,255,0.3)\'" onkeydown="if(event.key===\'Enter\')v171Unlock()">' +
+                          '<div style="margin-top:14px;"><button onclick="v171Unlock()" style="padding:10px 30px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:25px;color:#fff;cursor:pointer;font-size:14px;">解锁</button></div>' :
+                          '<button onclick="v171Unlock()" style="padding:12px 36px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:30px;color:#fff;cursor:pointer;font-size:15px;">🔓 解锁</button>') +
+            '  </div>';
+
+        document.body.appendChild(overlay);
+
+        // 时钟更新
+        overlay._timer = setInterval(function() {
+            var t = document.getElementById('v171-lock-time');
+            if (t) {
+                var n = new Date();
+                t.textContent = n.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+            }
+        }, 1000);
+
+        // 聚焦输入框
+        setTimeout(function() {
+            var inp = document.getElementById('v171-lock-input');
+            if (inp) inp.focus();
+        }, 200);
+
+        // 记录日志
+        if (typeof SystemLog !== 'undefined' && SystemLog.add) {
+            SystemLog.add('security', '锁屏', '用户 ' + userName + ' 锁定了屏幕');
+        }
+    };
+
+    /**
+     * 解锁
+     */
+    window.v171Unlock = function() {
+        var userName = '';
+        var userPassword = '';
+        if (typeof v160CurrentUser !== 'undefined' && v160CurrentUser) {
+            userName = v160CurrentUser;
+            if (typeof v160Users !== 'undefined') {
+                var u = v160Users.find(function(x) { return x.name === userName; });
+                if (u) userPassword = u.password || '';
+            }
+        }
+
+        var input = document.getElementById('v171-lock-input');
+        if (userPassword !== '' && input) {
+            if (input.value === userPassword) {
+                var overlay = document.getElementById('v171-lockscreen');
+                if (overlay) {
+                    clearInterval(overlay._timer);
+                    overlay.remove();
+                }
+                showToast('✅ 欢迎回来, ' + userName);
+            } else {
+                input.value = '';
+                input.style.borderColor = '#ff4444';
+                input.placeholder = '密码错误，重试';
+                setTimeout(function() {
+                    input.style.borderColor = 'rgba(255,255,255,0.3)';
+                    input.placeholder = '输入密码解锁';
+                }, 1500);
+            }
+        } else {
+            // 无密码直接解锁
+            var overlay2 = document.getElementById('v171-lockscreen');
+            if (overlay2) {
+                clearInterval(overlay2._timer);
+                overlay2.remove();
+            }
+        }
+    };
+
+    // Win+L 快捷键锁屏
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'L' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            v171LockScreen();
+        }
+    });
+
+    // 开始菜单添加锁屏
+    setTimeout(function() {
+        var sm = document.getElementById('start-menu');
+        if (sm && !document.getElementById('v171-lock-item')) {
+            var items = sm.querySelectorAll('.start-menu-item');
+            var target = null;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].textContent.indexOf('重启系统') !== -1) {
+                    target = items[i];
+                    break;
+                }
+            }
+            var lockItem = document.createElement('div');
+            lockItem.className = 'start-menu-item';
+            lockItem.id = 'v171-lock-item';
+            lockItem.innerHTML = '<span class="sm-icon">🔒</span> 锁屏';
+            lockItem.onclick = function() {
+                toggleStartMenu();
+                v171LockScreen();
+            };
+            if (target) {
+                sm.insertBefore(lockItem, target);
+            } else {
+                sm.appendChild(lockItem);
+            }
+        }
+    }, 300);
+
+    console.log('[v1.7.1] 锁屏功能已加载');
+})();
+
+// ─────────────────────────────────────────────────────────────
+//  3. 系统开机动画
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v171_boot) return;
+    window._v171_boot = true;
+
+    // 创建开机动画（在页面加载后自动显示）
+    function showBootAnimation() {
+        // 如果已经有动画，跳过
+        if (document.getElementById('v171-boot')) return;
+
+        var boot = document.createElement('div');
+        boot.id = 'v171-boot';
+        boot.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:#0a0a0a;z-index:100000;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.6s;';
+
+        boot.innerHTML = '' +
+            '<div style="text-align:center;">' +
+            '  <div style="font-size:70px;margin-bottom:20px;animation:v171Pulse 2s ease-in-out infinite;">🖥️</div>' +
+            '  <div style="color:#fff;font-size:26px;font-weight:bold;margin-bottom:8px;letter-spacing:2px;">tkemu</div>' +
+            '  <div style="color:#888;font-size:13px;margin-bottom:30px;">Windows 桌面模拟器</div>' +
+            '  <div style="width:220px;height:4px;background:#222;border-radius:2px;overflow:hidden;">' +
+            '    <div id="v171-boot-progress" style="height:100%;background:linear-gradient(90deg,#0078D4,#00ccff);width:0%;border-radius:2px;transition:width 0.3s;"></div>' +
+            '  </div>' +
+            '  <div id="v171-boot-status" style="color:#888;font-size:11px;margin-top:12px;">正在启动...</div>' +
+            '</div>';
+
+        document.body.appendChild(boot);
+
+        // 动画
+        var statuses = ['正在加载系统...', '初始化窗口管理器...', '加载虚拟文件系统...', '启动 Python 运行时...', '准备就绪...'];
+        var progress = 0;
+        var statusIdx = 0;
+
+        var timer = setInterval(function() {
+            progress += Math.random() * 18 + 5;
+            if (progress >= 100) {
+                progress = 100;
+                clearInterval(timer);
+                document.getElementById('v171-boot-progress').style.width = '100%';
+                document.getElementById('v171-boot-status').textContent = '欢迎使用 tkemu！';
+                setTimeout(function() {
+                    boot.style.opacity = '0';
+                    setTimeout(function() {
+                        boot.remove();
+                        showToast('🚀 系统启动完成');
+                    }, 600);
+                }, 600);
+                return;
+            }
+            document.getElementById('v171-boot-progress').style.width = progress + '%';
+            statusIdx = Math.floor(progress / 22);
+            if (statusIdx < statuses.length) {
+                document.getElementById('v171-boot-status').textContent = statuses[statusIdx];
+            }
+        }, 180);
+    }
+
+    // 动画样式
+    var style = document.createElement('style');
+    style.textContent = '@keyframes v171Pulse { 0%,100% { transform: scale(1); opacity:1; } 50% { transform: scale(1.1); opacity:0.8; } }';
+    document.head.appendChild(style);
+
+    // 页面加载时显示
+    setTimeout(showBootAnimation, 200);
+    window.v171ShowBootAnimation = showBootAnimation;
+    console.log('[v1.7.1] 开机动画已加载');
+})();
+
+// ─────────────────────────────────────────────────────────────
+//  4. 通知中心
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v171_notify) return;
+    window._v171_notify = true;
+
+    var NOTIFY_KEY = 'tkemu_notifications_v1';
+    var notifications = [];
+    var _notifyReadCount = 0;
+
+    // 加载通知
+    function loadNotifications() {
+        try {
+            notifications = JSON.parse(localStorage.getItem(NOTIFY_KEY) || '[]');
+        } catch(e) {
+            notifications = [];
+        }
+        updateNotifyBadge();
+    }
+
+    // 保存通知
+    function saveNotifications() {
+        localStorage.setItem(NOTIFY_KEY, JSON.stringify(notifications));
+        updateNotifyBadge();
+    }
+
+    // 更新角标
+    function updateNotifyBadge() {
+        var badge = document.getElementById('v171-notify-badge');
+        if (badge) {
+            var unread = notifications.filter(function(n) { return !n.read; }).length;
+            badge.textContent = unread;
+            badge.style.display = unread > 0 ? 'block' : 'none';
+        }
+    }
+
+    // 添加通知
+    window.v171AddNotification = function(title, message, type) {
+        notifications.unshift({
+            id: Date.now() + Math.random(),
+            title: title,
+            message: message || '',
+            type: type || 'info',
+            time: new Date().toISOString(),
+            read: false
+        });
+        // 最多保留 50 条
+        if (notifications.length > 50) notifications = notifications.slice(0, 50);
+        saveNotifications();
+    };
+
+    // 标记全部已读
+    window.v171MarkAllRead = function() {
+        notifications.forEach(function(n) { n.read = true; });
+        saveNotifications();
+        if (openWindows['notifycenter'] && document.getElementById('v171-notify-list')) {
+            renderNotifyList();
+        }
+    };
+
+    // 清除全部
+    window.v171ClearAll = function() {
+        notifications = [];
+        saveNotifications();
+        if (openWindows['notifycenter'] && document.getElementById('v171-notify-list')) {
+            renderNotifyList();
+        }
+    };
+
+    // 删除单条
+    window.v171RemoveNotify = function(id) {
+        notifications = notifications.filter(function(n) { return n.id !== id; });
+        saveNotifications();
+        renderNotifyList();
+    };
+
+    // 渲染通知列表
+    function renderNotifyList() {
+        var list = document.getElementById('v171-notify-list');
+        if (!list) return;
+        if (notifications.length === 0) {
+            list.innerHTML = '<div style="color:#888;text-align:center;padding:30px;">📭 没有通知</div>';
+            return;
+        }
+        var h = '';
+        var icons = { info: 'ℹ️', success: '✅', warning: '⚠️', error: '❌', security: '🔒' };
+        notifications.forEach(function(n) {
+            var icon = icons[n.type] || 'ℹ️';
+            var bg = n.read ? 'background:#1a1a1a;' : 'background:#1a2a4a;border-left:3px solid #0078D4;';
+            h += '<div style="' + bg + 'padding:10px 14px;border-bottom:1px solid #222;display:flex;gap:10px;align-items:flex-start;cursor:pointer;" onclick="this.style.opacity=\'0.6\';v171MarkRead(' + n.id + ')">';
+            h += '  <span style="font-size:20px;flex-shrink:0;">' + icon + '</span>';
+            h += '  <div style="flex:1;">';
+            h += '    <div style="color:#fff;font-size:13px;font-weight:bold;">' + escapeHTML(n.title) + '</div>';
+            if (n.message) h += '<div style="color:#aaa;font-size:12px;margin-top:2px;">' + escapeHTML(n.message) + '</div>';
+            h += '    <div style="color:#666;font-size:10px;margin-top:4px;">' + new Date(n.time).toLocaleString('zh-CN') + '</div>';
+            h += '  </div>';
+            h += '  <button onclick="event.stopPropagation();v171RemoveNotify(' + n.id + ')" style="background:none;border:none;color:#666;cursor:pointer;font-size:14px;flex-shrink:0;">✕</button>';
+            h += '</div>';
+        });
+        list.innerHTML = h;
+    }
+
+    // 标记单条已读
+    window.v171MarkRead = function(id) {
+        var n = notifications.find(function(x) { return x.id === id; });
+        if (n) { n.read = true; saveNotifications(); renderNotifyList(); }
+    };
+
+    // 打开通知中心
+    window.v171OpenNotifyCenter = function() {
+        if (openWindows['notifycenter']) {
+            focusWindow('notifycenter');
+            return;
+        }
+        var html = '' +
+            '<div style="display:flex;flex-direction:column;height:100%;background:#121212;">' +
+            '  <div style="display:flex;padding:8px 14px;border-bottom:1px solid #222;background:#1a1a1a;align-items:center;flex-shrink:0;">' +
+            '    <span style="color:#fff;font-weight:bold;font-size:13px;flex:1;">📬 通知中心</span>' +
+            '    <button onclick="v171MarkAllRead()" style="background:none;border:none;color:#0078D4;cursor:pointer;font-size:11px;margin-right:8px;">全部已读</button>' +
+            '    <button onclick="v171ClearAll()" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:11px;">清除全部</button>' +
+            '  </div>' +
+            '  <div id="v171-notify-list" style="flex:1;overflow-y:auto;"></div>' +
+            '</div>';
+        createWindow('notifycenter', '通知中心', '📬', 380, 450, 100, 160, html);
+        setTimeout(renderNotifyList, 100);
+    };
+
+    // 创建任务栏通知图标
+    function createNotifyIcon() {
+        var taskbar = document.getElementById('taskbar');
+        if (!taskbar) return;
+        var clock = document.getElementById('clock');
+        if (!clock) return;
+
+        var iconWrap = document.createElement('div');
+        iconWrap.style.cssText = 'position:relative;margin-right:8px;flex-shrink:0;';
+        iconWrap.innerHTML = '' +
+            '<button id="v171-notify-btn" onclick="v171OpenNotifyCenter()" style="background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px 8px;border-radius:4px;font-family:var(--font-ui);" title="通知中心">📬</button>' +
+            '<span id="v171-notify-badge" style="position:absolute;top:0;right:0;background:#e74c3c;color:#fff;font-size:9px;min-width:15px;height:15px;line-height:15px;border-radius:8px;display:none;text-align:center;pointer-events:none;">0</span>';
+        taskbar.insertBefore(iconWrap, clock);
+    }
+
+    // 重写 showToast 使其同时记录通知
+    var _origShowToast = showToast;
+    showToast = function(msg) {
+        _origShowToast(msg);
+        // 记录到通知中心
+        var type = 'info';
+        if (msg.indexOf('✅') !== -1 || msg.indexOf('成功') !== -1) type = 'success';
+        if (msg.indexOf('⚠️') !== -1 || msg.indexOf('警告') !== -1) type = 'warning';
+        if (msg.indexOf('❌') !== -1 || msg.indexOf('错误') !== -1) type = 'error';
+        v171AddNotification('系统通知', msg, type);
+    };
+
+    // 初始化
+    loadNotifications();
+    setTimeout(createNotifyIcon, 500);
+
+    console.log('[v1.7.1] 通知中心已加载');
+})();
+
+// ─────────────────────────────────────────────────────────────
+//  5. 系统备份到 JSON 文件
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v171_backup) return;
+    window._v171_backup = true;
+
+    var BACKUP_KEYS = [
+        'tkemu_fs_v6',
+        'tkemu_hidden_files_v2',
+        'tkemu_kd_apps',
+        'tkemu_vfolders_v1',
+        'tkemu_ftags_v1',
+        'tkemu_sys_tokens_v2',
+        'tkemu_sys_updates_v2',
+        'tkemu_users_v1',
+        'tkemu_session_v1',
+        'tkemu_trash',
+        'tkemu_icon_positions_v1',
+        'tkemu_notifications_v1',
+        'tkemu_syslog_v1'
+    ];
+
+    /**
+     * 导出完整备份
+     */
+    window.v171ExportBackup = function() {
+        var backup = {
+            app: 'tkemu',
+            version: APP_VERSION,
+            exportTime: new Date().toISOString(),
+            data: {}
+        };
+
+        BACKUP_KEYS.forEach(function(key) {
+            try {
+                backup.data[key] = localStorage.getItem(key);
+            } catch(e) {
+                backup.data[key] = null;
+            }
+        });
+
+        var jsonStr = JSON.stringify(backup, null, 2);
+        var blob = new Blob([jsonStr], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'tkemu_backup_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast('💾 完整备份已导出');
+        v171AddNotification('系统备份', '完整备份已导出', 'success');
+    };
+
+    /**
+     * 导入备份
+     */
+    window.v171ImportBackup = function() {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    var backup = JSON.parse(ev.target.result);
+                    if (!backup || backup.app !== 'tkemu' || !backup.data) {
+                        alert('❌ 无效的 tkemu 备份文件');
+                        return;
+                    }
+
+                    if (!confirm('⚠️ 导入备份将覆盖当前所有数据！\n\n备份版本: ' + backup.version + '\n导出时间: ' + backup.exportTime + '\n\n确定要继续吗？')) {
+                        return;
+                    }
+
+                    // 恢复所有数据
+                    var restoredCount = 0;
+                    BACKUP_KEYS.forEach(function(key) {
+                        if (backup.data[key] !== undefined && backup.data[key] !== null) {
+                            try {
+                                localStorage.setItem(key, backup.data[key]);
+                                restoredCount++;
+                            } catch(err) {
+                                console.error('恢复 ' + key + ' 失败:', err);
+                            }
+                        } else {
+                            localStorage.removeItem(key);
+                        }
+                    });
+
+                    showToast('✅ 备份已恢复 (' + restoredCount + ' 项)');
+                    v171AddNotification('系统备份', '备份已恢复', 'success');
+
+                    // 2秒后刷新
+                    setTimeout(function() {
+                        location.reload();
+                    }, 2000);
+
+                } catch(err) {
+                    alert('❌ 文件解析失败: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    };
+
+    /**
+     * 打开备份管理窗口
+     */
+    window.v171OpenBackupManager = function() {
+        if (openWindows['backupmanager']) {
+            focusWindow('backupmanager');
+            return;
+        }
+
+        var totalSize = 0;
+        BACKUP_KEYS.forEach(function(key) {
+            try {
+                var data = localStorage.getItem(key);
+                if (data) totalSize += data.length * 2;
+            } catch(e) {}
+        });
+
+        var html = '' +
+            '<div style="padding:20px;background:#f0f0f0;height:100%;overflow-y:auto;color:#1a1a1a;">' +
+            '  <h3 style="margin-bottom:15px;color:#0078D4;">💾 系统备份</h3>' +
+            '  <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin-bottom:15px;">' +
+            '    <div style="font-weight:bold;font-size:14px;margin-bottom:6px;">当前数据大小</div>' +
+            '    <div style="font-size:22px;color:#0078D4;font-weight:bold;">' + (totalSize / 1024).toFixed(1) + ' KB</div>' +
+            '    <div style="color:#888;font-size:11px;margin-top:4px;">包含 ' + BACKUP_KEYS.length + ' 个数据项</div>' +
+            '  </div>' +
+            '  <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin-bottom:15px;">' +
+            '    <div style="font-weight:bold;font-size:13px;margin-bottom:10px;">备份内容</div>' +
+            '    <div style="font-size:11px;color:#666;line-height:1.8;">' +
+            '      📁 文件系统<br>' +
+            '      🙈 隐藏文件<br>' +
+            '      ⚡ KD应用<br>' +
+            '      📂 虚拟文件夹<br>' +
+            '      🏷️ 文件标签<br>' +
+            '      🔑 sys令牌<br>' +
+            '      🔄 sys更新<br>' +
+            '      👤 用户数据<br>' +
+            '      🖼️ 桌面图标位置<br>' +
+            '      📬 通知记录<br>' +
+            '      📋 系统日志' +
+            '    </div>' +
+            '  </div>' +
+            '  <div style="display:flex;gap:8px;">' +
+            '    <button onclick="v171ExportBackup()" style="padding:10px 20px;background:#0078D4;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px;flex:1;">📤 导出备份</button>' +
+            '    <button onclick="v171ImportBackup()" style="padding:10px 20px;background:#e67e22;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px;flex:1;">📥 导入备份</button>' +
+            '  </div>' +
+            '  <div style="color:#888;font-size:10px;margin-top:12px;text-align:center;">⚠️ 导入备份将覆盖当前所有数据</div>' +
+            '</div>';
+
+        createWindow('backupmanager', '系统备份', '💾', 420, 460, 110, 150, html);
+    };
+
+    // 添加桌面右键入口
+    setTimeout(function() {
+        var menu = document.getElementById('desktop-context-menu');
+        if (menu && !document.getElementById('v171-backup-item')) {
+            var item = document.createElement('div');
+            item.className = 'context-menu-item';
+            item.id = 'v171-backup-item';
+            item.innerHTML = '<span>💾</span> 系统备份';
+            item.onclick = function() {
+                v171OpenBackupManager();
+                hideAllContextMenus();
+            };
+            menu.appendChild(item);
+        }
+    }, 300);
+
+    // 添加开始菜单入口
+    setTimeout(function() {
+        var sm = document.getElementById('start-menu');
+        if (sm && !document.getElementById('v171-backup-sm')) {
+            var item = document.createElement('div');
+            item.className = 'start-menu-item';
+            item.id = 'v171-backup-sm';
+            item.innerHTML = '<span class="sm-icon">💾</span> 系统备份';
+            item.onclick = function() {
+                toggleStartMenu();
+                v171OpenBackupManager();
+            };
+            sm.appendChild(item);
+        }
+    }, 300);
+
+    console.log('[v1.7.1] 系统备份已加载');
+})();
+
+console.log('[v1.7.1] 全部增量加载完成');
+showToast('✅ v1.7.1 增量已加载');
+// ═══════════════════════════════════════════════════════════════
+//  v1.7.1 增量结束
+// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  v1.7.1 修复 - 重启系统触发开机动画
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._v171_restart_fix) return;
+    window._v171_restart_fix = true;
+
+    // 保存原始 restartSystem
+    var _origRestartSystem = restartSystem;
+
+    // 重写 restartSystem
+    restartSystem = function() {
+        // 关闭所有窗口
+        var ids = Object.keys(openWindows);
+        for (var i = 0; i < ids.length; i++) {
+            closeWindow(ids[i]);
+        }
+        _nextWindowX = Math.round(80 * SCALE_FACTOR);
+        _nextWindowY = Math.round(60 * SCALE_FACTOR);
+
+        // 播放开机动画
+        if (typeof v171ShowBootAnimation === 'function') {
+            v171ShowBootAnimation();
+        } else if (typeof showBootAnimation === 'function') {
+            showBootAnimation();
+        } else {
+            // 没有动画函数，直接显示 toast
+            showToast('系统已重启');
+        }
+    };
+
+    // 同时需要修改开机动画代码，暴露全局函数
+    // 检查并暴露 showBootAnimation
+    if (typeof showBootAnimation === 'function' && !window.v171ShowBootAnimation) {
+        window.v171ShowBootAnimation = showBootAnimation;
+    }
+
+    console.log('[v1.7.1] 重启系统动画修复已加载');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  v1.7.2 增量 - 最小化动画 + 音效 + 任务管理器 + Aero Snap + 文件右键菜单
+//  纯增量，不覆盖任何现有函数
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────
+//  1. 窗口最小化动画
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v172_minimize_anim) return;
+    window._v172_minimize_anim = true;
+
+    // 保存原始 minimizeWindow
+    var _origMinimizeWindow = minimizeWindow;
+
+    // 重写 minimizeWindow 添加动画
+    minimizeWindow = function(id) {
+        if (!openWindows[id]) return;
+        var win = openWindows[id].el;
+
+        // 如果已经最小化，直接调用原始函数
+        if (openWindows[id].minimized) {
+            _origMinimizeWindow(id);
+            return;
+        }
+
+        // 获取窗口和任务栏位置
+        var winRect = win.getBoundingClientRect();
+        var taskbar = document.getElementById('taskbar');
+        var taskbarRect = taskbar ? taskbar.getBoundingClientRect() : { left: 0, top: window.innerHeight - 48 };
+
+        // 目标位置（任务栏中央）
+        var targetX = taskbarRect.left + taskbarRect.width / 2;
+        var targetY = taskbarRect.top + taskbarRect.height / 2;
+
+        // 创建动画副本
+        var clone = win.cloneNode(true);
+        clone.style.cssText = win.style.cssText;
+        clone.style.position = 'fixed';
+        clone.style.left = winRect.left + 'px';
+        clone.style.top = winRect.top + 'px';
+        clone.style.width = winRect.width + 'px';
+        clone.style.height = winRect.height + 'px';
+        clone.style.zIndex = '99999';
+        clone.style.pointerEvents = 'none';
+        clone.style.transition = 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
+        clone.style.opacity = '1';
+        clone.style.transform = 'scale(1)';
+        clone.style.transformOrigin = 'center';
+        clone.style.borderRadius = '8px';
+        clone.style.overflow = 'hidden';
+        document.body.appendChild(clone);
+
+        // 立即隐藏原窗口
+        win.style.display = 'none';
+        openWindows[id].minimized = true;
+        if (activeWindowId === id) activeWindowId = null;
+        updateTaskbarActive();
+
+        // 触发动画
+        setTimeout(function() {
+            clone.style.left = (targetX - 30) + 'px';
+            clone.style.top = (targetY - 20) + 'px';
+            clone.style.width = '60px';
+            clone.style.height = '40px';
+            clone.style.opacity = '0.2';
+            clone.style.transform = 'scale(0.3)';
+        }, 20);
+
+        // 动画结束后移除副本
+        setTimeout(function() {
+            clone.remove();
+        }, 400);
+    };
+
+    console.log('[v1.7.2] 最小化动画已加载');
+})();
+
+// ─────────────────────────────────────────────────────────────
+//  2. 音效系统
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v172_sound) return;
+    window._v172_sound = true;
+
+    var audioCtx = null;
+    var soundEnabled = true;
+
+    /**
+     * 获取 AudioContext
+     */
+    function getAudioCtx() {
+        if (!audioCtx) {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } catch(e) {
+                return null;
+            }
+        }
+        return audioCtx;
+    }
+
+    /**
+     * 播放音效
+     * @param {string} type - 音效类型
+     */
+    window.v172PlaySound = function(type) {
+        if (!soundEnabled) return;
+        var ctx = getAudioCtx();
+        if (!ctx) return;
+
+        try {
+            // 恢复上下文（浏览器自动播放策略）
+            if (ctx.state === 'suspended') {
+                ctx.resume();
+            }
+
+            var oscillator = ctx.createOscillator();
+            var gainNode = ctx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(ctx.destination);
+
+            var now = ctx.currentTime;
+
+            switch(type) {
+                case 'click':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(800, now);
+                    oscillator.frequency.exponentialRampToValueAtTime(600, now + 0.08);
+                    gainNode.gain.setValueAtTime(0.15, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.1);
+                    break;
+
+                case 'open':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(400, now);
+                    oscillator.frequency.exponentialRampToValueAtTime(800, now + 0.12);
+                    gainNode.gain.setValueAtTime(0.12, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.15);
+                    break;
+
+                case 'close':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(800, now);
+                    oscillator.frequency.exponentialRampToValueAtTime(300, now + 0.12);
+                    gainNode.gain.setValueAtTime(0.12, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.15);
+                    break;
+
+                case 'minimize':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(600, now);
+                    oscillator.frequency.exponentialRampToValueAtTime(200, now + 0.2);
+                    gainNode.gain.setValueAtTime(0.1, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.25);
+                    break;
+
+                case 'restore':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(300, now);
+                    oscillator.frequency.exponentialRampToValueAtTime(700, now + 0.15);
+                    gainNode.gain.setValueAtTime(0.1, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.2);
+                    break;
+
+                case 'notify':
+                    // 双音提示
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(660, now);
+                    oscillator.frequency.setValueAtTime(880, now + 0.12);
+                    gainNode.gain.setValueAtTime(0.12, now);
+                    gainNode.gain.setValueAtTime(0.12, now + 0.12);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.3);
+                    break;
+
+                case 'error':
+                    oscillator.type = 'square';
+                    oscillator.frequency.setValueAtTime(200, now);
+                    oscillator.frequency.exponentialRampToValueAtTime(150, now + 0.2);
+                    gainNode.gain.setValueAtTime(0.08, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.25);
+                    break;
+
+                case 'success':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(523, now);
+                    oscillator.frequency.setValueAtTime(659, now + 0.1);
+                    oscillator.frequency.setValueAtTime(784, now + 0.2);
+                    gainNode.gain.setValueAtTime(0.12, now);
+                    gainNode.gain.setValueAtTime(0.12, now + 0.1);
+                    gainNode.gain.setValueAtTime(0.12, now + 0.2);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.4);
+                    break;
+
+                default:
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(500, now);
+                    gainNode.gain.setValueAtTime(0.1, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.1);
+            }
+        } catch(e) {
+            // 静默失败
+        }
+    };
+
+    /**
+     * 切换音效开关
+     */
+    window.v172ToggleSound = function() {
+        soundEnabled = !soundEnabled;
+        return soundEnabled;
+    };
+
+    /**
+     * 获取音效状态
+     */
+    window.v172IsSoundEnabled = function() {
+        return soundEnabled;
+    };
+
+    // 挂载音效到现有函数
+    var _origCreateWindow2 = createWindow;
+    createWindow = function(id, title, icon, width, height, top, left, bodyHTML) {
+        var result = _origCreateWindow2(id, title, icon, width, height, top, left, bodyHTML);
+        v172PlaySound('open');
+        return result;
+    };
+
+    var _origCloseWindow2 = closeWindow;
+    closeWindow = function(id) {
+        if (openWindows[id]) {
+            v172PlaySound('close');
+        }
+        _origCloseWindow2(id);
+    };
+
+    var _origMinimizeWindow2 = minimizeWindow;
+    minimizeWindow = function(id) {
+        if (openWindows[id] && !openWindows[id].minimized) {
+            v172PlaySound('minimize');
+        }
+        _origMinimizeWindow2(id);
+    };
+
+    var _origRestoreWindow2 = restoreWindow;
+    restoreWindow = function(id) {
+        if (openWindows[id] && openWindows[id].minimized) {
+            v172PlaySound('restore');
+        }
+        _origRestoreWindow2(id);
+    };
+
+    var _origShowToast2 = showToast;
+    showToast = function(msg) {
+        _origShowToast2(msg);
+        if (msg.indexOf('✅') !== -1 || msg.indexOf('成功') !== -1) {
+            v172PlaySound('success');
+        } else if (msg.indexOf('❌') !== -1 || msg.indexOf('错误') !== -1 || msg.indexOf('⚠️') !== -1) {
+            v172PlaySound('error');
+        } else {
+            v172PlaySound('notify');
+        }
+    };
+
+    console.log('[v1.7.2] 音效系统已加载');
+})();
+
+// ─────────────────────────────────────────────────────────────
+//  3. 任务管理器
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v172_taskmgr) return;
+    window._v172_taskmgr = true;
+
+    /**
+     * 打开任务管理器
+     */
+    window.v172OpenTaskManager = function() {
+        if (openWindows['taskmanager']) {
+            focusWindow('taskmanager');
+            return;
+        }
+
+        var html = '' +
+            '<div style="display:flex;flex-direction:column;height:100%;background:#1a1a1a;color:#fff;">' +
+            '  <div style="display:flex;gap:0;padding:0;border-bottom:1px solid #333;flex-shrink:0;">' +
+            '    <button id="tm-tab-windows" onclick="v172TmTab(\'windows\')" style="flex:1;padding:10px;background:#2d2d2d;color:#fff;border:none;cursor:pointer;font-size:12px;border-bottom:2px solid #0078D4;">窗口</button>' +
+            '    <button id="tm-tab-perf" onclick="v172TmTab(\'perf\')" style="flex:1;padding:10px;background:#2d2d2d;color:#888;border:none;cursor:pointer;font-size:12px;">性能</button>' +
+            '  </div>' +
+            '  <div id="tm-content" style="flex:1;overflow-y:auto;"></div>' +
+            '  <div style="padding:8px 14px;border-top:1px solid #333;background:#2d2d2d;flex-shrink:0;display:flex;gap:16px;font-size:11px;color:#888;">' +
+            '    <span id="tm-status">窗口: 0</span>' +
+            '    <button onclick="v172TmRefresh()" style="background:#3d3d3d;color:#ccc;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px;">刷新</button>' +
+            '  </div>' +
+            '</div>';
+
+        createWindow('taskmanager', '任务管理器', '📊', 500, 420, 80, 120, html);
+        setTimeout(function() {
+            v172TmRenderWindows();
+            v172TmUpdateStatus();
+        }, 100);
+    };
+
+    /**
+     * 切换标签页
+     */
+    window.v172TmTab = function(tab) {
+        var winTab = document.getElementById('tm-tab-windows');
+        var perfTab = document.getElementById('tm-tab-perf');
+        if (tab === 'windows') {
+            winTab.style.color = '#fff';
+            winTab.style.borderBottom = '2px solid #0078D4';
+            perfTab.style.color = '#888';
+            perfTab.style.borderBottom = 'none';
+            v172TmRenderWindows();
+        } else {
+            perfTab.style.color = '#fff';
+            perfTab.style.borderBottom = '2px solid #0078D4';
+            winTab.style.color = '#888';
+            winTab.style.borderBottom = 'none';
+            v172TmRenderPerf();
+        }
+    };
+
+    /**
+     * 渲染窗口列表
+     */
+    window.v172TmRenderWindows = function() {
+        var content = document.getElementById('tm-content');
+        if (!content) return;
+        var ids = Object.keys(openWindows);
+        if (ids.length === 0) {
+            content.innerHTML = '<div style="color:#888;text-align:center;padding:40px;">没有打开的窗口</div>';
+            return;
+        }
+        var h = '<div style="padding:4px 0;">';
+        ids.forEach(function(id) {
+            var w = openWindows[id];
+            var isActive = id === activeWindowId;
+            h += '<div style="display:flex;align-items:center;padding:8px 14px;border-bottom:1px solid #222;' + (isActive ? 'background:#1a3a5a;' : '') + '">';
+            h += '  <span style="font-size:18px;margin-right:10px;">' + w.icon + '</span>';
+            h += '  <span style="flex:1;font-size:12px;">' + escapeHTML(w.title) + '</span>';
+            h += '  <span style="font-size:10px;color:#666;margin-right:10px;">' + (w.minimized ? '已最小化' : '运行中') + '</span>';
+            h += '  <button onclick="v172TmEndWindow(\'' + id + '\')" style="background:#e74c3c;color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:10px;">结束</button>';
+            h += '</div>';
+        });
+        h += '</div>';
+        content.innerHTML = h;
+        v172TmUpdateStatus();
+    };
+
+    /**
+     * 渲染性能页
+     */
+    window.v172TmRenderPerf = function() {
+        var content = document.getElementById('tm-content');
+        if (!content) return;
+        var winCount = Object.keys(openWindows).length;
+        var storageUsage = (typeof StorageMonitor !== 'undefined') ? StorageMonitor.getUsagePercent() : 0;
+        var cpu = Math.floor(Math.random() * 30 + 5 + winCount * 3);
+        var mem = Math.floor(Math.random() * 20 + 10 + winCount * 5);
+
+        var h = '<div style="padding:16px;">';
+        h += '<div style="font-size:14px;font-weight:bold;margin-bottom:14px;">性能监控</div>';
+
+        // CPU
+        h += '<div style="margin-bottom:12px;">';
+        h += '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;"><span>CPU 使用率</span><span>' + Math.min(cpu, 100) + '%</span></div>';
+        h += '<div style="height:8px;background:#333;border-radius:4px;overflow:hidden;"><div style="height:100%;background:#0078D4;width:' + Math.min(cpu, 100) + '%;border-radius:4px;transition:width 0.5s;"></div></div>';
+        h += '</div>';
+
+        // 内存
+        h += '<div style="margin-bottom:12px;">';
+        h += '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;"><span>内存使用</span><span>' + Math.min(mem, 100) + '%</span></div>';
+        h += '<div style="height:8px;background:#333;border-radius:4px;overflow:hidden;"><div style="height:100%;background:#27ae60;width:' + Math.min(mem, 100) + '%;border-radius:4px;transition:width 0.5s;"></div></div>';
+        h += '</div>';
+
+        // 存储
+        h += '<div style="margin-bottom:12px;">';
+        h += '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;"><span>存储使用</span><span>' + storageUsage + '%</span></div>';
+        h += '<div style="height:8px;background:#333;border-radius:4px;overflow:hidden;"><div style="height:100%;background:' + (storageUsage >= 85 ? '#e74c3c' : '#f39c12') + ';width:' + storageUsage + '%;border-radius:4px;"></div></div>';
+        h += '</div>';
+
+        // 系统信息
+        h += '<div style="margin-top:18px;padding:12px;background:#2d2d2d;border-radius:6px;font-size:11px;color:#aaa;line-height:1.8;">';
+        h += '版本: ' + APP_VERSION + '<br>';
+        h += '窗口: ' + winCount + '<br>';
+        h += 'Python: ' + (pyodideReady ? '已就绪' : '未安装') + '<br>';
+        h += '缩放: ' + Math.round(SCALE_FACTOR * 100) + '%';
+        h += '</div></div>';
+
+        content.innerHTML = h;
+    };
+
+    /**
+     * 结束窗口
+     */
+    window.v172TmEndWindow = function(id) {
+        closeWindow(id);
+        v172TmRenderWindows();
+    };
+
+    /**
+     * 刷新
+     */
+    window.v172TmRefresh = function() {
+        if (document.getElementById('tm-tab-windows') && document.getElementById('tm-tab-windows').style.borderBottom !== 'none') {
+            v172TmRenderWindows();
+        } else {
+            v172TmRenderPerf();
+        }
+    };
+
+    /**
+     * 更新状态栏
+     */
+    window.v172TmUpdateStatus = function() {
+        var el = document.getElementById('tm-status');
+        if (el) {
+            el.textContent = '窗口: ' + Object.keys(openWindows).length + ' | 活动: ' + (activeWindowId || '无');
+        }
+    };
+
+    // 性能页定时刷新
+    setInterval(function() {
+        if (openWindows['taskmanager']) {
+            var perfTab = document.getElementById('tm-tab-perf');
+            if (perfTab && perfTab.style.borderBottom !== 'none') {
+                v172TmRenderPerf();
+            }
+        }
+    }, 2000);
+
+    // 添加桌面右键入口
+    setTimeout(function() {
+        var menu = document.getElementById('desktop-context-menu');
+        if (menu && !document.getElementById('v172-tm-item')) {
+            var item = document.createElement('div');
+            item.className = 'context-menu-item';
+            item.id = 'v172-tm-item';
+            item.innerHTML = '<span>📊</span> 任务管理器';
+            item.onclick = function() {
+                v172OpenTaskManager();
+                hideAllContextMenus();
+            };
+            menu.appendChild(item);
+        }
+    }, 300);
+
+    // 添加开始菜单入口
+    setTimeout(function() {
+        var sm = document.getElementById('start-menu');
+        if (sm && !document.getElementById('v172-tm-sm')) {
+            var item = document.createElement('div');
+            item.className = 'start-menu-item';
+            item.id = 'v172-tm-sm';
+            item.innerHTML = '<span class="sm-icon">📊</span> 任务管理器';
+            item.onclick = function() {
+                toggleStartMenu();
+                v172OpenTaskManager();
+            };
+            sm.appendChild(item);
+        }
+    }, 300);
+
+    // Ctrl+Shift+Esc 快捷键
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.shiftKey && e.key === 'Escape') {
+            e.preventDefault();
+            v172OpenTaskManager();
+        }
+    });
+
+    console.log('[v1.7.2] 任务管理器已加载');
+})();
+
+// ─────────────────────────────────────────────────────────────
+//  4. 窗口贴边自动最大化（Aero Snap）
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v172_snap) return;
+    window._v172_snap = true;
+
+    var SNAP_THRESHOLD = 30;
+    var _snapState = {};
+
+    // 保存原始 startDrag
+    var _origStartDrag = startDrag;
+
+    // 重写 startDrag 添加贴边检测
+    startDrag = function(e, id) {
+        if (!openWindows[id] || openWindows[id].maximized) return;
+        _origStartDrag(e, id);
+    };
+
+    // 监听 pointerup 检测贴边
+    document.addEventListener('pointerup', function(e) {
+        if (!dragInfo) return;
+        var id = dragInfo.id;
+        var winData = openWindows[id];
+        if (!winData) return;
+
+        var win = winData.el;
+        var rect = win.getBoundingClientRect();
+        var screenW = window.innerWidth;
+        var screenH = window.innerHeight;
+        var taskbarH = document.getElementById('taskbar').offsetHeight;
+
+        // 检测顶部贴边 → 最大化
+        if (rect.top <= SNAP_THRESHOLD) {
+            if (!winData.maximized) {
+                toggleMaximize(id);
+                v172PlaySound('restore');
+            }
+            return;
+        }
+
+        // 检测左边缘 → 左半屏
+        if (rect.left <= SNAP_THRESHOLD) {
+            if (!winData.snapped || winData.snapped !== 'left') {
+                winData.snapped = 'left';
+                winData.snappedRect = {
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height
+                };
+                win.style.left = '0px';
+                win.style.top = '0px';
+                win.style.width = (screenW / 2) + 'px';
+                win.style.height = (screenH - taskbarH) + 'px';
+                v172PlaySound('click');
+                showToast('📐 贴边到左半屏');
+            }
+            return;
+        }
+
+        // 检测右边缘 → 右半屏
+        if (rect.right >= screenW - SNAP_THRESHOLD) {
+            if (!winData.snapped || winData.snapped !== 'right') {
+                winData.snapped = 'right';
+                winData.snappedRect = {
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height
+                };
+                win.style.left = (screenW / 2) + 'px';
+                win.style.top = '0px';
+                win.style.width = (screenW / 2) + 'px';
+                win.style.height = (screenH - taskbarH) + 'px';
+                v172PlaySound('click');
+                showToast('📐 贴边到右半屏');
+            }
+            return;
+        }
+
+        // 没有贴边，如果之前贴边了则还原
+        if (winData.snapped && winData.snappedRect) {
+            win.style.left = winData.snappedRect.left + 'px';
+            win.style.top = winData.snappedRect.top + 'px';
+            win.style.width = winData.snappedRect.width + 'px';
+            win.style.height = winData.snappedRect.height + 'px';
+            winData.snapped = null;
+            winData.snappedRect = null;
+        }
+    });
+
+    console.log('[v1.7.2] Aero Snap 已加载');
+})();
+
+// ─────────────────────────────────────────────────────────────
+//  5. 文件右键菜单增强
+// ─────────────────────────────────────────────────────────────
+
+(function() {
+    if (window._v172_file_context) return;
+    window._v172_file_context = true;
+
+    var _fileContextTarget = null;
+
+    /**
+     * 创建文件右键菜单 DOM
+     */
+    function createFileContextMenu() {
+        var menu = document.getElementById('v172-file-context-menu');
+        if (!menu) {
+            menu = document.createElement('div');
+            menu.className = 'context-menu';
+            menu.id = 'v172-file-context-menu';
+            document.body.appendChild(menu);
+        }
+        return menu;
+    }
+
+    /**
+     * 显示文件右键菜单
+     */
+    window.v172ShowFileContextMenu = function(e, filePath) {
+        e.preventDefault();
+        e.stopPropagation();
+        hideAllContextMenus();
+        _fileContextTarget = filePath;
+
+        var menu = createFileContextMenu();
+        var isKd = filePath.endsWith('.kd');
+        var isSys = filePath.endsWith('.sys');
+
+        var h = '';
+        h += '<div class="context-menu-item" onclick="openFileByType(\'' + escapeAttr(filePath) + '\');hideAllContextMenus();"><span>📄</span> 打开</div>';
+        h += '<div class="context-menu-item" onclick="v172RenameFile(\'' + escapeAttr(filePath) + '\');hideAllContextMenus();"><span>📝</span> 重命名</div>';
+        h += '<div class="context-menu-item" onclick="v172CopyPath(\'' + escapeAttr(filePath) + '\');hideAllContextMenus();"><span>📋</span> 复制路径</div>';
+        h += '<div class="context-menu-item" onclick="v172SetTag(\'' + escapeAttr(filePath) + '\');hideAllContextMenus();"><span>🏷️</span> 设置标签</div>';
+        h += '<div style="border-top:1px solid #444;margin:4px 0;"></div>';
+        h += '<div class="context-menu-item" onclick="downloadFileToLocal(\'' + escapeAttr(filePath) + '\');hideAllContextMenus();"><span>📥</span> 下载</div>';
+        if (isKd) {
+            h += '<div class="context-menu-item" onclick="installKDAppFromFile(\'' + escapeAttr(filePath) + '\');hideAllContextMenus();"><span>📦</span> 安装KD应用</div>';
+        }
+        if (isSys) {
+            h += '<div class="context-menu-item" onclick="openSysFile(\'' + escapeAttr(filePath) + '\');hideAllContextMenus();"><span>⚡</span> 在System Control打开</div>';
+        }
+        h += '<div style="border-top:1px solid #444;margin:4px 0;"></div>';
+        h += '<div class="context-menu-item" onclick="v172FileProperties(\'' + escapeAttr(filePath) + '\');hideAllContextMenus();"><span>ℹ️</span> 属性</div>';
+        h += '<div class="context-menu-item" onclick="v172DeleteFilePermanent(\'' + escapeAttr(filePath) + '\');hideAllContextMenus();"><span>🗑</span> 删除</div>';
+
+        menu.innerHTML = h;
+        menu.style.left = e.clientX + 'px';
+        menu.style.top = e.clientY + 'px';
+        menu.classList.add('open');
+    };
+
+    /**
+     * 重命名文件
+     */
+    window.v172RenameFile = function(oldPath) {
+        var newName = prompt('重命名:', oldPath);
+        if (newName && newName.trim() && newName.trim() !== oldPath) {
+            newName = newName.trim();
+            var content = VirtualFS.readFile(oldPath);
+            if (content !== null) {
+                VirtualFS.writeFile(newName, content);
+                VirtualFS.deleteFile(oldPath);
+                showToast('✅ 已重命名: ' + newName);
+                refreshFiles();
+            }
+        }
+    };
+
+    /**
+     * 复制路径
+     */
+    window.v172CopyPath = function(filePath) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(filePath).then(function() {
+                showToast('📋 路径已复制');
+            });
+        } else {
+            // 降级方案
+            var ta = document.createElement('textarea');
+            ta.value = filePath;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast('📋 路径已复制');
+        }
+    };
+
+    /**
+     * 设置标签
+     */
+    window.v172SetTag = function(filePath) {
+        var currentTag = VirtualFS.getFileTag(filePath) || '';
+        var newTag = prompt('设置标签 (留空清除):', currentTag);
+        if (newTag !== null) {
+            if (newTag.trim() === '') {
+                VirtualFS.removeFileTag(filePath);
+                showToast('🏷️ 标签已清除');
+            } else {
+                VirtualFS.setFileTag(filePath, newTag.trim());
+                showToast('🏷️ 标签已设置: ' + newTag.trim());
+            }
+            refreshFiles();
+        }
+    };
+
+    /**
+     * 文件属性
+     */
+    window.v172FileProperties = function(filePath) {
+        var content = VirtualFS.readFile(filePath);
+        if (content === null) {
+            showToast('文件不存在');
+            return;
+        }
+        var size = new Blob([content]).size;
+        var tag = VirtualFS.getFileTag(filePath) || '无';
+        var hidden = hiddenFiles.indexOf(filePath) !== -1;
+        var type = filePath.split('.').pop().toLowerCase();
+
+        var typeNames = {
+            'py': 'Python 脚本',
+            'rf': 'rf 脚本',
+            'kd': 'KD 应用',
+            'sys': 'sys 系统脚本',
+            'txt': '文本文件',
+            'md': 'Markdown 文档',
+            'json': 'JSON 数据',
+            'html': 'HTML 文件',
+            'css': 'CSS 样式',
+            'js': 'JavaScript 文件',
+            'csv': 'CSV 数据',
+            'log': '日志文件'
+        };
+
+        var info = '' +
+            '文件名: ' + filePath + '\n' +
+            '类型: ' + (typeNames[type] || '.' + type + ' 文件') + '\n' +
+            '大小: ' + (size / 1024).toFixed(2) + ' KB (' + size + ' 字节)\n' +
+            '标签: ' + tag + '\n' +
+            '状态: ' + (hidden ? '已隐藏' : '正常') + '\n' +
+            '路径: /' + filePath;
+
+        alert(info);
+    };
+
+    /**
+     * 永久删除文件
+     */
+    window.v172DeleteFilePermanent = function(filePath) {
+        if (confirm('确定永久删除 "' + filePath + '"？\n\n此操作不可恢复！')) {
+            VirtualFS.deleteFile(filePath);
+            showToast('🗑 已删除: ' + filePath);
+            refreshFiles();
+        }
+    };
+
+    // 增强 openFiles 添加右键菜单
+    var _origOpenFiles2 = openFiles;
+    openFiles = function() {
+        _origOpenFiles2();
+        setTimeout(function() {
+            attachFileContextMenu();
+        }, 150);
+    };
+
+    /**
+     * 附加右键菜单到文件列表
+     */
+    function attachFileContextMenu() {
+        var fileItems = document.querySelectorAll('#win-files .file-item');
+        fileItems.forEach(function(item) {
+            if (item._v172_ctx) return;
+            item._v172_ctx = true;
+
+            // 找到文件名
+            var nameSpan = item.querySelector('span[style*="flex:1"]');
+            var fileName = nameSpan ? nameSpan.textContent.replace(/\s*\[.*?\]\s*$/, '').trim() : '';
+
+            if (fileName) {
+                item.addEventListener('contextmenu', function(e) {
+                    v172ShowFileContextMenu(e, fileName);
+                });
+            }
+        });
+    }
+
+    // 点击其他地方关闭右键菜单
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#v172-file-context-menu')) {
+            var menu = document.getElementById('v172-file-context-menu');
+            if (menu) menu.classList.remove('open');
+        }
+    });
+
+    console.log('[v1.7.2] 文件右键菜单增强已加载');
+})();
+
+console.log('[v1.7.2] 全部增量加载完成');
+showToast('✅ v1.7.2 增量已加载');
+// ═══════════════════════════════════════════════════════════════
+//  v1.7.2 增量结束
+// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  v1.7.2 修复 - 移除音效系统
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    // 禁用所有音效
+    window.v172PlaySound = function() { return; };
+    window.v172ToggleSound = function() { return false; };
+    window.v172IsSoundEnabled = function() { return false; };
+
+    // 移除音效挂载，恢复原始函数
+    // 注意：由于原始函数已被覆盖，这里通过标记来禁用音效
+
+    console.log('[v1.7.2] 音效系统已禁用');
+    showToast('🔇 音效已禁用');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  v1.7.2 修复 - 关于系统版本号更新
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._v172_about_fix) return;
+    window._v172_about_fix = true;
+
+    // 重写 openAbout 使用动态版本号
+    var _origOpenAbout = openAbout;
+    openAbout = function() {
+        _origOpenAbout();
+        // 窗口创建后更新版本显示
+        setTimeout(function() {
+            var verEl = document.querySelector('#win-about .about-ver');
+            if (verEl) {
+                verEl.textContent = '版本 ' + APP_VERSION + ' (Build 2026.0806)';
+            }
+        }, 100);
+    };
+
+    // 同时更新 APP_VERSION
+    APP_VERSION = '1.7.2';
+
+    console.log('[v1.7.2] 关于系统版本号已更新为 ' + APP_VERSION);
+})();
 </script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>
 </body>
