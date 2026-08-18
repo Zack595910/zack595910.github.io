@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Core System 0.1</title>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     样式 - 完全复用 tkemu 的 CSS，只删掉多余的
+     ═══════════════════════════════════════════════════════════════ -->
+<style>
+/* ───────────── 基础重置 ───────────── */
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; }
+body {
+    background:#000;
+    font-family:'Segoe UI','Microsoft YaHei',sans-serif;
+    font-size:13px;
+    color:#fff;
+    user-select:none;
+    -webkit-user-select:none;
+    touch-action:none;
+}
+
+/* ───────────── 桌面 ───────────── */
+#desktop {
+    position:absolute;
+    top:0; left:0; right:0;
+    bottom:48px;
+    background:linear-gradient(135deg,#0078D4,#004E8C);
+    overflow:hidden;
+    z-index:0;
+}
+
+/* ───────────── 桌面图标 ───────────── */
+.desktop-icon {
+    position:absolute;
+    width:80px;
+    text-align:center;
+    cursor:pointer;
+    padding:8px 4px;
+    border-radius:4px;
+    color:#fff;
+    text-shadow:0 1px 2px rgba(0,0,0,0.5);
+    font-size:12px;
+}
+.desktop-icon:hover { background:rgba(255,255,255,0.2); }
+.desktop-icon .icon-img {
+    width:48px; height:48px;
+    margin:0 auto 4px;
+    font-size:36px;
+    line-height:48px;
+    pointer-events:none;
+}
+.desktop-icon div:last-child {
+    word-wrap:break-word;
+    line-height:1.3;
+}
+
+/* ───────────── 窗口 ───────────── */
+.window {
+    position:absolute;
+    background:#fff;
+    border:1px solid #1a1a1a;
+    border-radius:8px 8px 0 0;
+    box-shadow:0 8px 32px rgba(0,0,0,0.4);
+    display:flex;
+    flex-direction:column;
+    min-width:260px;
+    min-height:150px;
+    z-index:1;
+    overflow:hidden;
+    animation:windowOpen 0.2s ease-out;
+}
+@keyframes windowOpen {
+    from { opacity:0; transform:scale(0.95); }
+    to { opacity:1; transform:scale(1); }
+}
+.window.focused { z-index:100 !important; }
+.window.maximized {
+    top:0 !important; left:0 !important;
+    width:100% !important;
+    height:calc(100% - 48px) !important;
+    border-radius:0 !important;
+    animation:none;
+}
+
+/* ───────────── 窗口标题栏 ───────────── */
+.window-titlebar {
+    display:flex;
+    align-items:center;
+    height:36px;
+    background:#333;
+    color:#ccc;
+    padding:0 8px;
+    cursor:default;
+    font-size:13px;
+    flex-shrink:0;
+}
+.window.focused .window-titlebar {
+    background:#0078D4;
+    color:#fff;
+}
+.window-titlebar .title-icon {
+    font-size:16px;
+    margin-right:8px;
+    flex-shrink:0;
+}
+.window-titlebar .title-text {
+    flex:1;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+.window-titlebar .title-buttons {
+    display:flex;
+    gap:2px;
+    margin-left:auto;
+    flex-shrink:0;
+}
+.title-btn {
+    width:36px; height:28px;
+    border:none;
+    background:transparent;
+    color:inherit;
+    font-size:14px;
+    cursor:pointer;
+    border-radius:4px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+.title-btn:hover { background:rgba(255,255,255,0.15); }
+.title-btn.btn-close:hover { background:#E81123; color:#fff; }
+
+/* ───────────── 窗口内容 ───────────── */
+.window-body {
+    flex:1;
+    overflow:auto;
+    position:relative;
+    background:#1e1e1e;
+}
+
+/* ───────────── 关于窗口内容 ───────────── */
+.about-content {
+    padding:40px 30px;
+    text-align:center;
+    color:#ccc;
+    background:#1e1e1e;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+}
+.about-content .about-logo {
+    font-size:72px;
+    margin-bottom:10px;
+    animation:aboutPulse 3s ease-in-out infinite;
+}
+@keyframes aboutPulse {
+    0%,100% { transform:scale(1); }
+    50% { transform:scale(1.08); }
+}
+.about-content h2 { color:#fff; font-size:20px; font-weight:600; }
+.about-content .about-ver { color:#888; font-size:13px; margin-bottom:20px; }
+.about-divider {
+    width:60%;
+    height:1px;
+    background:#333;
+    margin:10px 0;
+}
+.about-content .about-footer {
+    font-size:11px;
+    color:#555;
+    line-height:1.6;
+    margin-top:20px;
+}
+
+/* ───────────── 任务栏 ───────────── */
+#taskbar {
+    position:absolute;
+    bottom:0; left:0; right:0;
+    height:48px;
+    background:#111;
+    display:flex;
+    align-items:center;
+    padding:0 4px;
+    z-index:1000;
+    gap:2px;
+    box-shadow:0 -1px 4px rgba(0,0,0,0.3);
+}
+#start-btn {
+    height:40px;
+    min-width:50px;
+    padding:0 10px;
+    border:none;
+    background:transparent;
+    color:#fff;
+    font-size:13px;
+    cursor:pointer;
+    border-radius:4px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-weight:600;
+    margin-right:4px;
+    flex-shrink:0;
+}
+#start-btn:hover { background:rgba(255,255,255,0.08); }
+#clock {
+    margin-left:auto;
+    color:#fff;
+    font-size:12px;
+    padding:0 12px;
+    text-align:right;
+    line-height:1.3;
+    flex-shrink:0;
+    cursor:default;
+}
+
+/* ───────────── 开始菜单 ───────────── */
+#start-menu {
+    position:absolute;
+    bottom:48px;
+    left:0;
+    width:320px;
+    background:#1f1f1f;
+    border:1px solid #333;
+    border-radius:8px 8px 0 0;
+    box-shadow:0 -4px 20px rgba(0,0,0,0.5);
+    display:none;
+    z-index:999;
+    padding:8px 0;
+    color:#fff;
+    font-size:13px;
+}
+#start-menu.open { display:block; }
+.start-menu-item {
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:10px 16px;
+    cursor:pointer;
+}
+.start-menu-item:hover { background:rgba(255,255,255,0.08); }
+.start-menu-item .sm-icon {
+    font-size:20px;
+    width:24px;
+    text-align:center;
+    flex-shrink:0;
+}
+
+/* ───────────── Toast ───────────── */
+#toast {
+    position:fixed;
+    bottom:60px;
+    right:20px;
+    background:#333;
+    color:#fff;
+    padding:10px 20px;
+    border-radius:4px;
+    font-size:13px;
+    z-index:9999;
+    opacity:0;
+    transition:opacity 0.3s ease;
+    pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     HTML 结构
+     ═══════════════════════════════════════════════════════════════ -->
+
+<!-- 桌面 -->
+<div id="desktop">
+    <!-- 只有一个图标：关于系统 -->
+    <div class="desktop-icon" style="top:20px;left:20px;" ondblclick="Core.call('window.create','about','关于系统','ℹ️',460,380,130,180)">
+        <div class="icon-img">ℹ️</div>
+        <div>关于系统</div>
+    </div>
+</div>
+
+<!-- 任务栏 -->
+<div id="taskbar">
+    <button id="start-btn" onclick="Core.call('ui.toggleStartMenu')">⊞ 开始</button>
+    <div id="clock"></div>
+</div>
+
+<!-- 开始菜单 -->
+<div id="start-menu">
+    <div class="start-menu-item" onclick="Core.call('ui.toggleStartMenu');Core.call('window.create','about','关于系统','ℹ️',460,380,130,180)">
+        <span class="sm-icon">ℹ️</span> 关于系统
+    </div>
+    <div style="border-top:1px solid #333;margin:4px 0;"></div>
+    <div class="start-menu-item" onclick="Core.call('ui.toggleStartMenu');Core.call('system.restart')">
+        <span class="sm-icon">🔄</span> 重启系统
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════
+     JavaScript - Core System 内核 + 桌面
+     ═══════════════════════════════════════════════════════════════ -->
+<script>
+// ╔══════════════════════════════════════════════════════════════╗
+// ║              Core System v0.1 - 最简底子                    ║
+// ║  功能：内核 + 桌面 + 任务栏 + 开始菜单 + 一个"关于"窗口      ║
+// ║  版本：0.1.0                                               ║
+// ║  闪讯工作社 Snxth.  |  2026                                ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+// ─────────────────────────────────────────────────────────────
+//  一、Core 内核
+// ─────────────────────────────────────────────────────────────
+
+var Core = (function() {
+
+    // ── 1.1 内部状态 ──
+    var _services = {};          // 已注册的服务
+    var _events = {};            // 事件监听器
+    var _state = {};             // 系统状态
+    var _started = false;        // 是否已启动
+    var _version = '0.1.0';
+
+    // ── 1.2 数据存储（独立于旧系统） ──
+    var STORAGE_KEY = 'core_system_data_v1';
+
+    function _loadData() {
+        try {
+            var raw = localStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : {};
+        } catch(e) {
+            return {};
+        }
+    }
+
+    function _saveData(data) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    // ── 1.3 服务管理 ──
+
+    /**
+     * 注册服务
+     * @param {string} name - 服务名称（唯一）
+     * @param {object} service - 服务对象
+     */
+    function registerService(name, service) {
+        if (_services[name]) {
+            console.warn('[Core] 服务已存在，覆盖: ' + name);
+        }
+        _services[name] = service;
+        console.log('[Core] 服务已注册: ' + name);
+        // 如果系统已启动，立即初始化
+        if (_started && typeof service.init === 'function') {
+            service.init();
+        }
+        return this;
+    }
+
+    /**
+     * 注销服务
+     * @param {string} name - 服务名称
+     */
+    function unregisterService(name) {
+        var svc = _services[name];
+        if (svc && typeof svc.destroy === 'function') {
+            svc.destroy();
+        }
+        delete _services[name];
+        console.log('[Core] 服务已注销: ' + name);
+        return this;
+    }
+
+    /**
+     * 获取服务
+     * @param {string} name - 服务名称
+     * @returns {object} 服务对象
+     */
+    function getService(name) {
+        return _services[name];
+    }
+
+    /**
+     * 列出所有服务
+     * @returns {Array} 服务列表
+     */
+    function listServices() {
+        return Object.keys(_services).map(function(name) {
+            return { name: name, service: _services[name] };
+        });
+    }
+
+    // ── 1.4 服务调用 ──
+
+    /**
+     * 调用服务方法
+     * 用法1: Core.call('serviceName', 'methodName', arg1, arg2, ...)
+     * 用法2: Core.call('serviceName.methodName', arg1, arg2, ...)
+     */
+    function call() {
+        var args = Array.prototype.slice.call(arguments);
+        var target = args.shift();
+
+        var serviceName, methodName;
+
+        if (target.indexOf('.') !== -1) {
+            // 用法2: 'serviceName.methodName'
+            var parts = target.split('.');
+            serviceName = parts[0];
+            methodName = parts[1];
+        } else {
+            // 用法1: 'serviceName', 'methodName', ...
+            serviceName = target;
+            methodName = args.shift();
+        }
+
+        var svc = _services[serviceName];
+        if (!svc) {
+            throw new Error('[Core] 服务不存在: ' + serviceName);
+        }
+
+        var fn = svc[methodName];
+        if (typeof fn !== 'function') {
+            throw new Error('[Core] 方法不存在: ' + serviceName + '.' + methodName);
+        }
+
+        // 触发事件
+        _emit('service.called', {
+            service: serviceName,
+            method: methodName,
+            args: args
+        });
+
+        return fn.apply(svc, args);
+    }
+
+    // ── 1.5 事件总线 ──
+
+    function _emit(eventName, data) {
+        var listeners = _events[eventName] || [];
+        listeners.forEach(function(callback) {
+            try {
+                callback(data);
+            } catch(e) {
+                console.error('[Core] 事件回调错误:', eventName, e);
+            }
+        });
+    }
+
+    /**
+     * 监听事件
+     * @param {string} eventName - 事件名称
+     * @param {function} callback - 回调函数
+     */
+    function on(eventName, callback) {
+        if (!_events[eventName]) {
+            _events[eventName] = [];
+        }
+        _events[eventName].push(callback);
+        return this;
+    }
+
+    /**
+     * 取消监听
+     * @param {string} eventName - 事件名称
+     * @param {function} callback - 要移除的回调
+     */
+    function off(eventName, callback) {
+        if (!_events[eventName]) return this;
+        if (callback) {
+            _events[eventName] = _events[eventName].filter(function(cb) {
+                return cb !== callback;
+            });
+        } else {
+            delete _events[eventName];
+        }
+        return this;
+    }
+
+    /**
+     * 触发事件（公开）
+     * @param {string} eventName - 事件名称
+     * @param {*} data - 事件数据
+     */
+    function emit(eventName, data) {
+        _emit(eventName, data);
+        return this;
+    }
+
+    // ── 1.6 状态管理 ──
+
+    function getState(key) {
+        if (key === undefined) return _state;
+        return _state[key];
+    }
+
+    function setState(key, value) {
+        var old = _state[key];
+        _state[key] = value;
+        _emit('state.changed', { key: key, oldValue: old, newValue: value });
+        return this;
+    }
+
+    // ── 1.7 数据存储 ──
+
+    function saveData(key, value) {
+        var data = _loadData();
+        data[key] = value;
+        _saveData(data);
+        return this;
+    }
+
+    function loadData(key) {
+        var data = _loadData();
+        return data[key];
+    }
+
+    function removeData(key) {
+        var data = _loadData();
+        delete data[key];
+        _saveData(data);
+        return this;
+    }
+
+    function clearData() {
+        _saveData({});
+        return this;
+    }
+
+    // ── 1.8 系统管理 ──
+
+    function start() {
+        if (_started) {
+            console.warn('[Core] 系统已启动');
+            return this;
+        }
+        console.log('[Core] 系统启动中...');
+
+        // 初始化所有已注册服务
+        for (var name in _services) {
+            var svc = _services[name];
+            if (typeof svc.init === 'function') {
+                try {
+                    svc.init();
+                    console.log('[Core] 服务已初始化: ' + name);
+                } catch(e) {
+                    console.error('[Core] 服务初始化失败:', name, e);
+                }
+            }
+        }
+
+        _started = true;
+        _emit('system.ready', { version: _version });
+        console.log('[Core] 系统已就绪');
+        return this;
+    }
+
+    function getInfo() {
+        return {
+            version: _version,
+            started: _started,
+            services: Object.keys(_services).length
+        };
+    }
+
+    // ── 1.9 公开 API ──
+
+    return {
+        // 服务管理
+        registerService: registerService,
+        unregisterService: unregisterService,
+        getService: getService,
+        listServices: listServices,
+
+        // 调用
+        call: call,
+
+        // 事件
+        on: on,
+        off: off,
+        emit: emit,
+
+        // 状态
+        getState: getState,
+        setState: setState,
+
+        // 存储
+        saveData: saveData,
+        loadData: loadData,
+        removeData: removeData,
+        clearData: clearData,
+
+        // 系统
+        start: start,
+        getInfo: getInfo
+    };
+
+})();
+
+
+// ─────────────────────────────────────────────────────────────
+//  二、注册核心服务
+// ─────────────────────────────────────────────────────────────
+
+// ── 2.1 system 服务 ──
+Core.registerService('system', {
+    name: '系统服务',
+
+    init: function() {
+        console.log('[system] 初始化');
+        Core.emit('system.initialized', { time: new Date().toISOString() });
+    },
+
+    getInfo: function() {
+        return Core.getInfo();
+    },
+
+    restart: function() {
+        Core.emit('system.restart');
+        // 关闭所有窗口
+        var ids = Object.keys(openWindows);
+        for (var i = 0; i < ids.length; i++) {
+            Core.call('window.close', ids[i]);
+        }
+        Core.call('ui.showToast', '系统已重启');
+        return true;
+    },
+
+    shutdown: function() {
+        Core.emit('system.shutdown');
+        Core.call('ui.showToast', '系统已关闭');
+        return true;
+    }
+});
+
+// ── 2.2 window 服务 ──
+Core.registerService('window', {
+    name: '窗口服务',
+
+    _windows: {},
+    _activeId: null,
+    _zIndex: 10,
+    _nextX: 80,
+    _nextY: 60,
+
+    init: function() {
+        console.log('[window] 初始化');
+        // 监听系统重启事件
+        Core.on('system.restart', function() {
+            var ids = Object.keys(this._windows);
+            ids.forEach(function(id) {
+                this.close(id);
+            }.bind(this));
+        }.bind(this));
+    },
+
+    /**
+     * 创建窗口
+     */
+    create: function(id, title, icon, width, height, top, left, bodyHTML) {
+        // 如果已存在，聚焦并返回
+        if (this._windows[id]) {
+            this.focus(id);
+            return id;
+        }
+
+        // 默认值
+        width = width || 400;
+        height = height || 300;
+        top = top !== undefined ? top : this._nextY;
+        left = left !== undefined ? left : this._nextX;
+
+        // 更新下一个窗口位置
+        this._nextX += 30;
+        this._nextY += 25;
+        if (this._nextX > 200) this._nextX = 80;
+        if (this._nextY > 200) this._nextY = 60;
+
+        // 创建 DOM
+        var win = document.createElement('div');
+        win.className = 'window focused';
+        win.id = 'win-' + id;
+        win.style.width = width + 'px';
+        win.style.height = height + 'px';
+        win.style.top = top + 'px';
+        win.style.left = left + 'px';
+        win.style.zIndex = ++this._zIndex;
+
+        win.innerHTML =
+            '<div class="window-titlebar">' +
+            '  <span class="title-icon">' + icon + '</span>' +
+            '  <span class="title-text">' + (title || id) + '</span>' +
+            '  <div class="title-buttons">' +
+            '    <button class="title-btn" onclick="Core.call(\'window.minimize\',\'' + id + '\')">─</button>' +
+            '    <button class="title-btn" onclick="Core.call(\'window.maximize\',\'' + id + '\')">□</button>' +
+            '    <button class="title-btn btn-close" onclick="Core.call(\'window.close\',\'' + id + '\')">✕</button>' +
+            '  </div>' +
+            '</div>' +
+            '<div class="window-body">' + (bodyHTML || '') + '</div>';
+
+        document.getElementById('desktop').appendChild(win);
+
+        // 保存窗口数据
+        this._windows[id] = {
+            el: win,
+            title: title || id,
+            icon: icon || '📄',
+            minimized: false,
+            maximized: false
+        };
+
+        // 聚焦
+        this.focus(id);
+
+        // 触发事件
+        Core.emit('window.created', { id: id, title: title || id });
+
+        return id;
+    },
+
+    /**
+     * 关闭窗口
+     */
+    close: function(id) {
+        if (!this._windows[id]) return;
+        this._windows[id].el.remove();
+        delete this._windows[id];
+        if (this._activeId === id) this._activeId = null;
+        Core.emit('window.closed', { id: id });
+        return true;
+    },
+
+    /**
+     * 聚焦窗口
+     */
+    focus: function(id) {
+        if (!this._windows[id]) return;
+        if (this._activeId === id) return;
+
+        this._activeId = id;
+        this._windows[id].el.style.zIndex = ++this._zIndex;
+
+        for (var wid in this._windows) {
+            this._windows[wid].el.classList.toggle('focused', wid === id);
+        }
+
+        Core.emit('window.focused', { id: id });
+        return true;
+    },
+
+    /**
+     * 最小化
+     */
+    minimize: function(id) {
+        if (!this._windows[id]) return;
+        this._windows[id].el.style.display = 'none';
+        this._windows[id].minimized = true;
+        if (this._activeId === id) this._activeId = null;
+        Core.emit('window.minimized', { id: id });
+        return true;
+    },
+
+    /**
+     * 最大化/还原
+     */
+    maximize: function(id) {
+        if (!this._windows[id]) return;
+        var w = this._windows[id];
+        if (w.maximized) {
+            w.el.classList.remove('maximized');
+            w.maximized = false;
+        } else {
+            w.el.classList.add('maximized');
+            w.maximized = true;
+        }
+        Core.emit('window.maximized', { id: id, maximized: w.maximized });
+        return true;
+    },
+
+    /**
+     * 从最小化还原
+     */
+    restore: function(id) {
+        if (!this._windows[id]) return;
+        this._windows[id].el.style.display = 'flex';
+        this._windows[id].minimized = false;
+        this.focus(id);
+        return true;
+    },
+
+    /**
+     * 获取所有窗口ID
+     */
+    getList: function() {
+        return Object.keys(this._windows);
+    },
+
+    /**
+     * 获取活动窗口ID
+     */
+    getActive: function() {
+        return this._activeId;
+    },
+
+    /**
+     * 获取窗口数据
+     */
+    getWindow: function(id) {
+        return this._windows[id] || null;
+    }
+});
+
+// 暴露快捷方式到全局（便于 HTML 中调用）
+window.openWindows = {};
+window.activeWindowId = null;
+
+// ── 2.3 ui 服务 ──
+Core.registerService('ui', {
+    name: '界面服务',
+
+    _startMenuOpen: false,
+
+    init: function() {
+        console.log('[ui] 初始化');
+        // 点击其他地方关闭开始菜单
+        document.addEventListener('click', function(e) {
+            if (this._startMenuOpen &&
+                !e.target.closest('#start-menu') &&
+                !e.target.closest('#start-btn')) {
+                this.closeStartMenu();
+            }
+        }.bind(this));
+    },
+
+    /**
+     * 显示 Toast 通知
+     */
+    showToast: function(message) {
+        var el = document.getElementById('toast');
+        if (!el) return;
+        el.textContent = message;
+        el.style.opacity = '1';
+        clearTimeout(el._timer);
+        el._timer = setTimeout(function() {
+            el.style.opacity = '0';
+        }, 3000);
+        Core.emit('ui.toast', { message: message });
+        return true;
+    },
+
+    /**
+     * 切换开始菜单
+     */
+    toggleStartMenu: function() {
+        var menu = document.getElementById('start-menu');
+        if (!menu) return;
+        this._startMenuOpen = !this._startMenuOpen;
+        menu.classList.toggle('open', this._startMenuOpen);
+        Core.emit('ui.startmenu', { open: this._startMenuOpen });
+        return this._startMenuOpen;
+    },
+
+    /**
+     * 关闭开始菜单
+     */
+    closeStartMenu: function() {
+        var menu = document.getElementById('start-menu');
+        if (!menu) return;
+        this._startMenuOpen = false;
+        menu.classList.remove('open');
+        Core.emit('ui.startmenu', { open: false });
+        return true;
+    },
+
+    /**
+     * 打开开始菜单
+     */
+    openStartMenu: function() {
+        var menu = document.getElementById('start-menu');
+        if (!menu) return;
+        this._startMenuOpen = true;
+        menu.classList.add('open');
+        Core.emit('ui.startmenu', { open: true });
+        return true;
+    }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+//  三、系统时钟
+// ─────────────────────────────────────────────────────────────
+
+(function updateClock() {
+    var el = document.getElementById('clock');
+    if (!el) return;
+    var now = new Date();
+    var time = now.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    var date = now.toLocaleDateString('zh-CN', {
+        month: 'long',
+        day: 'numeric',
+        weekday: 'short'
+    });
+    el.innerHTML = time + '<br><span style="font-size:11px;">' + date + '</span>';
+    setTimeout(updateClock, 1000);
+})();
+
+
+// ─────────────────────────────────────────────────────────────
+//  四、启动系统
+// ─────────────────────────────────────────────────────────────
+
+// 先注册 window 服务的快捷方式（让 HTML 中的 onclick 能调用）
+window.Core = Core;
+
+// 启动
+Core.start();
+
+// 显示启动消息
+Core.call('ui.showToast', 'Core System v0.1 已启动');
+
+console.log('╔══════════════════════════════════════╗');
+console.log('║       Core System v0.1              ║');
+console.log('║  服务数: ' + Core.listServices().length + '                       ║');
+console.log('║  闪讯工作社 Snxth.  2026           ║');
+console.log('╚══════════════════════════════════════╝');
+
+// 自动创建一个"关于"窗口（也可以双击桌面图标打开）
+setTimeout(function() {
+    Core.call('window.create', 'about', '关于系统', 'ℹ️', 460, 380, 130, 180,
+        '<div class="about-content">' +
+        '  <div class="about-logo">🖥️</div>' +
+        '  <h2>Core System</h2>' +
+        '  <div class="about-ver">版本 0.1.0</div>' +
+        '  <div class="about-divider"></div>' +
+        '  <div style="color:#aaa;font-size:13px;line-height:2;">' +
+        '    <div>服务: ' + Core.listServices().length + ' 个</div>' +
+        '    <div>内核: 服务化架构</div>' +
+        '    <div>存储: 独立于旧系统</div>' +
+        '  </div>' +
+        '  <div class="about-divider"></div>' +
+        '  <div class="about-footer">' +
+        '    © 2026 闪讯工作社 Snxth.<br>' +
+        '    MIT License' +
+        '  </div>' +
+        '</div>'
+    );
+}, 500);
+// === 新增: 分辨率自适应系统 v1 ===
+
+(function() {
+
+    // 1. 计算缩放因子
+    function calcScale() {
+        var w = window.innerWidth;
+        var h = window.innerHeight;
+        var baseW = 1920;
+        var baseH = 1080;
+        var scaleByWidth = w / baseW;
+        var scaleByHeight = h / baseH;
+        var scale = Math.min(scaleByWidth, scaleByHeight);
+        if (scale < 0.5) scale = 0.5;
+        if (scale > 2.0) scale = 2.0;
+        return scale;
+    }
+
+    var scale = calcScale();
+    window.SCALE_FACTOR = scale;
+
+    // 2. 应用到 CSS
+    document.documentElement.style.setProperty('--ui-scale', scale);
+    document.body.style.fontSize = (13 * scale) + 'px';
+
+    // 3. 窗口尺寸工具函数
+    window.scaleSize = function(value) {
+        return Math.round(value * window.SCALE_FACTOR);
+    };
+    window.scalePos = function(value) {
+        return Math.round(value * window.SCALE_FACTOR);
+    };
+
+    // 4. 监听窗口变化（自适应模式）
+    var resizeTimer;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function() {
+            var newScale = calcScale();
+            if (Math.abs(newScale - window.SCALE_FACTOR) > 0.01) {
+                window.SCALE_FACTOR = newScale;
+                document.documentElement.style.setProperty('--ui-scale', newScale);
+                document.body.style.fontSize = (13 * newScale) + 'px';
+                console.log('[Core] 分辨率自适应: ' + Math.round(newScale * 100) + '%');
+            }
+        }, 300);
+    });
+
+    // 5. 重写 window 服务的 create 方法（让窗口自动缩放）
+    var _origCreate = Core.getService('window').create;
+    Core.getService('window').create = function(id, title, icon, width, height, top, left, bodyHTML) {
+        // 缩放尺寸和位置
+        width = window.scaleSize(width || 400);
+        height = window.scaleSize(height || 300);
+        if (top !== undefined) top = window.scalePos(top);
+        if (left !== undefined) left = window.scalePos(left);
+        // 调用原始方法
+        return _origCreate.call(this, id, title, icon, width, height, top, left, bodyHTML);
+    };
+
+    console.log('[Core] 分辨率自适应已加载: ' + Math.round(scale * 100) + '%');
+
+})();
+// === 结束 ===
+// === 修复: 窗口拖动 + 关闭重开 ===
+
+(function() {
+
+    // 1. 修复：窗口拖动功能
+    var dragInfo = null;
+
+    window.startDrag = function(e, id) {
+        var winData = Core.getService('window')._windows[id];
+        if (!winData || winData.maximized) return;
+        var win = winData.el;
+        dragInfo = {
+            id: id,
+            startX: e.clientX,
+            startY: e.clientY,
+            origLeft: win.offsetLeft,
+            origTop: win.offsetTop
+        };
+        e.preventDefault();
+    };
+
+    document.addEventListener('pointermove', function(e) {
+        if (!dragInfo) return;
+        var winData = Core.getService('window')._windows[dragInfo.id];
+        if (!winData) {
+            dragInfo = null;
+            return;
+        }
+        var win = winData.el;
+        var newLeft = dragInfo.origLeft + e.clientX - dragInfo.startX;
+        var newTop = dragInfo.origTop + e.clientY - dragInfo.startY;
+        // 边界限制
+        if (newLeft < -100) newLeft = -100;
+        if (newTop < 0) newTop = 0;
+        win.style.left = newLeft + 'px';
+        win.style.top = newTop + 'px';
+    });
+
+    document.addEventListener('pointerup', function() {
+        dragInfo = null;
+    });
+
+    console.log('[修复] 窗口拖动已加载');
+
+    // 2. 修复：窗口关闭时清理全局引用
+    var _origClose = Core.getService('window').close;
+    Core.getService('window').close = function(id) {
+        // 关闭窗口
+        var result = _origClose.call(this, id);
+        // 同步清理全局 openWindows
+        if (window.openWindows && window.openWindows[id]) {
+            delete window.openWindows[id];
+        }
+        // 如果活动窗口是这个，清空
+        if (window.activeWindowId === id) {
+            window.activeWindowId = null;
+        }
+        return result;
+    };
+
+    // 3. 修复：窗口创建时同步到全局
+    var _origCreate = Core.getService('window').create;
+    Core.getService('window').create = function(id, title, icon, width, height, top, left, bodyHTML) {
+        // 缩放
+        width = window.scaleSize ? window.scaleSize(width || 400) : width;
+        height = window.scaleSize ? window.scaleSize(height || 300) : height;
+        if (top !== undefined) top = window.scalePos ? window.scalePos(top) : top;
+        if (left !== undefined) left = window.scalePos ? window.scalePos(left) : left;
+
+        // 调用原始创建
+        var result = _origCreate.call(this, id, title, icon, width, height, top, left, bodyHTML);
+
+        // 同步到全局
+        if (this._windows[id]) {
+            if (!window.openWindows) window.openWindows = {};
+            window.openWindows[id] = this._windows[id];
+        }
+
+        // 给新窗口的标题栏绑定拖动（因为 innerHTML 里的 onpointerdown 不会自动生效）
+        setTimeout(function() {
+            var win = document.getElementById('win-' + id);
+            if (win) {
+                var titlebar = win.querySelector('.window-titlebar');
+                if (titlebar && !titlebar._dragBound) {
+                    titlebar._dragBound = true;
+                    titlebar.setAttribute('onpointerdown', 'startDrag(event,\'' + id + '\')');
+                }
+            }
+        }, 50);
+
+        return result;
+    };
+
+    // 4. 修复：给已存在的窗口绑定拖动
+    setTimeout(function() {
+        var winService = Core.getService('window');
+        if (!winService) return;
+        var ids = winService.getList();
+        ids.forEach(function(id) {
+            var win = document.getElementById('win-' + id);
+            if (win) {
+                var titlebar = win.querySelector('.window-titlebar');
+                if (titlebar && !titlebar._dragBound) {
+                    titlebar._dragBound = true;
+                    titlebar.setAttribute('onpointerdown', 'startDrag(event,\'' + id + '\')');
+                }
+            }
+        });
+    }, 200);
+
+    console.log('[修复] 窗口关闭重开已修复');
+
+})();
+// === 结束 ===
+// === 修复: 关闭窗口后重新打开内容丢失 ===
+
+(function() {
+
+    // 1. 重写 window.close - 彻底清理
+    var winService = Core.getService('window');
+    if (!winService) return;
+
+    var _origClose = winService.close;
+
+    winService.close = function(id) {
+        // 检查窗口是否存在
+        if (!this._windows[id]) {
+            // 如果内部没有但全局有，清理全局
+            if (window.openWindows && window.openWindows[id]) {
+                delete window.openWindows[id];
+            }
+            if (window.activeWindowId === id) {
+                window.activeWindowId = null;
+            }
+            return false;
+        }
+
+        // 移除 DOM
+        var win = this._windows[id].el;
+        if (win && win.parentNode) {
+            win.parentNode.removeChild(win);
+        }
+
+        // 从内部记录删除
+        delete this._windows[id];
+
+        // 从全局记录删除
+        if (window.openWindows && window.openWindows[id]) {
+            delete window.openWindows[id];
+        }
+
+        // 清空活动窗口
+        if (window.activeWindowId === id) {
+            window.activeWindowId = null;
+            // 尝试聚焦其他窗口
+            var ids = Object.keys(this._windows);
+            if (ids.length > 0) {
+                this.focus(ids[ids.length - 1]);
+            }
+        }
+
+        // 触发事件
+        Core.emit('window.closed', { id: id });
+
+        return true;
+    };
+
+    // 2. 重写 window.create - 检查更严格
+    var _origCreate = winService.create;
+
+    winService.create = function(id, title, icon, width, height, top, left, bodyHTML) {
+        // 检查窗口是否真的存在于 DOM
+        var existingDom = document.getElementById('win-' + id);
+
+        // 如果 DOM 存在但内部记录没有，同步
+        if (existingDom && !this._windows[id]) {
+            // 重建内部记录
+            this._windows[id] = {
+                el: existingDom,
+                title: title || id,
+                icon: icon || '📄',
+                minimized: false,
+                maximized: false
+            };
+            if (window.openWindows) {
+                window.openWindows[id] = this._windows[id];
+            }
+            this.focus(id);
+            return id;
+        }
+
+        // 如果内部记录存在但 DOM 不存在，清除记录重新创建
+        if (this._windows[id] && !existingDom) {
+            delete this._windows[id];
+            if (window.openWindows && window.openWindows[id]) {
+                delete window.openWindows[id];
+            }
+        }
+
+        // 如果窗口真正存在，直接聚焦
+        if (this._windows[id] && existingDom) {
+            this.focus(id);
+            return id;
+        }
+
+        // 缩放尺寸
+        width = width || 400;
+        height = height || 300;
+        if (window.scaleSize) {
+            width = window.scaleSize(width);
+            height = window.scaleSize(height);
+            if (top !== undefined) top = window.scalePos(top);
+            if (left !== undefined) left = window.scalePos(left);
+        }
+
+        // 默认位置
+        if (top === undefined) {
+            top = this._nextY || 60;
+            left = this._nextX || 80;
+            this._nextX = (this._nextX || 80) + 30;
+            this._nextY = (this._nextY || 60) + 25;
+            if (this._nextX > 200) this._nextX = 80;
+            if (this._nextY > 200) this._nextY = 60;
+        }
+
+        // 创建 DOM
+        var win = document.createElement('div');
+        win.className = 'window focused';
+        win.id = 'win-' + id;
+        win.style.width = width + 'px';
+        win.style.height = height + 'px';
+        win.style.top = top + 'px';
+        win.style.left = left + 'px';
+        win.style.zIndex = ++(this._zIndex || 10);
+
+        // 内容
+        var bodyContent = bodyHTML || '';
+        win.innerHTML =
+            '<div class="window-titlebar" onpointerdown="startDrag(event,\'' + id + '\')">' +
+            '  <span class="title-icon">' + (icon || '📄') + '</span>' +
+            '  <span class="title-text">' + (title || id) + '</span>' +
+            '  <div class="title-buttons">' +
+            '    <button class="title-btn" onclick="Core.call(\'window.minimize\',\'' + id + '\')">─</button>' +
+            '    <button class="title-btn" onclick="Core.call(\'window.maximize\',\'' + id + '\')">□</button>' +
+            '    <button class="title-btn btn-close" onclick="Core.call(\'window.close\',\'' + id + '\')">✕</button>' +
+            '  </div>' +
+            '</div>' +
+            '<div class="window-body">' + bodyContent + '</div>';
+
+        document.getElementById('desktop').appendChild(win);
+
+        // 保存记录
+        this._windows[id] = {
+            el: win,
+            title: title || id,
+            icon: icon || '📄',
+            minimized: false,
+            maximized: false
+        };
+
+        // 同步到全局
+        if (!window.openWindows) window.openWindows = {};
+        window.openWindows[id] = this._windows[id];
+
+        // 聚焦
+        this.focus(id);
+
+        // 触发事件
+        Core.emit('window.created', { id: id, title: title || id });
+
+        return id;
+    };
+
+    console.log('[修复] 窗口关闭重开内容丢失已修复');
+
+})();
+// === 结束 ===
+
+</script>
+</body>
+</html>
