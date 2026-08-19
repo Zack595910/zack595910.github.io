@@ -13877,6 +13877,289 @@ setTimeout(function() {
         console.log('✅ 桌面右键菜单重建完成');
     }, 800);
 })();
+// ═══════════════════════════════════════════════════════════════
+//  修复 - 桌面图标拖动闪躲问题
+//  重置所有图标的拖动事件
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._icon_drag_reset_final) return;
+    window._icon_drag_reset_final = true;
+
+    setTimeout(function() {
+        var desktop = document.getElementById('desktop');
+        if (!desktop) return;
+
+        var icons = desktop.querySelectorAll('.desktop-icon');
+
+        icons.forEach(function(icon) {
+            // 克隆图标，彻底清除所有旧事件
+            var newIcon = icon.cloneNode(true);
+            icon.parentNode.replaceChild(newIcon, icon);
+
+            var startX = 0;
+            var startY = 0;
+            var origLeft = 0;
+            var origTop = 0;
+            var dragging = false;
+
+            newIcon.addEventListener('pointerdown', function(e) {
+                if (e.detail > 1) return;
+                var desktopRect = desktop.getBoundingClientRect();
+                var iconRect = newIcon.getBoundingClientRect();
+
+                startX = e.clientX;
+                startY = e.clientY;
+                origLeft = iconRect.left - desktopRect.left;
+                origTop = iconRect.top - desktopRect.top;
+                dragging = true;
+
+                newIcon.style.right = 'auto';
+                newIcon.style.bottom = 'auto';
+                newIcon.style.left = origLeft + 'px';
+                newIcon.style.top = origTop + 'px';
+
+                try { newIcon.setPointerCapture(e.pointerId); } catch(err) {}
+            });
+
+            newIcon.addEventListener('pointermove', function(e) {
+                if (!dragging) return;
+                e.preventDefault();
+
+                var dx = e.clientX - startX;
+                var dy = e.clientY - startY;
+
+                var newLeft = origLeft + dx;
+                var newTop = origTop + dy;
+
+                var desktopRect = desktop.getBoundingClientRect();
+                var maxLeft = desktopRect.width - newIcon.offsetWidth - 4;
+                var maxTop = desktopRect.height - newIcon.offsetHeight - 4;
+
+                if (newLeft < 4) newLeft = 4;
+                if (newTop < 4) newTop = 4;
+                if (newLeft > maxLeft) newLeft = maxLeft;
+                if (newTop > maxTop) newTop = maxTop;
+
+                newIcon.style.left = newLeft + 'px';
+                newIcon.style.top = newTop + 'px';
+            });
+
+            newIcon.addEventListener('pointerup', function() {
+                dragging = false;
+            });
+        });
+
+        showToast('✅ 图标拖动已修复');
+    }, 1200);
+
+    console.log('✅ 图标拖动重置修复已加载');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  强制经典主题 - 启动即经典
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    // 强制设置经典主题
+    localStorage.setItem('tkemu_theme_v1', 'classic');
+
+    // 移除可能已应用的主题样式
+    setTimeout(function() {
+        var themeStyle = document.getElementById('v140-theme-style');
+        if (themeStyle) themeStyle.remove();
+
+        // 确保经典主题 CSS 生效
+        var style = document.createElement('style');
+        style.id = 'classic-theme-force';
+        style.textContent = '' +
+            ':root{' +
+            '--win-bg:#0078D4;' +
+            '--win-bg-gradient-start:#0078D4;' +
+            '--win-bg-gradient-end:#004E8C;' +
+            '--win-taskbar:#111111;' +
+            '--win-title-active:#0078D4;' +
+            '--win-title-inactive:#333333;' +
+            '--win-body:#ffffff;' +
+            '--win-text:#1a1a1a;' +
+            '}' +
+            '#desktop{background:linear-gradient(135deg,#0078D4,#004E8C)!important;}' +
+            '#taskbar{background:#111111!important;}' +
+            '#taskbar .taskbar-slot{color:#fff!important;}' +
+            '#start-btn{color:#fff!important;}' +
+            '#clock{color:#fff!important;}' +
+            '.desktop-icon{color:#fff!important;text-shadow:0 1px 2px rgba(0,0,0,0.5)!important;}' +
+            '.window-body{background:#fff!important;}' +
+            '.editor-area textarea{background:#1e1e1e!important;color:#d4d4d4!important;}' +
+            '.file-list{background:#1e1e1e!important;color:#ccc!important;}';
+
+        // 移除旧的强制样式
+        var old = document.getElementById('classic-theme-force');
+        if (old) old.remove();
+        document.head.appendChild(style);
+    }, 300);
+
+    console.log('✅ 经典主题已强制启用');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  修复 - 桌面图标双击事件丢失
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._desktop_icon_fix) return;
+    window._desktop_icon_fix = true;
+
+    // 原始双击映射
+    var iconActions = {
+        '代码编辑器': function() { openEditor(); },
+        'Python Shell': function() { openShell(); },
+        '文件管理': function() { openFiles(); },
+        'KSD 3D': function() { runKSD(); },
+        'VS Code': function() { openVSCode(); },
+        '控制面板': function() { openControlPanel(); },
+        '关于系统': function() { openAbout(); },
+        'System Control': function() { openSysManager(); },
+        '回收站': function() { openTrash(); },
+        'Windows Control': function() { openWindowsControl(); },
+        'KD 生成器': function() { openKDGenerator(); },
+        'RF 帮助器': function() { openRFHelper(); },
+        'KD 教程': function() { openKDTutorial(); }
+    };
+
+    function bindIcons() {
+        var desktop = document.getElementById('desktop');
+        if (!desktop) return;
+
+        var icons = desktop.querySelectorAll('.desktop-icon');
+        icons.forEach(function(icon) {
+            var text = icon.textContent.trim();
+            // 找到匹配的动作
+            for (var key in iconActions) {
+                if (text.indexOf(key) !== -1) {
+                    icon.ondblclick = iconActions[key];
+                    break;
+                }
+            }
+        });
+    }
+
+    // 延迟绑定，确保所有图标都存在
+    setTimeout(bindIcons, 800);
+    setTimeout(bindIcons, 1500);
+
+    console.log('✅ 桌面图标双击修复已加载');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  修复 - 编辑器行号显示异常，移除行号
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._editor_gutter_fix) return;
+    window._editor_gutter_fix = true;
+
+    // 重写 openEditor，完全用原始版本
+    window.openEditor = function(filePath) {
+        var title = filePath ? '编辑: ' + filePath : '代码编辑器';
+        var content = filePath ? (VirtualFS.readFile(filePath) || '') : VirtualFS.readFile('main.py') || '';
+
+        var menuBarHTML = '<div class="menu-bar">';
+        menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">文件<div class="menu-dropdown"><div class="menu-dropdown-item" onclick="saveFile()">💾 保存 Ctrl+S</div><div class="menu-dropdown-item" onclick="saveFileAs()">📄 另存为...</div><div class="menu-separator"></div><div class="menu-dropdown-item" onclick="closeWindow(\'editor\')">✕ 关闭</div></div></div>';
+        menuBarHTML += '<div class="menu-item" onclick="toggleMenu(event, this)">运行<div class="menu-dropdown"><div class="menu-dropdown-item" onclick="runEditorCode()">▶ 运行 F5</div></div></div>';
+        menuBarHTML += '</div>';
+
+        var bodyHTML = menuBarHTML +
+            '<div class="editor-area" style="flex:1;display:flex;flex-direction:column;">' +
+            '<textarea id="editor-input" spellcheck="false" style="width:100%;height:100%;background:#1e1e1e;color:#d4d4d4;border:none;resize:none;font-family:var(--font-mono);font-size:14px;line-height:1.6;padding:16px;outline:none;flex:1;white-space:pre-wrap;"></textarea>' +
+            '</div>' +
+            '<div class="editor-statusbar">' +
+            '<span id="editor-status-file">' + (filePath || 'main.py') + '</span>' +
+            '<span id="editor-status-ln">行: 1, 列: 1</span>' +
+            '<span>Python</span>' +
+            '</div>';
+
+        createWindow('editor', title, '📝', 750, 550, 80, 100, bodyHTML);
+
+        setTimeout(function() {
+            var ta = document.getElementById('editor-input');
+            if (!ta) return;
+            ta.value = content;
+            ta.dataset.filepath = filePath || 'main.py';
+            ta.focus();
+
+            ta.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 's') {
+                    e.preventDefault();
+                    saveFile();
+                }
+                if (e.key === 'F5') {
+                    e.preventDefault();
+                    runEditorCode();
+                }
+            });
+
+            ta.addEventListener('input', updateEditorStatus);
+            ta.addEventListener('keyup', updateEditorStatus);
+            ta.addEventListener('click', updateEditorStatus);
+            updateEditorStatus();
+        }, 100);
+    };
+
+    console.log('✅ 编辑器行号异常已修复');
+})();
+
+// ═══════════════════════════════════════════════════════════════
+//  最终强制经典主题 - 最后执行，确保生效
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._classic_theme_final) return;
+    window._classic_theme_final = true;
+
+    function applyClassicTheme() {
+        // 覆盖主题存储
+        localStorage.setItem('tkemu_theme_v1', 'classic');
+
+        // 移除所有主题样式
+        var themeStyle = document.getElementById('v140-theme-style');
+        if (themeStyle) themeStyle.remove();
+
+        var classicStyle = document.getElementById('classic-theme-final');
+        if (classicStyle) classicStyle.remove();
+
+        // 应用经典主题
+        var style = document.createElement('style');
+        style.id = 'classic-theme-final';
+        style.textContent = '' +
+            ':root{' +
+            '--win-bg:#0078D4;' +
+            '--win-bg-gradient-start:#0078D4;' +
+            '--win-bg-gradient-end:#004E8C;' +
+            '--win-taskbar:#111111;' +
+            '--win-title-active:#0078D4;' +
+            '--win-title-inactive:#333333;' +
+            '--win-body:#ffffff;' +
+            '--win-text:#1a1a1a;' +
+            '}' +
+            '#desktop{background:linear-gradient(135deg,#0078D4,#004E8C)!important;}' +
+            '#taskbar{background:#111111!important;}' +
+            '#taskbar .taskbar-slot{color:#fff!important;}' +
+            '#start-btn{color:#fff!important;}' +
+            '#clock{color:#fff!important;}' +
+            '.desktop-icon{color:#fff!important;text-shadow:0 1px 2px rgba(0,0,0,0.5)!important;}' +
+            '.window-body{background:#fff!important;}' +
+            '.editor-area textarea{background:#1e1e1e!important;color:#d4d4d4!important;}' +
+            '.file-list{background:#1e1e1e!important;color:#ccc!important;}';
+
+        document.head.appendChild(style);
+    }
+
+    // 多次执行，确保在所有主题代码之后
+    setTimeout(applyClassicTheme, 100);
+    setTimeout(applyClassicTheme, 500);
+    setTimeout(applyClassicTheme, 1000);
+    setTimeout(applyClassicTheme, 2000);
+
+    console.log('✅ 经典主题最终强制已加载');
+})();
 
     // 同时更新 APP_VERSION
     APP_VERSION = '1.9.0';
