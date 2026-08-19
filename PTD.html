@@ -5,17 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>tkemu - Windows 桌面模拟器</title>
 <!--
-╔══════════════════════════════════════════════════════════════╗
-║                    tkemu v1.5.2                              ║
-║    浏览器中的 Windows 桌面 + Python + tkinter 完整模拟        ║
-║    基于 Pyodide 0.27.0  |  MIT License                       ║
-║    闪讯工作社 Snxth.  |  2026                                ║
-║                                                              ║
-║    v1.5.2 更新:                                               ║
-║      📐 分辨率智能自适应系统                                  ║
-║      ⚙️ System Control - .sys 系统级脚本支持                  ║
-║        (可修改全局资源、无限扩展)                             ║
-╚══════════════════════════════════════════════════════════════╝
+                               
+    浏览器中的 Windows 桌面 + Python + tkinter 完整模拟        
+    基于 Pyodide 0.27.0  |  MIT License                       
+    闪讯工作社 Snxth.  |  2026                               
+                                                              
+    v1.5.2 更新:                                               
+      📐 分辨率智能自适应系统                                  
+      ⚙️ System Control - .sys 系统级脚本支持           
+       (可修改全局资源、无限扩展) 
 -->
 <style>
 /* ═══════════════════════════════════════════════════════════════
@@ -14105,6 +14103,1400 @@ setTimeout(function() {
 
     console.log('✅ 编辑器行号异常已修复');
 })();
+// ═══════════════════════════════════════════════════════════════
+//  v1.9.6 修复包 - 第一段：多用户数据隔离 + 文件权限
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._v196_fix1) return;
+    window._v196_fix1 = true;
+
+    APP_VERSION = '1.9.6';
+
+    // ═══════════════════════════════════════════════════════════════
+    //  1. 多用户数据隔离
+    // ═══════════════════════════════════════════════════════════════
+
+    // 当前用户的数据键前缀
+    var USER_PREFIX = 'tkemu_user_';
+
+    function getCurrentUserName() {
+        try {
+            return localStorage.getItem('tkemu_session_v1') || 'default';
+        } catch(e) { return 'default'; }
+    }
+
+    function getUserKey(baseKey) {
+        return USER_PREFIX + getCurrentUserName() + '_' + baseKey;
+    }
+
+    // 重写 VirtualFS.writeFile 支持用户隔离
+    var _origWriteFile = VirtualFS.writeFile;
+    VirtualFS.writeFile = function(path, content) {
+        var userKey = getUserKey('fs');
+        var allFiles = {};
+        try { allFiles = JSON.parse(localStorage.getItem(userKey) || '{}'); } catch(e) { allFiles = {}; }
+
+        // 文件所有者记录
+        allFiles[path] = {
+            content: content,
+            owner: getCurrentUserName(),
+            time: new Date().toISOString()
+        };
+        localStorage.setItem(userKey, JSON.stringify(allFiles));
+
+        // 兼容旧数据：也写入全局（管理员可看）
+        var hiddenIndex = hiddenFiles.indexOf(path);
+        if (hiddenIndex > -1) {
+            hiddenFiles.splice(hiddenIndex, 1);
+            localStorage.setItem(VirtualFS._hiddenKey, JSON.stringify(hiddenFiles));
+        }
+    };
+
+    // 重写 VirtualFS.readFile
+    var _origReadFile = VirtualFS.readFile;
+    VirtualFS.readFile = function(path) {
+        var userKey = getUserKey('fs');
+        var allFiles = {};
+        try { allFiles = JSON.parse(localStorage.getItem(userKey) || '{}'); } catch(e) { allFiles = {}; }
+
+        // 新格式（带 owner）
+        if (allFiles[path] && typeof allFiles[path] === 'object' && allFiles[path].content !== undefined) {
+            return allFiles[path].content;
+        }
+        // 旧格式（纯内容）
+        if (allFiles[path] && typeof allFiles[path] === 'string') {
+            return allFiles[path];
+        }
+        return _origReadFile.call(this, path);
+    };
+
+    // 重写 VirtualFS.listFiles 只列出当前用户的文件
+    var _origListFiles = VirtualFS.listFiles;
+    VirtualFS.listFiles = function() {
+        var userKey = getUserKey('fs');
+        var allFiles = {};
+        try { allFiles = JSON.parse(localStorage.getItem(userKey) || '{}'); } catch(e) { allFiles = {}; }
+
+        var result = {};
+        Object.keys(allFiles).forEach(function(key) {
+            if (hiddenFiles.indexOf(key) === -1) {
+                if (typeof allFiles[key] === 'object' && allFiles[key].content !== undefined) {
+                    result[key] = allFiles[key].content;
+                } else {
+                    result[key] = allFiles[key];
+                }
+            }
+        });
+        return result;
+    };
+
+    // 重写 VirtualFS.deleteFile
+    var _origDeleteFile = VirtualFS.deleteFile;
+    VirtualFS.deleteFile = function(path) {
+        var userKey = getUserKey('fs');
+        var allFiles = {};
+        try { allFiles = JSON.parse(localStorage.getItem(userKey) || '{}'); } catch(e) { allFiles = {}; }
+        delete allFiles[path];
+        localStorage.setItem(userKey, JSON.stringify(allFiles));
+
+        var hiddenIndex = hiddenFiles.indexOf(path);
+        if (hiddenIndex > -1) {
+            hiddenFiles.splice(hiddenIndex, 1);
+            localStorage.setItem(VirtualFS._hiddenKey, JSON.stringify(hiddenFiles));
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  2. 文件权限
+    // ═══════════════════════════════════════════════════════════════
+
+    // 检查当前用户是否为管理员
+    function isCurrentUserAdmin() {
+        try {
+            var users = JSON.parse(localStorage.getItem('tkemu_users_v1') || '[]');
+            var currentName = getCurrentUserName();
+            for (var i = 0; i < users.length; i++) {
+                if (users[i].name === currentName && users[i].isAdmin) return true;
+            }
+        } catch(e) {}
+        return false;
+    }
+
+    // 检查文件所有者
+    VirtualFS.getFileOwner = function(path) {
+        var userKey = getUserKey('fs');
+        var allFiles = {};
+        try { allFiles = JSON.parse(localStorage.getItem(userKey) || '{}'); } catch(e) { allFiles = {}; }
+        if (allFiles[path] && typeof allFiles[path] === 'object' && allFiles[path].owner) {
+            return allFiles[path].owner;
+        }
+        return getCurrentUserName();
+    };
+
+    // 检查是否可以修改文件
+    VirtualFS.canModify = function(path) {
+        var owner = this.getFileOwner(path);
+        return owner === getCurrentUserName() || isCurrentUserAdmin();
+    };
+
+    // 重写删除权限检查
+    var _origDeleteFile2 = VirtualFS.deleteFile;
+    VirtualFS.deleteFile = function(path) {
+        if (!this.canModify(path)) {
+            showToast('❌ 权限不足：文件属于 ' + this.getFileOwner(path));
+            return;
+        }
+        _origDeleteFile2.call(this, path);
+    };
+
+    console.log('✅ v1.9.6 第一段已加载：多用户数据隔离 + 文件权限');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  v1.9.6 修复包 - 第二段：sys 安全体系
+//  TrustedInstaller 账户 + 安全检查 + 明文密钥
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._v196_fix2) return;
+    window._v196_fix2 = true;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  TrustedInstaller 账户管理
+    // ═══════════════════════════════════════════════════════════════
+
+    var TI_KEY = 'tkemu_trusted_installer';
+
+    function hasTrustedInstaller() {
+        try {
+            return localStorage.getItem(TI_KEY) === 'installed';
+        } catch(e) { return false; }
+    }
+
+    function createTrustedInstaller() {
+        localStorage.setItem(TI_KEY, 'installed');
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  管理员密码管理
+    // ═══════════════════════════════════════════════════════════════
+
+    function getAdminPassword() {
+        try {
+            var users = JSON.parse(localStorage.getItem('tkemu_users_v1') || '[]');
+            for (var i = 0; i < users.length; i++) {
+                if (users[i].isAdmin) return users[i].password;
+            }
+        } catch(e) {}
+        return '123456';
+    }
+
+    function setAdminPassword(newPassword) {
+        try {
+            var users = JSON.parse(localStorage.getItem('tkemu_users_v1') || '[]');
+            for (var i = 0; i < users.length; i++) {
+                if (users[i].isAdmin) {
+                    users[i].password = newPassword;
+                    break;
+                }
+            }
+            localStorage.setItem('tkemu_users_v1', JSON.stringify(users));
+            return true;
+        } catch(e) { return false; }
+    }
+
+    /**
+     * 修改管理员密码（在 Windows Control 用户账户里调用）
+     */
+    window.changeAdminPassword = function() {
+        var oldPwd = prompt('请输入当前管理员密码:', '');
+        if (oldPwd === null) return;
+        if (oldPwd !== getAdminPassword()) {
+            alert('❌ 密码错误');
+            return;
+        }
+        var newPwd = prompt('请输入新密码:', '');
+        if (newPwd === null || newPwd.trim() === '') {
+            alert('❌ 密码不能为空');
+            return;
+        }
+        var confirmPwd = prompt('确认新密码:', '');
+        if (confirmPwd !== newPwd) {
+            alert('❌ 两次密码不一致');
+            return;
+        }
+        if (setAdminPassword(newPwd.trim())) {
+            showToast('✅ 管理员密码已修改');
+        } else {
+            alert('❌ 修改失败');
+        }
+    };
+
+    // 在 WC 用户账户面板添加修改密码按钮
+    var _origShowUser = WC.showUser;
+    if (_origShowUser) {
+        WC.showUser = function(content) {
+            _origShowUser(content);
+            setTimeout(function() {
+                if (content && !document.getElementById('change-admin-pwd-btn')) {
+                    var btn = document.createElement('button');
+                    btn.id = 'change-admin-pwd-btn';
+                    btn.textContent = '🔑 修改管理员密码';
+                    btn.style.cssText = 'margin-left:8px;padding:10px 20px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;';
+                    btn.onclick = function() {
+                        changeAdminPassword();
+                    };
+                    content.appendChild(btn);
+                }
+            }, 100);
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  明文密钥生成
+    // ═══════════════════════════════════════════════════════════════
+
+    function generatePlainKey() {
+        var user = 'admin';
+        try { user = localStorage.getItem('tkemu_session_v1') || 'admin'; } catch(e) {}
+        var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        var rand = '';
+        for (var i = 0; i < 4; i++) {
+            rand += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return 'TKEMU-' + user.toUpperCase() + '-' + rand;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  危险操作扫描
+    // ═══════════════════════════════════════════════════════════════
+
+    var DANGEROUS_PATTERNS = [
+        { pattern: /localStorage\.clear\s*\(/, name: '清空所有数据' },
+        { pattern: /localStorage\.removeItem\s*\(\s*['"]tkemu_users/, name: '删除用户数据' },
+        { pattern: /location\.reload\s*\(/, name: '强制刷新页面' },
+        { pattern: /document\.body\.innerHTML\s*=/, name: '清空页面内容' },
+        { pattern: /delete\s+openWindows/, name: '删除窗口管理器' },
+        { pattern: /VirtualFS\._key\s*=\s*['"]/, name: '修改文件系统存储键' }
+    ];
+
+    function scanDangerousCode(code) {
+        var findings = [];
+        DANGEROUS_PATTERNS.forEach(function(item) {
+            if (item.pattern.test(code)) {
+                findings.push(item.name);
+            }
+        });
+        return findings;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  sys 安全检查完整流程
+    // ═══════════════════════════════════════════════════════════════
+
+    function sysSecurityCheck(code, callback) {
+        // 第一层：创建/验证 TrustedInstaller
+        if (!hasTrustedInstaller()) {
+            var adminPwd = prompt('🔐 首次使用 sys 需要创建 TrustedInstaller 账户\n请输入管理员密码:', '');
+            if (adminPwd === null) return;
+            if (adminPwd !== getAdminPassword()) {
+                alert('❌ 密码错误');
+                return;
+            }
+            var confirmCreate = confirm('确认创建 TrustedInstaller 账户？\n该账户拥有系统最高权限。');
+            if (!confirmCreate) return;
+            createTrustedInstaller();
+            showToast('✅ TrustedInstaller 账户已创建');
+        }
+
+        // 第二层：验证管理员密码
+        var pwd = prompt('🔐 请输入管理员密码以继续:', '');
+        if (pwd === null) return;
+        if (pwd !== getAdminPassword()) {
+            alert('❌ 密码错误');
+            return;
+        }
+
+        // 第三层：明文密钥验证
+        var plainKey = generatePlainKey();
+        var keyInput = prompt('🔑 明文密钥验证\n请输入以下密钥:\n\n' + plainKey + '\n\n（有效期60秒）', '');
+        if (keyInput === null) return;
+        if (keyInput.trim().toUpperCase() !== plainKey) {
+            alert('❌ 密钥错误');
+            return;
+        }
+
+        // 第四层：脚本扫描
+        var dangers = scanDangerousCode(code);
+        if (dangers.length > 0) {
+            var dangerList = dangers.join('\n- ');
+            var stillRun = confirm('⚠️ 检测到危险操作:\n\n- ' + dangerList + '\n\n仍要继续执行吗？');
+            if (!stillRun) return;
+        }
+
+        // 第五层：验证码
+        var captcha = '';
+        for (var i = 0; i < 4; i++) {
+            captcha += Math.floor(Math.random() * 10);
+        }
+        var captchaInput = prompt('🤖 安全验证码\n请输入以下数字:\n\n' + captcha, '');
+        if (captchaInput === null) return;
+        if (captchaInput.trim() !== captcha) {
+            alert('❌ 验证码错误');
+            return;
+        }
+
+        // 全部通过
+        callback();
+    }
+
+    // 重写 sysRunCurrent
+    var _origSysRunCurrent = window.sysRunCurrent;
+    window.sysRunCurrent = function() {
+        var ta = document.getElementById('sys-editor-input');
+        if (!ta || !ta.value.trim()) {
+            showToast('没有可执行的代码');
+            return;
+        }
+
+        sysSecurityCheck(ta.value, function() {
+            try {
+                eval(ta.value);
+                showToast('✅ sys脚本执行完毕');
+                shellPrint('[System Control] 脚本执行完毕', 'info');
+                VirtualFS.refreshStartMenuKD();
+                updateTrashIcon();
+            } catch (e) {
+                showToast('❌ sys脚本错误');
+                shellPrint('[System Control] 错误: ' + e.message, 'error');
+                console.error('sys脚本执行错误:', e);
+            }
+        });
+    };
+
+    // 重写 sysInstallUpdate
+    var _origSysInstallUpdate = window.sysInstallUpdate;
+    window.sysInstallUpdate = function() {
+        var ta = document.getElementById('sys-editor-input');
+        if (!ta || !ta.value.trim()) {
+            showToast('没有可执行的代码');
+            return;
+        }
+
+        sysSecurityCheck(ta.value, function() {
+            var name = prompt('更新名称:', 'update_' + new Date().toISOString().slice(0, 10));
+            if (!name || !name.trim()) return;
+            name = name.trim();
+            if (!name.endsWith('.sys')) name += '.sys';
+
+            var updates = getSysUpdates();
+            updates.push({ name: name, content: ta.value, token: 'TrustedInstaller', time: new Date().toISOString() });
+            saveSysUpdates(updates);
+            VirtualFS.writeFile('updates/' + name, ta.value);
+
+            try { eval(ta.value); } catch(e) {
+                shellPrint('更新执行错误: ' + e.message, 'error');
+            }
+            refreshFiles();
+            showToast('✅ 已安装: ' + name);
+        });
+    };
+
+    console.log('✅ v1.9.6 第二段已加载：sys 安全体系');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  v1.9.6 修复包 - 第三段：窗口清理 + IndexedDB + 分辨率重绘
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._v196_fix3) return;
+    window._v196_fix3 = true;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  1. 窗口关闭清理所有资源
+    // ═══════════════════════════════════════════════════════════════
+
+    var _origCloseWindow = closeWindow;
+    closeWindow = function(id) {
+        var winData = openWindows[id];
+        if (winData) {
+            var el = winData.el;
+
+            // 清理摄像头流
+            if (SRM && SRM._cameraStream && id === 'srm_camera') {
+                try {
+                    SRM._cameraStream.getTracks().forEach(function(track) { track.stop(); });
+                } catch(e) {}
+                SRM._cameraStream = null;
+                SRM._cameraVideo = null;
+            }
+
+            // 清理 iframe
+            var iframes = el.querySelectorAll('iframe');
+            for (var i = 0; i < iframes.length; i++) {
+                try {
+                    iframes[i].src = 'about:blank';
+                    iframes[i].remove();
+                } catch(e) {}
+            }
+
+            // 清理定时器
+            if (winData._timer) clearTimeout(winData._timer);
+            if (winData._interval) clearInterval(winData._interval);
+            if (el._timer) clearTimeout(el._timer);
+            if (el._interval) clearInterval(el._interval);
+
+            // 清理事件监听器
+            var newEl = el.cloneNode(false);
+            if (el.parentNode) {
+                el.parentNode.replaceChild(newEl, el);
+            }
+            winData.el = newEl;
+        }
+
+        _origCloseWindow(id);
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  2. IndexedDB 读取修复
+    // ═══════════════════════════════════════════════════════════════
+
+    // 修复：使用正确的异步读取
+    var _origReadFile = VirtualFS.readFile;
+    VirtualFS.readFile = function(path) {
+        // 先检查 localStorage
+        var allFiles = {};
+        try { allFiles = JSON.parse(localStorage.getItem(this._key) || '{}'); } catch(e) { allFiles = {}; }
+
+        var value = allFiles[path];
+
+        // 如果是 IndexedDB 标记
+        if (value && typeof value === 'string' && value.indexOf('__IDB__:') === 0) {
+            // 从 IndexedDB 同步读取（用 localStorage 备份）
+            var backupKey = 'srm_idb_backup_' + path.replace(/[^a-zA-Z0-9]/g, '_');
+            var backup = localStorage.getItem(backupKey);
+            if (backup) return backup;
+
+            // 没有备份，尝试从 IndexedDB 读
+            var result = null;
+            if (window.indexedDB) {
+                var request = indexedDB.open('tkemu_storage', 1);
+                request.onsuccess = function(e) {
+                    var db = e.target.result;
+                    try {
+                        var tx = db.transaction(['files'], 'readonly');
+                        var store = tx.objectStore('files');
+                        var getReq = store.get('file_' + path);
+                        getReq.onsuccess = function() {
+                            result = getReq.result;
+                        };
+                    } catch(err) {}
+                };
+            }
+
+            // 由于异步限制，最多等 100ms
+            var startTime = Date.now();
+            while (result === null && Date.now() - startTime < 100) {}
+
+            if (result !== null) {
+                // 写入 localStorage 备份
+                try { localStorage.setItem(backupKey, result); } catch(e) {}
+                return result;
+            }
+            return null;
+        }
+
+        return _origReadFile.call(this, path);
+    };
+
+    // 改进写入：同时写 localStorage 备份
+    var _origWriteFile = VirtualFS.writeFile;
+    VirtualFS.writeFile = function(path, content) {
+        _origWriteFile.call(this, path, content);
+
+        // 如果内容很大，同时存一份到 IndexedDB 备份键
+        if (content && content.length > 50 * 1024) {
+            var backupKey = 'srm_idb_backup_' + path.replace(/[^a-zA-Z0-9]/g, '_');
+            try {
+                localStorage.setItem(backupKey, content);
+            } catch(e) {
+                // localStorage 满了，尝试 IndexedDB
+                if (window.indexedDB) {
+                    var request = indexedDB.open('tkemu_storage', 1);
+                    request.onsuccess = function(e) {
+                        var db = e.target.result;
+                        try {
+                            var tx = db.transaction(['files'], 'readwrite');
+                            tx.objectStore('files').put(content, 'file_' + path);
+                        } catch(err) {}
+                    };
+                }
+            }
+        }
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  3. 分辨率切换窗口重绘
+    // ═══════════════════════════════════════════════════════════════
+
+    var _origApplyScale = null;
+
+    // 找到现有的 applyScale 函数并包装
+    var resState = {};
+    try {
+        var resData = JSON.parse(localStorage.getItem('tkemu_resolution_v1') || '{}');
+        if (resData.scale) resState.scale = resData.scale;
+        if (resData.mode) resState.mode = resData.mode;
+    } catch(e) {}
+
+    function redrawAllWindows() {
+        var ids = Object.keys(openWindows);
+        ids.forEach(function(id) {
+            var winData = openWindows[id];
+            if (!winData || !winData.el) return;
+
+            // 保存当前内容
+            var bodyEl = winData.el.querySelector('.window-body');
+            if (bodyEl) {
+                // 触发 resize 事件让内容自适应
+                var event = new Event('resize');
+                window.dispatchEvent(event);
+
+                // 强制刷新 iframe
+                var iframes = bodyEl.querySelectorAll('iframe');
+                for (var i = 0; i < iframes.length; i++) {
+                    var src = iframes[i].getAttribute('srcdoc');
+                    if (src) {
+                        iframes[i].setAttribute('srcdoc', src);
+                    }
+                }
+            }
+
+            // 如果窗口最大化，重新计算尺寸
+            if (winData.maximized) {
+                winData.el.style.width = '100%';
+                winData.el.style.height = 'calc(100% - 48px * var(--ui-scale, 1))';
+            }
+        });
+    }
+
+    // 监听分辨率变化
+    var _origResApplyPreset = window.resApplyPreset;
+    if (_origResApplyPreset) {
+        window.resApplyPreset = function(scale) {
+            _origResApplyPreset(scale);
+            setTimeout(redrawAllWindows, 200);
+        };
+    }
+
+    var _origResApplyCustom = window.resApplyCustom;
+    if (_origResApplyCustom) {
+        window.resApplyCustom = function(value) {
+            _origResApplyCustom(value);
+            setTimeout(redrawAllWindows, 200);
+        };
+    }
+
+    var _origResSetMode = window.resSetMode;
+    if (_origResSetMode) {
+        window.resSetMode = function(mode) {
+            _origResSetMode(mode);
+            setTimeout(redrawAllWindows, 200);
+        };
+    }
+
+    // SRM 注册函数用于分辨率重绘
+    if (window.SRM) {
+        SRM.registerFunction('window.redrawAll', function() {
+            redrawAllWindows();
+        }, '重绘所有窗口');
+    }
+
+    console.log('✅ v1.9.6 第三段已加载：窗口清理 + IndexedDB + 分辨率重绘');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  v1.9.6 修复包 - 第四段：rf wait 异步 + SRM 注册表 + 文件夹打开
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._v196_fix4) return;
+    window._v196_fix4 = true;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  1. rf wait 异步修复
+    // ═══════════════════════════════════════════════════════════════
+
+    var _origExecuteRFCommands = window.executeRFCommands;
+    if (_origExecuteRFCommands) {
+        window.executeRFCommands = function(commands, variables, startIdx) {
+            // 使用异步方式执行 rf 命令
+            var i = startIdx || 0;
+            var currentWindowId = null;
+            var menuItems = [];
+
+            function processNext() {
+                if (i >= commands.length) {
+                    // 执行完毕，渲染菜单
+                    if (currentWindowId && menuItems.length > 0) {
+                        renderRFMenu(currentWindowId, menuItems);
+                    }
+                    return;
+                }
+
+                var cmd = commands[i];
+
+                switch (cmd.cmd) {
+                    case 'window':
+                        _rfWindowIdCounter++;
+                        currentWindowId = 'rfwin_' + _rfWindowIdCounter;
+                        var placeholder = '<div class="rf-window-body" id="rf-body-' + currentWindowId + '"></div>';
+                        createWindow(currentWindowId, cmd.args[0], '📜', cmd.args[1], cmd.args[2], 100, 120, placeholder);
+                        menuItems = [];
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'label':
+                        if (currentWindowId) appendRFWidget(currentWindowId, 'label', cmd.args);
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'button':
+                        if (currentWindowId) appendRFWidget(currentWindowId, 'button', cmd.args, cmd.block, commands, variables);
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'canvas':
+                        if (currentWindowId) appendRFWidget(currentWindowId, 'canvas', cmd.args);
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'draw':
+                        if (currentWindowId) appendRFWidget(currentWindowId, 'draw', [], cmd.block);
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'print':
+                        if (!openWindows['shell']) openShell();
+                        focusWindow('shell');
+                        shellPrint(cmd.args[0], '');
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'msg':
+                        tkMsgBox('info', cmd.args[0], cmd.args[1]);
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'input':
+                        var inpVal = prompt(cmd.args[0], '');
+                        if (inpVal !== null) variables[cmd.args[1]] = inpVal;
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'set':
+                        variables[cmd.args[0]] = cmd.args[1];
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'close':
+                        if (currentWindowId) closeWindow(currentWindowId);
+                        return;
+
+                    case 'wait':
+                        // 异步等待，不阻塞浏览器
+                        setTimeout(function() {
+                            i++;
+                            processNext();
+                        }, cmd.args[0] || 0);
+                        break;
+
+                    case 'if':
+                        var varVal = variables[cmd.args[0]] || '';
+                        if (varVal === cmd.args[1] && cmd.ifBlock) {
+                            var subCommands = cmd.ifBlock.map(function(l) {
+                                return parseRFLine(l);
+                            }).filter(Boolean);
+                            window.executeRFCommands(subCommands, variables, 0);
+                        }
+                        i++;
+                        processNext();
+                        break;
+
+                    case 'python':
+                        if (pyodideReady) {
+                            try {
+                                pyodide.runPython(cmd.args[0]);
+                            } catch(e) {
+                                shellPrint('Python错误: ' + e.message, 'error');
+                            }
+                        }
+                        i++;
+                        processNext();
+                        break;
+
+                    default:
+                        i++;
+                        processNext();
+                        break;
+                }
+            }
+
+            processNext();
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  2. SRM 注册表加载时机修复
+    // ═══════════════════════════════════════════════════════════════
+
+    if (window.SRM) {
+        // 确保 regGet 在注册表未加载时返回默认值而不是空
+        var _origRegGet = SRM.regGet;
+        SRM.regGet = function(path) {
+            // 如果注册表为空，先尝试加载
+            if (Object.keys(this._registry).length === 0) {
+                this._loadRegistry();
+            }
+            return _origRegGet.call(this, path);
+        };
+
+        // 确保 regSet 保存后立即可读
+        var _origRegSet = SRM.regSet;
+        SRM.regSet = function(path, value) {
+            var result = _origRegSet.call(this, path, value);
+            this._saveRegistry();
+            return result;
+        };
+
+        // 启动时立即加载
+        SRM._loadRegistry();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  3. 文件夹打开修复
+    // ═══════════════════════════════════════════════════════════════
+
+    var _origOpenFileByType = window.openFileByType;
+    window.openFileByType = function(path) {
+        // 如果是文件夹（包含 /）
+        if (path.indexOf('/') !== -1) {
+            var folderName = path.split('/')[0];
+            openFolderView(folderName);
+            return;
+        }
+
+        // 如果是 .placeholder 文件
+        if (path.indexOf('.placeholder') !== -1) {
+            var folderName2 = path.split('/')[0];
+            openFolderView(folderName2);
+            return;
+        }
+
+        _origOpenFileByType(path);
+    };
+
+    /**
+     * 打开文件夹视图
+     */
+    function openFolderView(folderName) {
+        var files = VirtualFS.listFiles();
+        var folderFiles = {};
+
+        Object.keys(files).forEach(function(name) {
+            if (name.indexOf(folderName + '/') === 0 && name !== folderName + '/.placeholder') {
+                folderFiles[name] = files[name];
+            }
+        });
+
+        var html = '<div class="file-manager-toolbar">';
+        html += '<button onclick="openFiles()">⬅ 返回</button>';
+        html += '<span style="color:#ccc;">📁 ' + escapeHTML(folderName) + '</span>';
+        html += '<button onclick="closeWindow(\'folder_view\');openFolderView(\'' + escapeAttr(folderName) + '\')">🔄 刷新</button>';
+        html += '</div>';
+        html += '<div class="file-list">';
+
+        var names = Object.keys(folderFiles);
+        if (names.length === 0) {
+            html += '<div style="padding:30px;color:#888;text-align:center;">文件夹为空</div>';
+        } else {
+            names.forEach(function(name) {
+                var displayName = name.replace(folderName + '/', '');
+                var icon = '📄';
+                if (name.endsWith('.kd')) icon = '⚡';
+                else if (name.endsWith('.sys')) icon = '⚙️';
+                else if (name.endsWith('.rf')) icon = '📜';
+                else if (name.endsWith('.py')) icon = '🐍';
+
+                html += '<div class="file-item" ondblclick="openFileByType(\'' + escapeAttr(name) + '\')">';
+                html += '<span class="fi-icon">' + icon + '</span>';
+                html += '<span style="flex:1">' + escapeHTML(displayName) + '</span>';
+                html += '</div>';
+            });
+        }
+
+        html += '</div>';
+        createWindow('folder_view', '文件夹: ' + folderName, '📁', 550, 450, 100, 120, html);
+    }
+
+    // 让 openFolderView 全局可用
+    window.openFolderView = openFolderView;
+
+    console.log('✅ v1.9.6 第四段已加载：rf wait + SRM注册表 + 文件夹打开');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  v1.9.6 修复包 - 第五段：rf 引擎增强
+//  多窗口 / 多任务 / 异步执行 / 窗口间通信
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._v196_rf_enhance) return;
+    window._v196_rf_enhance = true;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  1. rf 多窗口支持
+    // ═══════════════════════════════════════════════════════════════
+
+    // 窗口注册表：记录 rf 创建的所有窗口
+    SRM._rfWindows = {};
+    SRM._rfWindowCounter = 0;
+
+    // 新的 window 命令解析：支持 window "id" "标题" 宽 高
+    var _origParseRFLine = parseRFLine;
+    parseRFLine = function(line) {
+        var m;
+
+        // 新格式：window "窗口ID" "标题" 宽 高
+        m = line.match(/^window\s+"([^"]+)"\s+"([^"]+)"\s+(\d+)\s+(\d+)/);
+        if (m) return { cmd: 'window', args: [m[2], parseInt(m[3]), parseInt(m[4]), m[1]] };
+
+        // 旧格式：window "标题" 宽 高
+        m = line.match(/^window\s+"([^"]*)"\s+(\d+)\s+(\d+)/);
+        if (m) return { cmd: 'window', args: [m[1], parseInt(m[2]), parseInt(m[3])] };
+
+        // 其他命令走原始解析
+        return _origParseRFLine(line);
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  2. 重写 executeRFCommands 支持多窗口和多任务
+    // ═══════════════════════════════════════════════════════════════
+
+    window.executeRFCommands = function(commands, variables, startIdx, context) {
+        context = context || {
+            windowId: null,
+            menuItems: [],
+            tasks: []
+        };
+
+        var i = startIdx || 0;
+
+        function processNext() {
+            if (i >= commands.length) {
+                if (context.windowId && context.menuItems.length > 0) {
+                    renderRFMenu(context.windowId, context.menuItems);
+                }
+                return;
+            }
+
+            var cmd = commands[i];
+
+            switch (cmd.cmd) {
+                case 'window':
+                    SRM._rfWindowCounter++;
+                    var winId = cmd.args[3] || ('rfwin_' + SRM._rfWindowCounter);
+                    var winTitle = cmd.args[0];
+                    var winW = cmd.args[1];
+                    var winH = cmd.args[2];
+
+                    var placeholder = '<div class="rf-window-body" id="rf-body-' + winId + '"></div>';
+                    createWindow(winId, winTitle, '📜', winW, winH, 100 + SRM._rfWindowCounter * 20, 120 + SRM._rfWindowCounter * 20, placeholder);
+
+                    context.windowId = winId;
+                    context.menuItems = [];
+
+                    // 注册到 SRM
+                    SRM._rfWindows[winId] = {
+                        id: winId,
+                        title: winTitle,
+                        created: new Date().toISOString()
+                    };
+                    SRM.registerProcess(winTitle, 'rf_window', { windowId: winId });
+                    break;
+
+                case 'label':
+                    if (context.windowId) appendRFWidget(context.windowId, 'label', cmd.args);
+                    break;
+
+                case 'button':
+                    if (context.windowId) appendRFWidget(context.windowId, 'button', cmd.args, cmd.block, commands, variables);
+                    break;
+
+                case 'canvas':
+                    if (context.windowId) appendRFWidget(context.windowId, 'canvas', cmd.args);
+                    break;
+
+                case 'draw':
+                    if (context.windowId) appendRFWidget(context.windowId, 'draw', [], cmd.block);
+                    break;
+
+                case 'print':
+                    if (!openWindows['shell']) openShell();
+                    focusWindow('shell');
+                    shellPrint(cmd.args[0], '');
+                    break;
+
+                case 'msg':
+                    tkMsgBox('info', cmd.args[0], cmd.args[1]);
+                    break;
+
+                case 'input':
+                    var inpVal = prompt(cmd.args[0], '');
+                    if (inpVal !== null) variables[cmd.args[1]] = inpVal;
+                    break;
+
+                case 'set':
+                    variables[cmd.args[0]] = cmd.args[1];
+                    break;
+
+                case 'close':
+                    if (context.windowId) closeWindow(context.windowId);
+                    return;
+
+                case 'wait':
+                    setTimeout(function() {
+                        i++;
+                        processNext();
+                    }, cmd.args[0] || 0);
+                    return; // 不立即继续
+
+                case 'if':
+                    var varVal = variables[cmd.args[0]] || '';
+                    if (varVal === cmd.args[1] && cmd.ifBlock) {
+                        var subCommands = cmd.ifBlock.map(function(l) {
+                            return parseRFLine(l);
+                        }).filter(Boolean);
+                        window.executeRFCommands(subCommands, variables, 0, context);
+                    }
+                    break;
+
+                case 'python':
+                    if (pyodideReady) {
+                        try {
+                            pyodide.runPython(cmd.args[0]);
+                        } catch(e) {
+                            shellPrint('Python错误: ' + e.message, 'error');
+                        }
+                    }
+                    break;
+            }
+
+            i++;
+            processNext();
+        }
+
+        processNext();
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  3. rf 新命令：parallel（并行执行）
+    // ═══════════════════════════════════════════════════════════════
+
+    // 在 parseRFLine 中添加 parallel 命令
+    var _origParseRFLine2 = parseRFLine;
+    parseRFLine = function(line) {
+        // parallel 命令：parallel [块1] [块2] ...
+        var m = line.match(/^parallel\s*$/);
+        if (m) return { cmd: 'parallel', args: [] };
+
+        return _origParseRFLine2(line);
+    };
+
+    // 在 executeRFCommands 中处理 parallel
+    // 通过重写函数添加
+    var _origExecRF = window.executeRFCommands;
+    window.executeRFCommands = function(commands, variables, startIdx, context) {
+        context = context || { windowId: null, menuItems: [], tasks: [] };
+        var i = startIdx || 0;
+
+        function processNext() {
+            if (i >= commands.length) {
+                if (context.windowId && context.menuItems.length > 0) {
+                    renderRFMenu(context.windowId, context.menuItems);
+                }
+                return;
+            }
+
+            var cmd = commands[i];
+
+            // 并行执行：将后续命令块分到多个独立任务中
+            if (cmd.cmd === 'parallel') {
+                var blocks = [];
+                var currentBlock = [];
+                var depth = 0;
+                i++;
+
+                while (i < commands.length) {
+                    var c = commands[i];
+                    if (c.cmd === 'window' && depth === 0 && currentBlock.length > 0) {
+                        blocks.push(currentBlock);
+                        currentBlock = [];
+                    }
+                    currentBlock.push(c);
+                    i++;
+                }
+                if (currentBlock.length > 0) blocks.push(currentBlock);
+
+                blocks.forEach(function(block) {
+                    setTimeout(function() {
+                        var subCommands = block.map(function(c) { return c; });
+                        window.executeRFCommands(subCommands, variables, 0, { windowId: null, menuItems: [], tasks: [] });
+                    }, 0);
+                });
+                return;
+            }
+
+            // ... 其余原样执行
+            switch (cmd.cmd) {
+                case 'window':
+                    SRM._rfWindowCounter++;
+                    var winId = cmd.args[3] || ('rfwin_' + SRM._rfWindowCounter);
+                    var placeholder = '<div class="rf-window-body" id="rf-body-' + winId + '"></div>';
+                    createWindow(winId, cmd.args[0], '📜', cmd.args[1], cmd.args[2], 100 + SRM._rfWindowCounter * 25, 120 + SRM._rfWindowCounter * 25, placeholder);
+                    context.windowId = winId;
+                    context.menuItems = [];
+                    SRM._rfWindows[winId] = { id: winId, title: cmd.args[0] };
+                    break;
+                case 'label':
+                    if (context.windowId) appendRFWidget(context.windowId, 'label', cmd.args);
+                    break;
+                case 'button':
+                    if (context.windowId) appendRFWidget(context.windowId, 'button', cmd.args, cmd.block, commands, variables);
+                    break;
+                case 'canvas':
+                    if (context.windowId) appendRFWidget(context.windowId, 'canvas', cmd.args);
+                    break;
+                case 'draw':
+                    if (context.windowId) appendRFWidget(context.windowId, 'draw', [], cmd.block);
+                    break;
+                case 'print':
+                    if (!openWindows['shell']) openShell();
+                    focusWindow('shell');
+                    shellPrint(cmd.args[0], '');
+                    break;
+                case 'msg':
+                    tkMsgBox('info', cmd.args[0], cmd.args[1]);
+                    break;
+                case 'set':
+                    variables[cmd.args[0]] = cmd.args[1];
+                    break;
+                case 'close':
+                    if (context.windowId) closeWindow(context.windowId);
+                    return;
+                case 'wait':
+                    setTimeout(function() { i++; processNext(); }, cmd.args[0]);
+                    return;
+            }
+
+            i++;
+            processNext();
+        }
+
+        processNext();
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    //  4. rf 新命令：send（通过 SRM 发送消息）
+    // ═══════════════════════════════════════════════════════════════
+
+    var _origParseRFLine3 = parseRFLine;
+    parseRFLine = function(line) {
+        var m;
+        // send "目标窗口" "消息内容"
+        m = line.match(/^send\s+"([^"]+)"\s+"([^"]+)"/);
+        if (m) return { cmd: 'send', args: [m[1], m[2]] };
+
+        return _origParseRFLine3(line);
+    };
+
+    // 在 executeRFCommands 中处理 send
+    var _origExecRF2 = window.executeRFCommands;
+    window.executeRFCommands = function(commands, variables, startIdx, context) {
+        context = context || { windowId: null, menuItems: [], tasks: [] };
+        var i = startIdx || 0;
+
+        function processNext() {
+            if (i >= commands.length) {
+                if (context.windowId && context.menuItems.length > 0) {
+                    renderRFMenu(context.windowId, context.menuItems);
+                }
+                return;
+            }
+
+            var cmd = commands[i];
+
+            if (cmd.cmd === 'send') {
+                var targetWindow = cmd.args[0];
+                var message = cmd.args[1];
+
+                // 通过 SRM 发消息
+                if (SRM) {
+                    SRM.sendMessage(targetWindow, {
+                        type: 'rf_message',
+                        from: context.windowId || 'rf_script',
+                        message: message,
+                        time: new Date().toISOString()
+                    });
+                    shellPrint('[rf] 消息已发送到 ' + targetWindow + ': ' + message, 'info');
+                }
+                i++;
+                processNext();
+                return;
+            }
+
+            switch (cmd.cmd) {
+                case 'window':
+                    SRM._rfWindowCounter++;
+                    var winId = cmd.args[3] || ('rfwin_' + SRM._rfWindowCounter);
+                    var placeholder = '<div class="rf-window-body" id="rf-body-' + winId + '"></div>';
+                    createWindow(winId, cmd.args[0], '📜', cmd.args[1], cmd.args[2], 100 + SRM._rfWindowCounter * 25, 120 + SRM._rfWindowCounter * 25, placeholder);
+                    context.windowId = winId;
+                    context.menuItems = [];
+                    SRM._rfWindows[winId] = { id: winId, title: cmd.args[0] };
+                    break;
+                case 'label':
+                    if (context.windowId) appendRFWidget(context.windowId, 'label', cmd.args);
+                    break;
+                case 'button':
+                    if (context.windowId) appendRFWidget(context.windowId, 'button', cmd.args, cmd.block, commands, variables);
+                    break;
+                case 'canvas':
+                    if (context.windowId) appendRFWidget(context.windowId, 'canvas', cmd.args);
+                    break;
+                case 'draw':
+                    if (context.windowId) appendRFWidget(context.windowId, 'draw', [], cmd.block);
+                    break;
+                case 'print':
+                    if (!openWindows['shell']) openShell();
+                    focusWindow('shell');
+                    shellPrint(cmd.args[0], '');
+                    break;
+                case 'msg':
+                    tkMsgBox('info', cmd.args[0], cmd.args[1]);
+                    break;
+                case 'set':
+                    variables[cmd.args[0]] = cmd.args[1];
+                    break;
+                case 'close':
+                    if (context.windowId) closeWindow(context.windowId);
+                    return;
+                case 'wait':
+                    setTimeout(function() { i++; processNext(); }, cmd.args[0]);
+                    return;
+            }
+
+            i++;
+            processNext();
+        }
+
+        processNext();
+    };
+
+    console.log('✅ v1.9.6 第五段已加载：rf 引擎增强（多窗口/多任务/异步/通信）');
+    showToast('✅ v1.9.6 全部修复完成');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  修复 - 预置文件在新用户数据隔离后丢失
+//  每个新用户首次登录时自动创建预置文件
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._default_files_fix) return;
+    window._default_files_fix = true;
+
+    function getCurrentUserName() {
+        try {
+            return localStorage.getItem('tkemu_session_v1') || 'default';
+        } catch(e) { return 'default'; }
+    }
+
+    function getUserKey() {
+        return 'tkemu_user_' + getCurrentUserName() + '_fs';
+    }
+
+    function ensureDefaultFiles() {
+        var userKey = getUserKey();
+        var allFiles = {};
+        try { allFiles = JSON.parse(localStorage.getItem(userKey) || '{}'); } catch(e) { allFiles = {}; }
+
+        var defaults = {
+            'main.py': '# 欢迎使用 tkemu\nprint("Hello, tkemu!")\n',
+            'README.txt': 'tkemu v1.9.6\n用户: ' + getCurrentUserName() + '\n',
+            'hello.rf': '// rf 脚本示例\nwindow "Hello RF" 400 300\nlabel "欢迎使用 rf 脚本系统!" center\nbutton "点击我" run\n  print "按钮被点击了!"\nend\nbutton "关闭" close\n',
+            'welcome.kd': '<h1>欢迎使用KD!</h1><p>这是一个KD示例应用。</p><button onclick="parent.shellPrint(\'Hello from KD!\', \'info\')">打印到Shell</button>',
+            'paint.rf': 'window "简易画板" 500 400\nmenu "文件"\nmenuitem "清空画布" run\n  draw\n    var c = document.getElementById("rf-canvas");\n    var ctx = c.getContext("2d");\n    ctx.clearRect(0, 0, c.width, c.height);\n  end\nmenuitem "关闭" close\ncanvas 480 300\nlabel "在下方画布上拖动鼠标绘画" center\ndraw\n  var c = document.getElementById("rf-canvas");\n  var ctx = c.getContext("2d");\n  ctx.fillStyle = "white";\n  ctx.fillRect(0, 0, c.width, c.height);\n  ctx.strokeStyle = "black";\n  ctx.lineWidth = 2;\n  var painting = false;\n  c.onpointerdown = function(e) { painting = true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY); };\n  c.onpointerup = function() { painting = false; };\n  c.onpointermove = function(e) {\n    if (!painting) return;\n    ctx.lineTo(e.offsetX, e.offsetY);\n    ctx.stroke();\n  };\nend',
+            'clock.rf': 'window "动态时钟" 300 250\ncanvas 200 200\ndraw\n  var c = document.getElementById("rf-canvas");\n  var ctx = c.getContext("2d");\n  function drawClock() {\n    ctx.clearRect(0, 0, c.width, c.height);\n    var now = new Date();\n    var h = now.getHours() % 12;\n    var m = now.getMinutes();\n    var s = now.getSeconds();\n    ctx.fillStyle = "white"; ctx.fillRect(0,0,c.width,c.height);\n    ctx.beginPath(); ctx.arc(100, 100, 90, 0, 2*Math.PI);\n    ctx.strokeStyle = "black"; ctx.lineWidth = 4; ctx.stroke();\n    ctx.beginPath(); ctx.moveTo(100,100);\n    ctx.lineTo(100+50*Math.cos((h+m/60)*Math.PI/6 - Math.PI/2), 100+50*Math.sin((h+m/60)*Math.PI/6 - Math.PI/2));\n    ctx.stroke();\n    ctx.beginPath(); ctx.moveTo(100,100);\n    ctx.lineTo(100+70*Math.cos(m*Math.PI/30 - Math.PI/2), 100+70*Math.sin(m*Math.PI/30 - Math.PI/2));\n    ctx.stroke();\n    ctx.beginPath(); ctx.moveTo(100,100);\n    ctx.lineTo(100+80*Math.cos(s*Math.PI/30 - Math.PI/2), 100+80*Math.sin(s*Math.PI/30 - Math.PI/2));\n    ctx.strokeStyle = "red"; ctx.lineWidth = 2; ctx.stroke();\n  }\n  setInterval(drawClock, 1000);\n  drawClock();\nend\nlabel "当前时间" center\nbutton "关闭" close\n'
+        };
+
+        var changed = false;
+        for (var key in defaults) {
+            if (!allFiles[key]) {
+                allFiles[key] = {
+                    content: defaults[key],
+                    owner: getCurrentUserName(),
+                    time: new Date().toISOString(),
+                    isDefault: true
+                };
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            localStorage.setItem(userKey, JSON.stringify(allFiles));
+        }
+    }
+
+    // 页面加载时确保预置文件存在
+    setTimeout(ensureDefaultFiles, 500);
+
+    // 用户切换时确保新用户的预置文件
+    var _origV160OnLogin = window.v160OnLogin;
+    if (_origV160OnLogin) {
+        window.v160OnLogin = function() {
+            _origV160OnLogin();
+            setTimeout(ensureDefaultFiles, 300);
+        };
+    }
+
+    console.log('✅ 预置文件修复已加载');
+})();
+// ═══════════════════════════════════════════════════════════════
+//  修复 - sys 安全检查强制生效
+// ═══════════════════════════════════════════════════════════════
+
+(function() {
+    if (window._sys_security_force) return;
+    window._sys_security_force = true;
+
+    // ═══ 安全验证函数 ═══
+    function getAdminPassword() {
+        try {
+            var users = JSON.parse(localStorage.getItem('tkemu_users_v1') || '[]');
+            for (var i = 0; i < users.length; i++) {
+                if (users[i].isAdmin) return users[i].password;
+            }
+        } catch(e) {}
+        return '123456';
+    }
+
+    function generateKey() {
+        var user = 'admin';
+        try { user = localStorage.getItem('tkemu_session_v1') || 'admin'; } catch(e) {}
+        var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        var rand = '';
+        for (var i = 0; i < 4; i++) {
+            rand += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return 'TKEMU-' + user.toUpperCase() + '-' + rand;
+    }
+
+    function scanDanger(code) {
+        var dangers = [];
+        var patterns = [
+            { re: /localStorage\.clear\s*\(/, name: '清空所有数据' },
+            { re: /document\.getElementById\(['"]desktop['"]\)\.style/, name: '修改桌面' },
+            { re: /location\.reload\s*\(/, name: '强制刷新' },
+            { re: /createWindow\s*\(\s*['"]virus/, name: '创建恶意窗口' },
+            { re: /alert\s*\(/, name: '弹窗轰炸' }
+        ];
+        patterns.forEach(function(p) {
+            if (p.re.test(code)) dangers.push(p.name);
+        });
+        return dangers;
+    }
+
+    function runSecurityCheck(code, callback) {
+        // 第一层：管理员密码
+        var pwd = prompt('🔐 安全验证\n请输入管理员密码:', '');
+        if (pwd === null) { showToast('❌ 已取消'); return; }
+        if (pwd !== getAdminPassword()) { alert('❌ 密码错误'); return; }
+
+        // 第二层：明文密钥
+        var key = generateKey();
+        var keyInput = prompt('🔑 明文密钥验证\n请输入以下密钥:\n\n' + key, '');
+        if (keyInput === null) { showToast('❌ 已取消'); return; }
+        if (keyInput.trim().toUpperCase() !== key) { alert('❌ 密钥错误'); return; }
+
+        // 第三层：危险扫描
+        var dangers = scanDanger(code);
+        if (dangers.length > 0) {
+            var msg = '⚠️ 检测到危险操作:\n\n';
+            dangers.forEach(function(d) { msg += '- ' + d + '\n'; });
+            msg += '\n仍要继续吗？';
+            if (!confirm(msg)) { showToast('❌ 已阻止'); return; }
+        }
+
+        // 第四层：验证码
+        var code4 = '';
+        for (var i = 0; i < 4; i++) code4 += Math.floor(Math.random() * 10);
+        var codeInput = prompt('🤖 验证码\n请输入: ' + code4, '');
+        if (codeInput === null) { showToast('❌ 已取消'); return; }
+        if (codeInput.trim() !== code4) { alert('❌ 验证码错误'); return; }
+
+        // 通过
+        callback();
+    }
+
+    // 强制覆盖 sysRunCurrent
+    window.sysRunCurrent = function() {
+        var ta = document.getElementById('sys-editor-input');
+        if (!ta || !ta.value.trim()) {
+            showToast('没有可执行的代码');
+            return;
+        }
+
+        var code = ta.value;
+
+        runSecurityCheck(code, function() {
+            try {
+                eval(code);
+                showToast('✅ sys脚本执行完毕');
+            } catch(e) {
+                showToast('❌ 错误: ' + e.message);
+            }
+        });
+    };
+
+    // 强制覆盖 sysInstallUpdate
+    window.sysInstallUpdate = function() {
+        var ta = document.getElementById('sys-editor-input');
+        if (!ta || !ta.value.trim()) {
+            showToast('没有可执行的代码');
+            return;
+        }
+
+        var code = ta.value;
+
+        runSecurityCheck(code, function() {
+            var name = prompt('更新名称:', 'update');
+            if (!name) return;
+            VirtualFS.writeFile('updates/' + name + '.sys', code);
+            eval(code);
+            showToast('✅ 已安装');
+        });
+    };
+
+    console.log('✅ sys 安全检查强制生效已加载');
+    showToast('🛡️ sys 安全检查已启用');
+})();
 
 // ═══════════════════════════════════════════════════════════════
 //  最终强制经典主题 - 最后执行，确保生效
@@ -14162,9 +15554,9 @@ setTimeout(function() {
 })();
 
     // 同时更新 APP_VERSION
-    APP_VERSION = '1.9.0';
+    APP_VERSION = '1.9.6';
 
-    console.log('[v1.9.0] 关于系统版本号已更新为 ' + APP_VERSION);
+    console.log('[v1.9.6] 关于系统版本号已更新为 ' + APP_VERSION);
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>

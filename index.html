@@ -161,7 +161,7 @@
             <div class="stat-item"><div class="num">21</div><div class="label">SRM管理单元</div></div>
             <div class="stat-item"><div class="num">50+</div><div class="label">系统函数</div></div>
             <div class="stat-item"><div class="num">15000+</div><div class="label">行代码</div></div>
-            <div class="stat-item"><div class="num">v1.9.0</div><div class="label">当前版本</div></div>
+            <div class="stat-item"><div class="num">v1.9.6</div><div class="label">当前版本</div></div>
         </div>
     </div>
 </section>
@@ -194,7 +194,7 @@
             <div class="feature-card">
                 <div class="icon">📜</div>
                 <h3>rf 脚本引擎</h3>
-                <p>类 bat 命令式脚本，15+命令，window/label/button/canvas/draw/if/menu/msg/ask/set 等</p>
+                <p>多窗口/多任务/异步执行，15+命令，window/label/button/canvas/draw/if/menu/msg/ask/set 等</p>
             </div>
             <div class="feature-card">
                 <div class="icon">⚡</div>
@@ -203,8 +203,8 @@
             </div>
             <div class="feature-card">
                 <div class="icon">🔧</div>
-                <h3>sys 系统更新</h3>
-                <p>TI 级最高权限，令牌验证，进度条安装，持久化存储，启动自动应用</p>
+                <h3>sys 安全体系</h3>
+                <p>TrustedInstaller 账户、5层安全检查、明文密钥、危险扫描、验证码</p>
             </div>
             <div class="feature-card">
                 <div class="icon">🖥️</div>
@@ -298,7 +298,7 @@
                 <div class="aicon">📜</div>
                 <h3>rf 脚本</h3>
                 <div class="analogy">≈ .bat 批处理</div>
-                <p>简单命令式脚本，快速自动化任务，15+命令</p>
+                <p>多窗口/多任务/异步执行，15+命令</p>
             </div>
             <div class="arch-card">
                 <div class="aicon">⚡</div>
@@ -310,7 +310,7 @@
                 <div class="aicon">🛡️</div>
                 <h3>sys 更新</h3>
                 <div class="analogy">≈ 驱动/内核模块</div>
-                <p>TI 令牌保护，可修改全局资源，持久化自动应用</p>
+                <p>TrustedInstaller 保护，5层安全检查</p>
             </div>
             <div class="arch-card">
                 <div class="aicon">📋</div>
@@ -327,7 +327,26 @@
         <h2>版本更新记录</h2>
         <div class="changelog">
             <div class="log-item">
-                <div class="ver latest">v1.9.0</div>
+                <div class="ver latest">v1.9.6</div>
+                <div class="log-content">
+                    <h4>🛡️ 安全大修 + rf 引擎增强</h4>
+                    <ul>
+                        <li>🔐 多用户数据隔离（每人独立文件/设置/图标位置）</li>
+                        <li>📁 文件权限控制（所有者/管理员才能修改删除）</li>
+                        <li>🛡️ TrustedInstaller 账户 + 5层安全检查</li>
+                        <li>🔑 管理员密码修改 + 明文密钥 + 危险扫描 + 验证码</li>
+                        <li>🧹 窗口关闭清理所有资源（定时器/监听/摄像头流）</li>
+                        <li>💾 IndexedDB 读取修复（大文件不再丢失）</li>
+                        <li>📐 分辨率切换窗口重绘</li>
+                        <li>⏱️ rf wait 异步（不再阻塞浏览器）</li>
+                        <li>📋 SRM 注册表加载时机修复</li>
+                        <li>📁 文件夹双击打开修复</li>
+                        <li>📜 rf 引擎增强：多窗口/多任务/异步/通信</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="log-item">
+                <div class="ver">v1.9.0</div>
                 <div class="log-content">
                     <h4>📋 SRM 系统资源管理器 + 硬件桥接</h4>
                     <ul>
@@ -506,6 +525,8 @@
             <tr><td>set</td><td>设置变量</td><td>set x = 100</td></tr>
             <tr><td>if</td><td>条件判断</td><td>if x == "yes" then ... end</td></tr>
             <tr><td>wait</td><td>等待毫秒</td><td>wait 1000</td></tr>
+            <tr><td>parallel</td><td>并行执行</td><td>parallel ... end</td></tr>
+            <tr><td>send</td><td>窗口通信</td><td>send "窗口ID" "消息"</td></tr>
         </table>
     </div>
 </section>
@@ -514,15 +535,16 @@
     <div class="container">
         <h2>技术规格</h2>
         <table class="spec-table">
-            <tr><td>应用程序版本</td><td>v1.9.0</td></tr>
+            <tr><td>应用程序版本</td><td>v1.9.6</td></tr>
             <tr><td>Python 运行时</td><td>Pyodide 0.27.0</td></tr>
-            <tr><td>rf 脚本引擎</td><td>v2.0（支持 Canvas 绘制）</td></tr>
+            <tr><td>rf 脚本引擎</td><td>v3.0（多窗口/多任务/异步/通信）</td></tr>
             <tr><td>KD 内核驱动</td><td>v1.9</td></tr>
             <tr><td>SRM 系统资源管理器</td><td>v1.0（21个管理单元）</td></tr>
+            <tr><td>sys 安全体系</td><td>TrustedInstaller + 5层检查</td></tr>
             <tr><td>tkinter 模拟层</td><td>完整版（20+ 组件）</td></tr>
-            <tr><td>虚拟文件系统</td><td>localStorage 持久化</td></tr>
+            <tr><td>虚拟文件系统</td><td>多用户隔离 + 权限控制</td></tr>
             <tr><td>硬件桥接</td><td>摄像头/麦克风/U盘/打印机/扬声器</td></tr>
-            <tr><td>总代码量</td><td>约 500KB（15000+ 行）</td></tr>
+            <tr><td>总代码量</td><td>约 550KB（17000+ 行）</td></tr>
             <tr><td>许可证</td><td>MIT License</td></tr>
             <tr><td>开发者</td><td>闪讯工作社 Snxth. 2026</td></tr>
         </table>
@@ -552,7 +574,7 @@
 </footer>
 
 <div class="version-bar">
-    tkemu v1.9.0 · Pyodide 0.27.0 · SRM v1.0 · 闪讯工作社 Snxth. · MIT License · © 2026
+    tkemu v1.9.6 · Pyodide 0.27.0 · SRM v1.0 · TrustedInstaller 安全体系 · 闪讯工作社 Snxth. · MIT License · © 2026
 </div>
 
 </body>
