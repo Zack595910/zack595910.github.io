@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>W 语言 - Windows 界面开发语言</title>
+<style>
+:root {
+    --bg: #0a0a1e;
+    --card: #12122a;
+    --text: #e0e0e0;
+    --accent: #0078D4;
+    --accent2: #00ccff;
+    --gold: #FFD700;
+    --green: #00ff41;
+    --purple: #9944ff;
+    --orange: #ff8800;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+    overflow-x: hidden;
+}
+
+nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(10,10,30,0.9);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding: 12px 0;
+}
+nav .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+nav .logo {
+    font-size: 22px;
+    font-weight: bold;
+    color: var(--accent2);
+    letter-spacing: 2px;
+}
+nav .logo span { color: var(--green); }
+nav a {
+    color: #aaa;
+    text-decoration: none;
+    margin-left: 20px;
+    font-size: 13px;
+    transition: color 0.2s;
+}
+nav a:hover { color: #fff; }
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Hero */
+.hero {
+    padding: 150px 0 80px;
+    text-align: center;
+    background: radial-gradient(ellipse at 50% 0%, rgba(0,120,212,0.15) 0%, transparent 70%);
+}
+.hero h1 {
+    font-size: 60px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    letter-spacing: 8px;
+}
+.hero h1 .hl { color: var(--accent2); }
+.hero .subtitle {
+    font-size: 18px;
+    color: #888;
+    margin-bottom: 10px;
+}
+.hero .slogan {
+    font-size: 15px;
+    color: var(--gold);
+    margin-bottom: 20px;
+}
+.hero .badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    margin: 0 3px;
+    border: 1px solid;
+}
+.badge-green { background: rgba(0,255,65,0.1); color: var(--green); border-color: rgba(0,255,65,0.2); }
+.badge-blue { background: rgba(0,204,255,0.1); color: var(--accent2); border-color: rgba(0,204,255,0.2); }
+.badge-gold { background: rgba(255,215,0,0.1); color: var(--gold); border-color: rgba(255,215,0,0.2); }
+.badge-purple { background: rgba(153,68,255,0.1); color: var(--purple); border-color: rgba(153,68,255,0.2); }
+
+.stats {
+    display: flex;
+    gap: 26px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 30px;
+}
+.stat-item .num {
+    font-size: 38px;
+    font-weight: bold;
+    color: var(--accent2);
+}
+.stat-item .label {
+    font-size: 12px;
+    color: #666;
+}
+
+/* 章节 */
+.section {
+    padding: 60px 0;
+}
+.section h2 {
+    text-align: center;
+    font-size: 30px;
+    margin-bottom: 40px;
+    color: #fff;
+}
+.section h2::after {
+    content: '';
+    display: block;
+    width: 60px;
+    height: 3px;
+    background: var(--accent2);
+    margin: 12px auto 0;
+    border-radius: 2px;
+}
+.section p.desc {
+    text-align: center;
+    color: #888;
+    max-width: 700px;
+    margin: -20px auto 30px;
+    font-size: 14px;
+}
+
+/* 卡片 */
+.features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+.feature-card {
+    background: var(--card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 24px;
+    transition: all 0.3s;
+}
+.feature-card:hover {
+    border-color: rgba(0,204,255,0.3);
+    transform: translateY(-3px);
+}
+.feature-card .icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+}
+.feature-card h3 {
+    font-size: 17px;
+    color: var(--accent2);
+    margin-bottom: 8px;
+}
+.feature-card p {
+    font-size: 13px;
+    color: #999;
+}
+
+/* 代码块 */
+.code-block {
+    background: #1a1a2e;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 20px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #d4d4d4;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 16px 0;
+}
+.code-block .kw { color: #569cd6; }
+.code-block .str { color: #ce9178; }
+.code-block .num { color: #b5cea8; }
+.code-block .com { color: #6a9955; }
+.code-block .fn { color: #dcdcaa; }
+.code-block .var { color: #9cdcfe; }
+.code-block .type { color: #4ec9b0; }
+
+/* 表格 */
+.cmd-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 20px 0;
+}
+.cmd-table th {
+    background: rgba(0,204,255,0.1);
+    color: var(--accent2);
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.cmd-table td {
+    padding: 10px 14px;
+    border: 1px solid rgba(255,255,255,0.04);
+    color: #aaa;
+}
+.cmd-table td:first-child {
+    font-family: 'Consolas', monospace;
+    color: var(--green);
+    white-space: nowrap;
+}
+
+/* 状态标记 */
+.status-ok {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 10px;
+    background: rgba(0,255,65,0.1);
+    color: var(--green);
+    border-radius: 10px;
+}
+.status-todo {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 10px;
+    background: rgba(255,136,0,0.1);
+    color: var(--orange);
+    border-radius: 10px;
+}
+
+/* 示例框 */
+.demo-box {
+    background: var(--card);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+.demo-header {
+    padding: 10px 16px;
+    background: rgba(0,204,255,0.08);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 13px;
+    color: var(--accent2);
+    font-weight: 600;
+}
+.demo-content {
+    padding: 16px;
+}
+
+/* 控件展示 */
+.widget-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 20px 0;
+}
+.widget-item {
+    background: var(--card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    transition: all 0.2s;
+}
+.widget-item:hover {
+    border-color: rgba(0,204,255,0.3);
+}
+.widget-item .w-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+}
+.widget-item .w-name {
+    font-family: 'Consolas', monospace;
+    font-size: 13px;
+    color: var(--accent2);
+    margin-bottom: 4px;
+}
+.widget-item .w-desc {
+    font-size: 11px;
+    color: #888;
+}
+
+/* 页脚 */
+footer {
+    text-align: center;
+    padding: 40px 0 60px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 40px;
+}
+footer .cta-text {
+    font-size: 20px;
+    margin-bottom: 20px;
+    color: #fff;
+}
+footer .btn-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.btn {
+    display: inline-block;
+    padding: 13px 32px;
+    border-radius: 30px;
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s;
+}
+.btn-primary {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(0,120,212,0.4);
+}
+.btn-primary:hover {
+    background: #005A9E;
+    transform: scale(1.05);
+}
+.btn-outline {
+    border: 2px solid var(--accent2);
+    color: var(--accent2);
+}
+.btn-outline:hover {
+    background: rgba(0,204,255,0.1);
+}
+
+/* 移动端 */
+@media (max-width: 768px) {
+    .hero h1 { font-size: 40px; letter-spacing: 4px; }
+    nav a { margin-left: 8px; font-size: 11px; }
+    .stats { gap: 12px; }
+    .stat-item .num { font-size: 26px; }
+    .code-block { font-size: 11px; }
+    .cmd-table { font-size: 11px; }
+    .cmd-table th, .cmd-table td { padding: 8px; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+    <div class="container">
+        <div class="logo">W<span>语言</span></div>
+        <div>
+            <a href="#about">简介</a>
+            <a href="#features">特性</a>
+            <a href="#syntax">语法</a>
+            <a href="#widgets">控件</a>
+            <a href="#events">事件</a>
+            <a href="#status">状态</a>
+            <a href="W-tutorial.html">教程</a>
+        </div>
+    </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+    <div class="container">
+        <h1>W<span class="hl">.</span></h1>
+        <p class="subtitle">Windows 界面开发语言</p>
+        <p class="slogan">让 Windows 界面开发像写 HTML 一样简单</p>
+        <p>
+            <span class="badge badge-green">⚡ 纯 C 实现</span>
+            <span class="badge badge-blue">🪟 Win32 原生</span>
+            <span class="badge badge-gold">📝 即写即运行</span>
+            <span class="badge badge-purple">🎨 声明式 UI</span>
+        </p>
+        <div class="stats">
+            <div class="stat-item"><div class="num">11</div><div class="label">原生控件</div></div>
+            <div class="stat-item"><div class="num">8</div><div class="label">线程池</div></div>
+            <div class="stat-item"><div class="num">24</div><div class="label">断言通过</div></div>
+            <div class="stat-item"><div class="num">v1.0</div><div class="label">当前版本</div></div>
+        </div>
+    </div>
+</section>
+
+<!-- 简介 -->
+<section class="section" id="about">
+    <div class="container">
+        <h2>W 是什么</h2>
+        <p class="desc">专为 Windows 界面开发设计的语言</p>
+        <div class="features" style="grid-template-columns:1fr;max-width:800px;margin:0 auto;">
+            <div class="feature-card" style="text-align:center;">
+                <p style="font-size:15px;color:#ccc;line-height:1.9;">
+                    W 语言是专为 Windows 界面开发设计的语言。<br>
+                    纯 C 实现，直接调 Win32 原生 API，<span style="color:var(--gold);">.w 文件即写即运行</span>。<br>
+                    目标是让 Windows 界面开发像写 HTML 一样简单，但跑的是原生窗口。
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 特性 -->
+<section class="section" id="features" style="background:rgba(255,255,255,0.02);">
+    <div class="container">
+        <h2>核心特性</h2>
+        <p class="desc">语言、UI、系统三层能力全覆盖</p>
+        <div class="features">
+            <div class="feature-card">
+                <div class="icon">🔤</div>
+                <h3>语言层</h3>
+                <p>变量（全局/局部）、函数（参数/返回值/递归）、if/else、for/while、数组、字符串拼接、完整运算符</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🪟</div>
+                <h3>UI 层</h3>
+                <p>原生窗口、深色 Metro 主题、11 种 Win32 控件、事件绑定（click/change/select）</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">⚙️</div>
+                <h3>系统层</h3>
+                <p>8 线程池、游戏循环、文件读写、模块系统、通用 callAPI、引用计数内存管理</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📝</div>
+                <h3>即写即运行</h3>
+                <p>.w 文件不需要编译，直接运行，修改即生效</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🎨</div>
+                <h3>声明式 UI</h3>
+                <p>用声明式语法写窗口和控件，像写 HTML 一样直观</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🚀</div>
+                <h3>原生性能</h3>
+                <p>直接调用 Win32 API，无解释器开销，性能接近原生 C 程序</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 语法 -->
+<section class="section" id="syntax">
+    <div class="container">
+        <h2>语法示例</h2>
+        <p class="desc">声明式写窗口，命令式写逻辑</p>
+
+        <div class="demo-box">
+            <div class="demo-header">🪟 最小窗口</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">window</span> Main {
+    title = <span class="str">"Hello"</span>;
+    width = <span class="num">400</span>;
+    height = <span class="num">300</span>;
+}</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🔘 加一个按钮</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">window</span> Main {
+    title = <span class="str">"Hello"</span>;
+    width = <span class="num">400</span>;
+    height = <span class="num">300</span>;
+    
+    <span class="type">button</span> {
+        text = <span class="str">"点我"</span>;
+        x = <span class="num">100</span>; y = <span class="num">100</span>;
+        width = <span class="num">200</span>; height = <span class="num">50</span>;
+        click = <span class="str">"on_click"</span>;
+    }
+}</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">📦 变量</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">var</span> x = <span class="num">10</span>;
+<span class="kw">var</span> name = <span class="str">"Alice"</span>;
+<span class="kw">var</span> price = <span class="num">3.14</span>;
+<span class="kw">var</span> flag = <span class="kw">true</span>;
+
+x = <span class="num">20</span>;       <span class="com">// 改值</span>
+x = x + <span class="num">5</span>;    <span class="com">// x 变成 25</span></div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🔧 函数</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">func</span> <span class="fn">add</span>(a, b) {
+    <span class="kw">return</span> a + b;
+}
+
+<span class="kw">var</span> result = <span class="fn">add</span>(<span class="num">10</span>, <span class="num">20</span>);  <span class="com">// 30</span>
+
+<span class="com">// 递归</span>
+<span class="kw">func</span> <span class="fn">fib</span>(n) {
+    <span class="kw">if</span> (n < <span class="num">2</span>) { <span class="kw">return</span> n; }
+    <span class="kw">return</span> <span class="fn">fib</span>(n - <span class="num">1</span>) + <span class="fn">fib</span>(n - <span class="num">2</span>);
+}
+<span class="fn">fib</span>(<span class="num">10</span>);  <span class="com">// 55</span></div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🔄 条件与循环</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">if</span> (score >= <span class="num">60</span>) {
+    result = <span class="str">"及格"</span>;
+} <span class="kw">else</span> {
+    result = <span class="str">"不及格"</span>;
+}
+
+<span class="kw">for</span> (<span class="kw">var</span> i = <span class="num">0</span>; i < <span class="num">10</span>; i = i + <span class="num">1</span>) {
+    <span class="fn">print</span>(i);
+}
+
+<span class="kw">var</span> n = <span class="num">10</span>;
+<span class="kw">while</span> (n > <span class="num">0</span>) {
+    n = n - <span class="num">1</span>;
+}</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">📊 数组</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">var</span> arr = [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>];
+<span class="kw">var</span> first = arr[<span class="num">0</span>];   <span class="com">// 10</span>
+arr[<span class="num">0</span>] = <span class="num">100</span>;        <span class="com">// 修改</span>
+
+<span class="com">// 遍历求和</span>
+<span class="kw">var</span> sum = <span class="num">0</span>;
+<span class="kw">for</span> (<span class="kw">var</span> i = <span class="num">0</span>; i < <span class="num">5</span>; i = i + <span class="num">1</span>) {
+    sum = sum + arr[i];
+}</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🧵 线程</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">func</span> <span class="fn">task1</span>() { a = <span class="num">100</span>; }
+<span class="kw">func</span> <span class="fn">task2</span>() { b = <span class="num">200</span>; }
+
+<span class="fn">thread_run</span>(<span class="str">"task1"</span>, <span class="str">""</span>);
+<span class="fn">thread_run</span>(<span class="str">"task2"</span>, <span class="str">""</span>);
+<span class="fn">thread_wait_all</span>();</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🎮 游戏循环</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">var</span> x = <span class="num">0</span>;
+<span class="kw">var</span> dir = <span class="num">1</span>;
+
+<span class="kw">func</span> <span class="fn">update</span>() {
+    x = x + dir * <span class="num">5</span>;
+    <span class="kw">if</span> (x > <span class="num">700</span>) { dir = -<span class="num">1</span>; }
+    <span class="kw">if</span> (x < <span class="num">0</span>) { dir = <span class="num">1</span>; }
+}
+
+<span class="kw">func</span> <span class="fn">render</span>() {
+    <span class="com">// 画东西</span>
+}
+
+<span class="kw">window</span> Game {
+    title = <span class="str">"小球"</span>;
+    width = <span class="num">800</span>;
+    height = <span class="num">600</span>;
+    fps = <span class="num">60</span>;
+    on_update = <span class="str">"update"</span>;
+    on_paint = <span class="str">"render"</span>;
+}</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 控件 -->
+<section class="section" id="widgets" style="background:rgba(255,255,255,0.02);">
+    <div class="container">
+        <h2>11 种原生控件</h2>
+        <p class="desc">全部基于 Win32 原生控件，性能与系统一致</p>
+        <div class="widget-grid">
+            <div class="widget-item">
+                <div class="w-icon">🔘</div>
+                <div class="w-name">button</div>
+                <div class="w-desc">按钮</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">🏷️</div>
+                <div class="w-name">label</div>
+                <div class="w-desc">标签</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">📝</div>
+                <div class="w-name">textbox</div>
+                <div class="w-desc">文本框</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">☑️</div>
+                <div class="w-name">checkbox</div>
+                <div class="w-desc">复选框</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">🔘</div>
+                <div class="w-name">radio</div>
+                <div class="w-desc">单选按钮</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">📁</div>
+                <div class="w-name">groupbox</div>
+                <div class="w-desc">分组框</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">📊</div>
+                <div class="w-name">progressbar</div>
+                <div class="w-desc">进度条</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">🎚️</div>
+                <div class="w-name">slider</div>
+                <div class="w-desc">滑块</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">📋</div>
+                <div class="w-name">listbox</div>
+                <div class="w-desc">列表框</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">▼</div>
+                <div class="w-name">combobox</div>
+                <div class="w-desc">下拉框</div>
+            </div>
+            <div class="widget-item">
+                <div class="w-icon">🎨</div>
+                <div class="w-name">canvas</div>
+                <div class="w-desc">画布</div>
+            </div>
+        </div>
+
+        <div class="demo-box" style="margin-top:24px;">
+            <div class="demo-header">📝 控件使用示例</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">window</span> Main {
+    title = <span class="str">"控件演示"</span>;
+    width = <span class="num">600</span>;
+    height = <span class="num">400</span>;
+    
+    <span class="type">label</span> {
+        text = <span class="str">"用户名："</span>;
+        x = <span class="num">20</span>; y = <span class="num">20</span>; width = <span class="num">80</span>; height = <span class="num">25</span>;
+    }
+    
+    <span class="type">textbox</span> {
+        text = <span class="str">""</span>;
+        x = <span class="num">100</span>; y = <span class="num">20</span>; width = <span class="num">200</span>; height = <span class="num">25</span>;
+    }
+    
+    <span class="type">checkbox</span> {
+        text = <span class="str">"记住我"</span>;
+        x = <span class="num">100</span>; y = <span class="num">60</span>; width = <span class="num">100</span>; height = <span class="num">25</span>;
+    }
+    
+    <span class="type">button</span> {
+        text = <span class="str">"登录"</span>;
+        x = <span class="num">100</span>; y = <span class="num">100</span>; width = <span class="num">100</span>; height = <span class="num">30</span>;
+        click = <span class="str">"on_login"</span>;
+    }
+}</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 事件 -->
+<section class="section" id="events">
+    <div class="container">
+        <h2>事件绑定</h2>
+        <p class="desc">三种事件类型，覆盖常见交互</p>
+        <table class="cmd-table">
+            <tr><th>事件</th><th>触发时机</th><th>适用控件</th></tr>
+            <tr><td>click</td><td>按钮点击</td><td>button</td></tr>
+            <tr><td>change</td><td>内容改变</td><td>checkbox, textbox</td></tr>
+            <tr><td>select</td><td>选中项改变</td><td>listbox, combobox</td></tr>
+        </table>
+
+        <div class="demo-box">
+            <div class="demo-header">🔗 完整示例：计数器</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">var</span> count = <span class="num">0</span>;
+
+<span class="kw">func</span> <span class="fn">on_inc</span>() { count = count + <span class="num">1</span>; }
+<span class="kw">func</span> <span class="fn">on_dec</span>() { count = count - <span class="num">1</span>; }
+
+<span class="kw">window</span> Counter {
+    title = <span class="str">"计数器"</span>;
+    width = <span class="num">400</span>;
+    height = <span class="num">250</span>;
+    
+    <span class="type">label</span> {
+        text = <span class="str">"计数：0"</span>;
+        x = <span class="num">100</span>; y = <span class="num">30</span>; width = <span class="num">200</span>; height = <span class="num">40</span>;
+    }
+    
+    <span class="type">button</span> {
+        text = <span class="str">"+1"</span>;
+        x = <span class="num">80</span>; y = <span class="num">100</span>; width = <span class="num">100</span>; height = <span class="num">50</span>;
+        click = <span class="str">"on_inc"</span>;
+    }
+    
+    <span class="type">button</span> {
+        text = <span class="str">"-1"</span>;
+        x = <span class="num">220</span>; y = <span class="num">100</span>; width = <span class="num">100</span>; height = <span class="num">50</span>;
+        click = <span class="str">"on_dec"</span>;
+    }
+}</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 状态 -->
+<section class="section" id="status" style="background:rgba(255,255,255,0.02);">
+    <div class="container">
+        <h2>当前状态</h2>
+        <p class="desc">核心已全部跑通并实测验证</p>
+
+        <div class="features" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));">
+            <div class="feature-card">
+                <h3>✅ 已完成</h3>
+                <p style="line-height:2;">
+                    • 语言解析（变量/函数/数组/运算符）<br>
+                    • 原生窗口 + 深色 Metro 主题<br>
+                    • 11 种 Win32 控件<br>
+                    • 事件绑定（click/change/select）<br>
+                    • 8 线程池<br>
+                    • 游戏循环<br>
+                    • 文件读写<br>
+                    • 模块系统（加载 C 写的 DLL）<br>
+                    • 通用 callAPI<br>
+                    • 引用计数内存管理
+                </p>
+            </div>
+            <div class="feature-card">
+                <h3>🚧 待完成</h3>
+                <p style="line-height:2;">
+                    • GDI 绘图暴露为 W 内置函数<br>
+                    • 对象属性访问（obj.field）<br>
+                    • 标准库 lib/*.w<br>
+                    • 示例程序 examples/*.w<br>
+                    • break / continue<br>
+                    • Unicode 支持（当前为 ANSI）
+                </p>
+            </div>
+        </div>
+
+        <div class="demo-box" style="margin-top:24px;">
+            <div class="demo-header">📦 交付物</div>
+            <div class="demo-content">
+                <table class="cmd-table">
+                    <tr><th>文件</th><th>说明</th><th>状态</th></tr>
+                    <tr><td>W_Compiler.dll</td><td>核心引擎</td><td><span class="status-ok">✅ 完成</span></td></tr>
+                    <tr><td>W_Runner.exe</td><td>命令行运行时</td><td><span class="status-ok">✅ 完成</span></td></tr>
+                    <tr><td>w_compiler.h</td><td>接口定义</td><td><span class="status-ok">✅ 完成</span></td></tr>
+                    <tr><td>w_module_sdk.h</td><td>模块 SDK</td><td><span class="status-ok">✅ 完成</span></td></tr>
+                    <tr><td>教学手册</td><td>完整教程</td><td><span class="status-ok">✅ 完成</span></td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 页脚 -->
+<footer>
+    <div class="container">
+        <p class="cta-text">🪟 准备好用 W 语言写界面了吗？</p>
+        <div class="btn-row">
+            <a href="W-tutorial.html" class="btn btn-primary">📖 查看教程</a>
+            <a href="#" class="btn btn-outline">📥 下载 W</a>
+            <a href="index.html" class="btn btn-outline">← 返回导航</a>
+        </div>
+        <p style="margin-top:30px;font-size:12px;color:#555;">
+            W 语言项目组 · 2026 年 9 月 · MIT License
+        </p>
+    </div>
+</footer>
+
+</body>
+</html>

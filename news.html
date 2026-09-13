@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>最新资讯 - Search</title>
+<style>
+:root {
+    --bg: #0a0a1e;
+    --card: #12122a;
+    --text: #e0e0e0;
+    --accent: #0078D4;
+    --accent2: #00ccff;
+    --gold: #FFD700;
+    --green: #00ff41;
+    --purple: #9944ff;
+    --red: #ff4444;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+    min-height: 100vh;
+    background: radial-gradient(ellipse at 50% 0%, rgba(0,120,212,0.15) 0%, transparent 70%);
+}
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* 头部 */
+.header {
+    padding: 60px 0 40px;
+    text-align: center;
+}
+.header .logo {
+    font-size: 36px;
+    font-weight: bold;
+    color: var(--accent2);
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+}
+.header .logo span { color: var(--green); }
+.header .subtitle {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 20px;
+}
+.back-btn {
+    display: inline-block;
+    padding: 8px 20px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    color: #aaa;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+.back-btn:hover {
+    border-color: var(--accent2);
+    color: #fff;
+}
+
+/* 筛选 */
+.filters {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin: 30px 0;
+}
+.filter-btn {
+    padding: 8px 20px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    color: #aaa;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+.filter-btn:hover {
+    border-color: var(--accent2);
+    color: #fff;
+}
+.filter-btn.active {
+    background: rgba(0,204,255,0.15);
+    border-color: var(--accent2);
+    color: var(--accent2);
+}
+
+/* 新闻列表 */
+.news-list {
+    padding-bottom: 80px;
+}
+.news-item {
+    background: var(--card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin-bottom: 14px;
+    cursor: pointer;
+    transition: all 0.25s;
+    animation: fadeIn 0.3s ease-out backwards;
+}
+.news-item:hover {
+    border-color: rgba(0,204,255,0.4);
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(0,120,212,0.2);
+}
+.news-item .meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: #888;
+}
+.news-item .date {
+    color: var(--accent2);
+}
+.news-item .category {
+    padding: 2px 10px;
+    background: rgba(0,204,255,0.1);
+    color: var(--accent2);
+    border-radius: 10px;
+    font-size: 11px;
+}
+.news-item .title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 8px;
+}
+.news-item .summary {
+    font-size: 13px;
+    color: #999;
+    line-height: 1.7;
+}
+.news-item .tags {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+.news-item .tag {
+    font-size: 11px;
+    padding: 2px 10px;
+    background: rgba(255,215,0,0.1);
+    color: var(--gold);
+    border-radius: 10px;
+}
+
+/* 详情页 */
+.detail {
+    display: none;
+    padding-bottom: 80px;
+}
+.detail.active { display: block; animation: fadeIn 0.3s ease-out; }
+.detail-back {
+    display: inline-block;
+    padding: 8px 18px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    color: #aaa;
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: 24px;
+    transition: all 0.2s;
+}
+.detail-back:hover {
+    border-color: var(--accent2);
+    color: #fff;
+}
+.detail-header {
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+}
+.detail-title {
+    font-size: 28px;
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 12px;
+}
+.detail-meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 13px;
+    color: #888;
+}
+.detail-meta .date { color: var(--accent2); }
+.detail-meta .category {
+    padding: 2px 10px;
+    background: rgba(0,204,255,0.1);
+    color: var(--accent2);
+    border-radius: 10px;
+    font-size: 11px;
+}
+.detail-content {
+    font-size: 15px;
+    color: #ccc;
+    line-height: 1.9;
+}
+.detail-content h2 {
+    font-size: 22px;
+    color: var(--accent2);
+    margin: 28px 0 14px;
+}
+.detail-content h3 {
+    font-size: 17px;
+    color: #fff;
+    margin: 22px 0 10px;
+}
+.detail-content p {
+    margin-bottom: 14px;
+}
+.detail-content ul, .detail-content ol {
+    margin: 12px 0 12px 24px;
+}
+.detail-content li {
+    margin-bottom: 6px;
+}
+.detail-content strong {
+    color: var(--gold);
+}
+.detail-content code {
+    background: rgba(255,255,255,0.08);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'Consolas', monospace;
+    font-size: 13px;
+    color: var(--green);
+}
+.detail-content pre {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #d4d4d4;
+    overflow-x: auto;
+    margin: 14px 0;
+    white-space: pre;
+}
+.detail-content a {
+    color: var(--accent2);
+    text-decoration: none;
+}
+.detail-content a:hover {
+    text-decoration: underline;
+}
+.detail-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 13px;
+}
+.detail-content table th {
+    background: rgba(0,204,255,0.1);
+    color: var(--accent2);
+    padding: 8px 12px;
+    text-align: left;
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.detail-content table td {
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,0.04);
+    color: #aaa;
+}
+
+/* 加载状态 */
+.loading {
+    text-align: center;
+    padding: 60px 0;
+    color: #666;
+}
+.loading .spinner {
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    border: 3px solid rgba(0,204,255,0.2);
+    border-top-color: var(--accent2);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.error {
+    text-align: center;
+    padding: 40px;
+    color: var(--red);
+    font-size: 14px;
+}
+
+/* 页脚 */
+footer {
+    text-align: center;
+    padding: 30px 0;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    font-size: 12px;
+    color: #555;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+    .header .logo { font-size: 26px; }
+    .news-item { padding: 18px 16px; }
+    .news-item .title { font-size: 16px; }
+    .detail-title { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- 列表页 -->
+    <div id="listPage">
+        <div class="header">
+            <div class="logo">📰 <span>News</span></div>
+            <div class="subtitle">最新资讯 · 项目动态 · 更新公告</div>
+            <a href="index.html" class="back-btn">← 返回导航</a>
+        </div>
+
+        <div class="filters" id="filters"></div>
+        <div class="news-list" id="newsList">
+            <div class="loading"><div class="spinner"></div><p style="margin-top:14px;">正在加载新闻...</p></div>
+        </div>
+    </div>
+
+    <!-- 详情页 -->
+    <div class="detail" id="detailPage">
+        <div class="detail-back" onclick="backToList()">← 返回列表</div>
+        <div class="detail-header">
+            <div class="detail-title" id="detailTitle"></div>
+            <div class="detail-meta">
+                <span class="date" id="detailDate"></span>
+                <span class="category" id="detailCategory"></span>
+            </div>
+        </div>
+        <div class="detail-content" id="detailContent"></div>
+    </div>
+
+</div>
+
+<footer>
+    © 2026 闪讯工作社 Snxth.
+</footer>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  配置：news.json 的路径
+// ═══════════════════════════════════════════════════════════════
+var NEWS_JSON_URL = 'news.json';
+
+var newsData = [];
+var currentFilter = 'all';
+var currentNews = null;
+
+// ═══════════════════════════════════════════════════════════════
+//  加载新闻
+// ═══════════════════════════════════════════════════════════════
+function loadNews() {
+    fetch(NEWS_JSON_URL + '?t=' + Date.now())
+        .then(function(res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+        })
+        .then(function(data) {
+            newsData = data.news || [];
+            renderFilters();
+            renderNewsList();
+        })
+        .catch(function(err) {
+            document.getElementById('newsList').innerHTML =
+                '<div class="error">❌ 加载失败: ' + err.message + '<br><br>' +
+                '<small style="color:#888;">请确认 news.json 已上传到同一目录</small></div>';
+        });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  渲染筛选按钮
+// ═══════════════════════════════════════════════════════════════
+function renderFilters() {
+    var categories = {};
+    newsData.forEach(function(n) {
+        categories[n.category] = (categories[n.category] || 0) + 1;
+    });
+
+    var categoryNames = {
+        'update': '🔄 更新',
+        'release': '📦 发布',
+        'event': '🎉 活动',
+        'notice': '📢 公告'
+    };
+
+    var h = '<button class="filter-btn' + (currentFilter === 'all' ? ' active' : '') + '" onclick="setFilter(\'all\')">全部 (' + newsData.length + ')</button>';
+    Object.keys(categories).forEach(function(cat) {
+        var name = categoryNames[cat] || cat;
+        h += '<button class="filter-btn' + (currentFilter === cat ? ' active' : '') + '" onclick="setFilter(\'' + cat + '\')">' + name + ' (' + categories[cat] + ')</button>';
+    });
+    document.getElementById('filters').innerHTML = h;
+}
+
+function setFilter(f) {
+    currentFilter = f;
+    renderFilters();
+    renderNewsList();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  渲染新闻列表
+// ═══════════════════════════════════════════════════════════════
+function renderNewsList() {
+    var list = document.getElementById('newsList');
+    var filtered = newsData.filter(function(n) {
+        return currentFilter === 'all' || n.category === currentFilter;
+    });
+
+    if (filtered.length === 0) {
+        list.innerHTML = '<div class="loading">暂无新闻</div>';
+        return;
+    }
+
+    var categoryNames = {
+        'update': '🔄 更新',
+        'release': '📦 发布',
+        'event': '🎉 活动',
+        'notice': '📢 公告'
+    };
+
+    var h = '';
+    filtered.forEach(function(n, i) {
+        h += '<div class="news-item" onclick="openNews(' + n.id + ')" style="animation-delay:' + (i * 0.05) + 's">';
+        h += '<div class="meta">';
+        h += '<span class="date">' + n.date + '</span>';
+        h += '<span class="category">' + (categoryNames[n.category] || n.category) + '</span>';
+        h += '</div>';
+        h += '<div class="title">' + escapeHtml(n.title) + '</div>';
+        h += '<div class="summary">' + escapeHtml(n.summary) + '</div>';
+        if (n.tags && n.tags.length > 0) {
+            h += '<div class="tags">';
+            n.tags.forEach(function(t) {
+                h += '<span class="tag">' + escapeHtml(t) + '</span>';
+            });
+            h += '</div>';
+        }
+        h += '</div>';
+    });
+    list.innerHTML = h;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  打开新闻详情
+// ═══════════════════════════════════════════════════════════════
+function openNews(id) {
+    var n = newsData.find(function(x) { return x.id === id; });
+    if (!n) return;
+    currentNews = n;
+
+    var categoryNames = {
+        'update': '🔄 更新',
+        'release': '📦 发布',
+        'event': '🎉 活动',
+        'notice': '📢 公告'
+    };
+
+    document.getElementById('detailTitle').textContent = n.title;
+    document.getElementById('detailDate').textContent = n.date;
+    document.getElementById('detailCategory').textContent = categoryNames[n.category] || n.category;
+    document.getElementById('detailContent').innerHTML = renderMarkdown(n.content || n.summary);
+
+    document.getElementById('listPage').style.display = 'none';
+    document.getElementById('detailPage').classList.add('active');
+    window.scrollTo(0, 0);
+}
+
+function backToList() {
+    document.getElementById('detailPage').classList.remove('active');
+    document.getElementById('listPage').style.display = 'block';
+    currentNews = null;
+    window.scrollTo(0, 0);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  简易 Markdown 渲染
+// ═══════════════════════════════════════════════════════════════
+function renderMarkdown(text) {
+    if (!text) return '';
+    var html = text;
+
+    // 代码块
+    html = html.replace(/```([\s\S]*?)```/g, function(m, code) {
+        return '<pre>' + escapeHtml(code.trim()) + '</pre>';
+    });
+
+    // 表格
+    html = html.replace(/((?:^\|.*\|$\n?)+)/gm, function(match) {
+        var lines = match.trim().split('\n');
+        if (lines.length < 2) return match;
+        var h = '<table>';
+        lines.forEach(function(line, i) {
+            if (/^\|[\s\-:]+\|$/.test(line)) return;
+            var cells = line.split('|').slice(1, -1);
+            var tag = i === 0 ? 'th' : 'td';
+            h += '<tr>';
+            cells.forEach(function(c) {
+                h += '<' + tag + '>' + c.trim() + '</' + tag + '>';
+            });
+            h += '</tr>';
+        });
+        h += '</table>';
+        return h;
+    });
+
+    // 标题
+    html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.*$)/gm, '<h2>$1</h2>');
+
+    // 列表
+    html = html.replace(/^\s*[-*] (.*$)/gm, '<li>$1</li>');
+    html = html.replace(/^\s*\d+\. (.*$)/gm, '<li>$1</li>');
+    html = html.replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, '<ul>$1</ul>');
+
+    // 加粗
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    // 行内代码
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // 链接
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+    // 段落
+    var lines = html.split('\n');
+    var result = [];
+    lines.forEach(function(line) {
+        var trimmed = line.trim();
+        if (!trimmed) return;
+        if (trimmed.match(/^<(h\d|ul|ol|li|pre|table|tr|th|td|blockquote)/)) {
+            result.push(trimmed);
+        } else if (trimmed.match(/^<\//)) {
+            result.push(trimmed);
+        } else {
+            result.push('<p>' + trimmed + '</p>');
+        }
+    });
+
+    return result.join('');
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// 键盘 Esc 返回
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && currentNews) {
+        backToList();
+    }
+});
+
+// 启动
+loadNews();
+</script>
+
+</body>
+</html>

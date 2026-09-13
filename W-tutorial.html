@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>W 语言教学手册</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    background: #f5f5f5;
+    color: #1a1a1a;
+    line-height: 1.8;
+    font-size: 15px;
+}
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* 侧边目录 */
+.toc {
+    width: 260px;
+    background: #ffffff;
+    border-right: 1px solid #e0e0e0;
+    padding: 20px 0;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    overflow-y: auto;
+    z-index: 10;
+}
+.toc h1 {
+    font-size: 16px;
+    color: #0078D4;
+    padding: 0 20px 15px;
+    border-bottom: 1px solid #f0f0f0;
+    margin-bottom: 10px;
+}
+.toc-item {
+    display: block;
+    padding: 8px 20px;
+    font-size: 13px;
+    color: #555;
+    text-decoration: none;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all 0.15s;
+}
+.toc-item:hover {
+    background: #f0f7ff;
+    color: #0078D4;
+}
+.toc-item.active {
+    background: #f0f7ff;
+    color: #0078D4;
+    border-left-color: #0078D4;
+    font-weight: 600;
+}
+.toc-item.sub {
+    padding-left: 36px;
+    font-size: 12px;
+    color: #888;
+}
+.toc-item.sub:hover {
+    color: #0078D4;
+}
+
+/* 主内容区 */
+.content {
+    margin-left: 260px;
+    flex: 1;
+    max-width: 800px;
+    padding: 40px 50px 100px;
+    background: #ffffff;
+    min-height: 100vh;
+}
+
+/* 页码指示器 */
+.page-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 30px;
+    background: rgba(0,120,212,0.9);
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-size: 12px;
+    z-index: 20;
+    backdrop-filter: blur(5px);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+}
+.page-indicator .current { font-weight: bold; font-size: 14px; }
+.page-indicator .total { opacity: 0.7; }
+
+/* 顶部导航按钮 */
+.page-nav {
+    position: fixed;
+    bottom: 20px;
+    right: 120px;
+    display: flex;
+    gap: 6px;
+    z-index: 20;
+}
+.page-nav button {
+    background: #fff;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: #555;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+}
+.page-nav button:hover {
+    border-color: #0078D4;
+    color: #0078D4;
+}
+.page-nav button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* 页面标题 */
+h1.page-title {
+    font-size: 28px;
+    color: #0078D4;
+    margin-bottom: 8px;
+    text-align: center;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #0078D4;
+}
+.page-subtitle {
+    text-align: center;
+    color: #888;
+    font-size: 13px;
+    margin-bottom: 30px;
+}
+
+/* 章节 */
+h2 {
+    font-size: 22px;
+    color: #0078D4;
+    margin: 40px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e8e8e8;
+}
+h3 {
+    font-size: 17px;
+    color: #333;
+    margin: 24px 0 10px;
+}
+h4 {
+    font-size: 15px;
+    color: #555;
+    margin: 18px 0 8px;
+}
+p {
+    font-size: 15px;
+    color: #444;
+    margin-bottom: 12px;
+    line-height: 1.9;
+}
+ul, ol {
+    margin: 12px 0 12px 24px;
+    font-size: 15px;
+    color: #444;
+}
+li {
+    margin-bottom: 6px;
+    line-height: 1.8;
+}
+strong { color: #1a1a1a; }
+
+/* 代码块 */
+pre {
+    background: #f8f8f8;
+    border: 1px solid #e0e0e0;
+    border-left: 4px solid #0078D4;
+    border-radius: 4px;
+    padding: 16px 20px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #333;
+    overflow-x: auto;
+    margin: 14px 0;
+    white-space: pre;
+}
+code {
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    color: #c7254e;
+}
+pre code {
+    background: none;
+    padding: 0;
+    color: #333;
+}
+
+/* 表格 */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+}
+table th {
+    background: #f0f7ff;
+    color: #0078D4;
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid #e0e0e0;
+    font-weight: 600;
+}
+table td {
+    padding: 10px 14px;
+    border: 1px solid #e0e0e0;
+    color: #444;
+}
+table tr:nth-child(even) {
+    background: #fafafa;
+}
+
+/* 提示框 */
+.note {
+    background: #fff8e0;
+    border-left: 4px solid #f0c040;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 14px 0;
+    font-size: 14px;
+    color: #666;
+}
+.tip {
+    background: #e8f4fd;
+    border-left: 4px solid #0078D4;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 14px 0;
+    font-size: 14px;
+    color: #555;
+}
+.warning {
+    background: #fde8e8;
+    border-left: 4px solid #e74c3c;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 14px 0;
+    font-size: 14px;
+    color: #666;
+}
+
+/* 页面 */
+.page {
+    display: none;
+}
+.page.active {
+    display: block;
+    animation: fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 目录页 */
+.toc-page-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 20px;
+}
+.toc-card {
+    background: #f9f9f9;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.toc-card:hover {
+    background: #f0f7ff;
+    border-color: #0078D4;
+}
+.toc-card .num {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    text-align: center;
+    background: #0078D4;
+    color: #fff;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: bold;
+    margin-right: 10px;
+}
+.toc-card .name {
+    font-size: 14px;
+    color: #333;
+    font-weight: 500;
+}
+
+/* 移动端 */
+@media (max-width: 900px) {
+    .toc {
+        width: 100%;
+        position: relative;
+        border-right: none;
+        border-bottom: 1px solid #e0e0e0;
+        max-height: 200px;
+    }
+    .content {
+        margin-left: 0;
+        padding: 20px 20px 100px;
+    }
+    .page-nav {
+        right: 20px;
+        bottom: 70px;
+    }
+    .toc-page-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+    <!-- 侧边目录 -->
+    <div class="toc">
+        <h1>📖 W 语言教学手册</h1>
+        <a class="toc-item" onclick="goPage(0)">封面</a>
+        <a class="toc-item" onclick="goPage(1)">目录</a>
+        <a class="toc-item" onclick="goPage(2)">1. W语言是什么</a>
+        <a class="toc-item" onclick="goPage(3)">2. 第一个程序</a>
+        <a class="toc-item sub" onclick="goPage(3)">2.1 最小窗口</a>
+        <a class="toc-item sub" onclick="goPage(3)">2.2 加一个按钮</a>
+        <a class="toc-item sub" onclick="goPage(3)">2.3 文件结构</a>
+        <a class="toc-item" onclick="goPage(4)">3. 变量</a>
+        <a class="toc-item sub" onclick="goPage(4)">3.1 声明</a>
+        <a class="toc-item sub" onclick="goPage(4)">3.2 三种类型</a>
+        <a class="toc-item sub" onclick="goPage(4)">3.3 赋值</a>
+        <a class="toc-item sub" onclick="goPage(4)">3.4 作用域</a>
+        <a class="toc-item" onclick="goPage(5)">4. 运算</a>
+        <a class="toc-item" onclick="goPage(6)">5. 字符串</a>
+        <a class="toc-item" onclick="goPage(7)">6. 条件判断</a>
+        <a class="toc-item" onclick="goPage(8)">7. 循环</a>
+        <a class="toc-item" onclick="goPage(9)">8. 函数</a>
+        <a class="toc-item" onclick="goPage(10)">9. 数组</a>
+        <a class="toc-item" onclick="goPage(11)">10. 窗口</a>
+        <a class="toc-item" onclick="goPage(12)">11. 控件</a>
+        <a class="toc-item" onclick="goPage(13)">12. 事件</a>
+        <a class="toc-item" onclick="goPage(14)">13. 线程</a>
+        <a class="toc-item" onclick="goPage(15)">14. 游戏循环</a>
+        <a class="toc-item" onclick="goPage(16)">15. 模块</a>
+        <a class="toc-item" onclick="goPage(17)">16. 文件读写</a>
+        <a class="toc-item" onclick="goPage(18)">17. 内置函数速查</a>
+        <a class="toc-item" onclick="goPage(19)">18. 语法速查表</a>
+        <a class="toc-item" onclick="goPage(20)">附录A：常见错误</a>
+        <a class="toc-item" onclick="goPage(21)">附录B：W_Runner用法</a>
+        <a class="toc-item" onclick="goPage(22)">附录C：计数器示例</a>
+        <a class="toc-item" onclick="goPage(23)">附录D：方块移动示例</a>
+    </div>
+
+    <!-- 内容区 -->
+    <div class="content">
+
+        <!-- 封面 -->
+        <div class="page active" id="page0">
+            <h1 class="page-title">W 语言教学手册</h1>
+            <p class="page-subtitle">版本 1.0 · 2026 年 9 月</p>
+            <div style="text-align:center;padding:60px 0;">
+                <div style="font-size:80px;margin-bottom:20px;">🪟</div>
+                <p style="font-size:18px;color:#0078D4;font-weight:bold;">W 语言 · Windows 界面开发语言</p>
+                <p style="font-size:14px;color:#888;margin-top:10px;">纯 C 实现 · Win32 原生 · 即写即运行</p>
+                <div style="margin-top:40px;">
+                    <button onclick="goPage(1)" style="padding:12px 32px;background:#0078D4;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:15px;font-family:inherit;">开始阅读 →</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 目录页 -->
+        <div class="page" id="page1">
+            <h1 class="page-title">目录</h1>
+            <div class="toc-page-grid">
+                <div class="toc-card" onclick="goPage(2)"><span class="num">1</span><span class="name">W语言是什么</span></div>
+                <div class="toc-card" onclick="goPage(3)"><span class="num">2</span><span class="name">第一个程序</span></div>
+                <div class="toc-card" onclick="goPage(4)"><span class="num">3</span><span class="name">变量</span></div>
+                <div class="toc-card" onclick="goPage(5)"><span class="num">4</span><span class="name">运算</span></div>
+                <div class="toc-card" onclick="goPage(6)"><span class="num">5</span><span class="name">字符串</span></div>
+                <div class="toc-card" onclick="goPage(7)"><span class="num">6</span><span class="name">条件判断</span></div>
+                <div class="toc-card" onclick="goPage(8)"><span class="num">7</span><span class="name">循环</span></div>
+                <div class="toc-card" onclick="goPage(9)"><span class="num">8</span><span class="name">函数</span></div>
+                <div class="toc-card" onclick="goPage(10)"><span class="num">9</span><span class="name">数组</span></div>
+                <div class="toc-card" onclick="goPage(11)"><span class="num">10</span><span class="name">窗口</span></div>
+                <div class="toc-card" onclick="goPage(12)"><span class="num">11</span><span class="name">控件</span></div>
+                <div class="toc-card" onclick="goPage(13)"><span class="num">12</span><span class="name">事件</span></div>
+                <div class="toc-card" onclick="goPage(14)"><span class="num">13</span><span class="name">线程</span></div>
+                <div class="toc-card" onclick="goPage(15)"><span class="num">14</span><span class="name">游戏循环</span></div>
+                <div class="toc-card" onclick="goPage(16)"><span class="num">15</span><span class="name">模块</span></div>
+                <div class="toc-card" onclick="goPage(17)"><span class="num">16</span><span class="name">文件读写</span></div>
+                <div class="toc-card" onclick="goPage(18)"><span class="num">17</span><span class="name">内置函数速查</span></div>
+                <div class="toc-card" onclick="goPage(19)"><span class="num">18</span><span class="name">语法速查表</span></div>
+                <div class="toc-card" onclick="goPage(20)"><span class="num">A</span><span class="name">常见错误</span></div>
+                <div class="toc-card" onclick="goPage(21)"><span class="num">B</span><span class="name">W_Runner用法</span></div>
+                <div class="toc-card" onclick="goPage(22)"><span class="num">C</span><span class="name">计数器示例</span></div>
+                <div class="toc-card" onclick="goPage(23)"><span class="num">D</span><span class="name">方块移动示例</span></div>
+            </div>
+        </div>
+
+        <!-- 1. W语言是什么 -->
+        <div class="page" id="page2">
+            <h1 class="page-title">1. W语言是什么</h1>
+            <p>W语言 = 专为Windows界面开发设计的语言，用纯C实现，直接调用系统原生API。</p>
+            <h3>特点：</h3>
+            <ul>
+                <li>.w 文件即写即运行，不编译</li>
+                <li>声明式写窗口，命令式写逻辑</li>
+                <li>直接调Win32/系统DLL</li>
+                <li>原生性能，无解释器开销</li>
+            </ul>
+            <p>语法长这样：</p>
+            <pre>window Hello {
+    title = "Hello W";
+    width = 400;
+    height = 300;
+    button {
+        text = "点我";
+        x = 20; y = 20;
+        click = "on_click";
+    }
+}
+
+func on_click() {
+    var msg = "你好，W!";
+}</pre>
+        </div>
+
+        <!-- 2. 第一个程序 -->
+        <div class="page" id="page3">
+            <h1 class="page-title">2. 第一个程序</h1>
+            
+            <h3>2.1 最小窗口</h3>
+            <p>新建 hello.w：</p>
+            <pre>window Main {
+    title = "Hello";
+    width = 400;
+    height = 300;
+}</pre>
+            <p>运行：</p>
+            <pre>W_Runner.exe
+
+W&gt; cd C:\你的目录
+W&gt; hello.w</pre>
+            <p>一个窗口弹出来。就这样。</p>
+
+            <h3>2.2 加一个按钮</h3>
+            <pre>window Main {
+    title = "Hello";
+    width = 400;
+    height = 300;
+    
+    button {
+        text = "点我";
+        x = 100; y = 100;
+        width = 200; height = 50;
+    }
+}</pre>
+
+            <h3>2.3 文件结构</h3>
+            <p>一个 .w 文件里，可以按任意顺序写：</p>
+            <ul>
+                <li><code>var</code> 变量声明</li>
+                <li><code>func</code> 函数定义</li>
+                <li><code>import</code> 模块导入</li>
+                <li>顶层语句（赋值、调用等）</li>
+                <li><code>window</code> 窗口声明</li>
+            </ul>
+            <div class="tip">执行顺序：先注册函数 → 加载模块 → 执行顶层语句 → 创建窗口。</div>
+        </div>
+
+        <!-- 3. 变量 -->
+        <div class="page" id="page4">
+            <h1 class="page-title">3. 变量</h1>
+
+            <h3>3.1 声明</h3>
+            <p>用 <code>var</code> 声明，必须赋初值。</p>
+
+            <h3>3.2 三种类型</h3>
+            <table>
+                <tr><th>类型</th><th>例子</th></tr>
+                <tr><td>数字</td><td>10、3.14、-5</td></tr>
+                <tr><td>字符串</td><td>"hello"、"你好"</td></tr>
+                <tr><td>布尔</td><td>true、false</td></tr>
+                <tr><td>空</td><td>null</td></tr>
+            </table>
+            <p>没有显式类型标注，W自动判断。</p>
+
+            <h3>3.3 赋值</h3>
+            <pre>var x = 10;
+x = 20;      // 改值
+x = x + 5;   // x 变成25</pre>
+
+            <h3>3.4 作用域</h3>
+            <ul>
+                <li>全局变量：函数外声明</li>
+                <li>局部变量：函数内声明，函数结束就消失</li>
+                <li>for循环变量：for(var i=...)里的 i 只在循环内有效</li>
+            </ul>
+            <pre>var global = 1;
+
+func test() {
+    var local = 2;   // 只在这个函数里
+    global = 100;    // 改全局变量
+}
+
+func test2() {
+    var local = 3;   // 另一个局部
+    global = 100;    // 也能改全局
+}</pre>
+            <div class="warning">关键规则：<br>
+            <code>var x = ...</code> 在当前作用域新建变量<br>
+            <code>x = ...</code> 沿作用域链找，找到就改；找不到写到全局</div>
+        </div>
+
+        <!-- 4. 运算 -->
+        <div class="page" id="page5">
+            <h1 class="page-title">4. 运算</h1>
+
+            <h3>4.1 算术</h3>
+            <table>
+                <tr><th>运算符</th><th>说明</th><th>例子</th></tr>
+                <tr><td>+</td><td>加</td><td>1 + 2 = 3</td></tr>
+                <tr><td>-</td><td>减</td><td>5 - 2 = 3</td></tr>
+                <tr><td>*</td><td>乘</td><td>3 * 4 = 12</td></tr>
+                <tr><td>/</td><td>除</td><td>10 / 2 = 5</td></tr>
+                <tr><td>%</td><td>取余</td><td>10 % 3 = 1</td></tr>
+            </table>
+
+            <h3>4.2 比较</h3>
+            <table>
+                <tr><th>运算符</th><th>说明</th></tr>
+                <tr><td>==</td><td>等于</td></tr>
+                <tr><td>!=</td><td>不等于</td></tr>
+                <tr><td>&gt;</td><td>大于</td></tr>
+                <tr><td>&lt;</td><td>小于</td></tr>
+                <tr><td>&gt;=</td><td>大于等于</td></tr>
+                <tr><td>&lt;=</td><td>小于等于</td></tr>
+            </table>
+
+            <h3>4.3 逻辑</h3>
+            <table>
+                <tr><th>运算符</th><th>说明</th></tr>
+                <tr><td>&amp;&amp;</td><td>与</td></tr>
+                <tr><td>||</td><td>或</td></tr>
+                <tr><td>!</td><td>非</td></tr>
+            </table>
+
+            <p>用括号改变顺序：</p>
+            <pre>var a = (1 + 2) * 3;  // 9
+var b = 1 + 2 * 3;    // 7</pre>
+        </div>
+
+        <!-- 5. 字符串 -->
+        <div class="page" id="page6">
+            <h1 class="page-title">5. 字符串</h1>
+
+            <h3>5.1 声明</h3>
+            <pre>var a = "hello";
+var b = "你好，世界";
+var c = "带\"引号\"的字符串";
+var d = "换行\n制表\t";</pre>
+
+            <h3>5.2 拼接</h3>
+            <p>用 <code>+</code>：</p>
+            <pre>var greeting = "Hello" + " " + "W";  // "Hello W"</pre>
+        </div>
+
+        <!-- 6. 条件判断 -->
+        <div class="page" id="page7">
+            <h1 class="page-title">6. 条件判断</h1>
+
+            <h3>6.1 if</h3>
+            <pre>if (x &gt; 10) {
+    // x 大于 10
+}</pre>
+
+            <h3>6.2 if / else</h3>
+            <pre>if (score &gt;= 60) {
+    result = "及格";
+} else {
+    result = "不及格";
+}</pre>
+
+            <h3>6.3 嵌套</h3>
+            <pre>if (a &gt; 0) {
+    if (b &gt; 0) {
+        quadrant = 1;
+    } else {
+        quadrant = 4;
+    }
+} else {
+    if (b &gt; 0) {
+        quadrant = 2;
+    } else {
+        quadrant = 3;
+    }
+}</pre>
+        </div>
+
+        <!-- 7. 循环 -->
+        <div class="page" id="page8">
+            <h1 class="page-title">7. 循环</h1>
+
+            <h3>7.1 for 循环</h3>
+            <pre>for (var i = 0; i &lt; 10; i = i + 1) {
+    // i = 0,1,2,...,9
+}</pre>
+            <p>结构：</p>
+            <pre>for (初始化；条件；更新) {
+    循环体
+}</pre>
+            <p>例子：求和</p>
+            <pre>var total = 0;
+for (var i = 1; i &lt;= 100; i = i + 1) {
+    total = total + i;
+}
+// total = 5050</pre>
+
+            <h3>7.2 while 循环</h3>
+            <pre>var n = 10;
+while (n &gt; 0) {
+    n = n - 1;
+}
+// n 最终 = 0</pre>
+            <div class="warning">注意：while 不会自动退出，条件一定要能在某处变假，否则死循环。</div>
+
+            <h3>7.3 循环控制</h3>
+            <p>W 语言目前没有 break / continue。退出循环用条件：</p>
+            <pre>var i = 0;
+var running = 1;
+while (running) {
+    if (i &gt;= 10) {
+        running = 0;
+    }
+    i = i + 1;
+}</pre>
+        </div>
+
+        <!-- 8. 函数 -->
+        <div class="page" id="page9">
+            <h1 class="page-title">8. 函数</h1>
+
+            <h3>8.1 定义</h3>
+            <pre>func 函数名(参数1, 参数2) {
+    // 函数体
+    return 返回值;
+}</pre>
+
+            <h3>8.2 无参数无返回</h3>
+            <pre>func say_hello() {
+    var msg = "hello";
+}</pre>
+
+            <h3>8.3 有参数</h3>
+            <pre>func add(a, b) {
+    return a + b;
+}</pre>
+
+            <h3>8.4 调用</h3>
+            <pre>var result = add(10, 20);  // 30</pre>
+
+            <h3>8.5 递归</h3>
+            <pre>func fib(n) {
+    if (n &lt; 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+var x = fib(10);  // 55</pre>
+            <p>W 支持递归，但有深度限制（1000层）。</p>
+
+            <h3>8.6 函数名规则</h3>
+            <p>函数名不能用 W 关键字（如 if、while、for、var、func、window、return、import）。</p>
+            <p>推荐命名：小写 + 下划线</p>
+            <pre>func on_button_click() {
+func calculate_total() {
+func get_user_name() {</pre>
+        </div>
+
+        <!-- 9. 数组 -->
+        <div class="page" id="page10">
+            <h1 class="page-title">9. 数组</h1>
+
+            <h3>9.1 创建</h3>
+            <pre>var arr = [10, 20, 30, 40, 50];</pre>
+
+            <h3>9.2 访问</h3>
+            <pre>var first = arr[0];   // 10
+var third = arr[2];   // 30</pre>
+            <p>索引从0开始。</p>
+
+            <h3>9.3 修改</h3>
+            <pre>arr[0] = 100;  // 第一个元素改成100</pre>
+
+            <h3>9.4 遍历</h3>
+            <pre>var arr = [10, 20, 30, 40, 50];
+var sum = 0;
+for (var i = 0; i &lt; 5; i = i + 1) {
+    sum = sum + arr[i];
+}
+// sum = 150</pre>
+
+            <h3>9.5 常见操作</h3>
+            <p>求和：</p>
+            <pre>var total = 0;
+for (var i = 0; i &lt; 5; i = i + 1) {
+    total = total + arr[i];
+}</pre>
+            <p>找最大值：</p>
+            <pre>var max = arr[0];
+for (var i = 1; i &lt; 5; i = i + 1) {
+    if (arr[i] &gt; max) {
+        max = arr[i];
+    }
+}</pre>
+
+            <h3>9.6 对象（初步）</h3>
+            <pre>var person = {name = "Alice", age = 30};</pre>
+            <div class="note">注意：目前对象支持创建，但属性访问（person.name）还没完全实现。主要用数组。</div>
+        </div>
+
+        <!-- 10. 窗口 -->
+        <div class="page" id="page11">
+            <h1 class="page-title">10. 窗口</h1>
+
+            <h3>10.1 基本结构</h3>
+            <pre>window 窗口名 {
+    属性 = 值；
+    属性 = 值；
+    
+    控件 {
+        属性 = 值；
+    }
+}</pre>
+
+            <h3>10.2 窗口属性</h3>
+            <table>
+                <tr><th>属性</th><th>类型</th><th>说明</th></tr>
+                <tr><td>title</td><td>字符串</td><td>窗口标题</td></tr>
+                <tr><td>width</td><td>数字</td><td>宽度</td></tr>
+                <tr><td>height</td><td>数字</td><td>高度</td></tr>
+                <tr><td>style</td><td>字符串</td><td>主题样式（如 "metro"）</td></tr>
+                <tr><td>fps</td><td>数字</td><td>游戏循环帧率</td></tr>
+            </table>
+
+            <h3>10.3 例子</h3>
+            <pre>window Main {
+    title = "我的窗口";
+    width = 800;
+    height = 600;
+    style = "metro";
+}</pre>
+
+            <h3>10.4 多个窗口</h3>
+            <p>一个 .w 文件里可以定义多个 window，会依次弹出：</p>
+            <pre>window Win1 {
+    title = "第一个";
+    width = 300;
+    height = 200;
+}
+
+window Win2 {
+    title = "第二个";
+    width = 300;
+    height = 200;
+}</pre>
+        </div>
+
+        <!-- 11. 控件 -->
+        <div class="page" id="page12">
+            <h1 class="page-title">11. 控件</h1>
+            <p>W 支持 11 种原生 Win32 控件。</p>
+
+            <h3>11.1 通用属性</h3>
+            <table>
+                <tr><th>属性</th><th>说明</th></tr>
+                <tr><td>text</td><td>显示的文字</td></tr>
+                <tr><td>x, y</td><td>位置（左上角坐标）</td></tr>
+                <tr><td>width, height</td><td>尺寸</td></tr>
+            </table>
+
+            <h3>11.2 button（按钮）</h3>
+            <pre>button {
+    text = "点我";
+    x = 20;
+    y = 20;
+    width = 100;
+    height = 30;
+    click = "on_click";
+}</pre>
+
+            <h3>11.3 label（标签）</h3>
+            <pre>label {
+    text = "这是一段说明";
+    x = 20;
+    y = 60;
+    width = 200;
+    height = 25;
+}</pre>
+
+            <h3>11.4 textbox（文本框）</h3>
+            <pre>textbox {
+    text = "输入点什么";
+    x = 20;
+    y = 90;
+    width = 300;
+    height = 30;
+}</pre>
+
+            <h3>11.5 checkbox（复选框）</h3>
+            <pre>checkbox {
+    text = "同意协议";
+    x = 20;
+    y = 130;
+    width = 150;
+    height = 25;
+}</pre>
+
+            <h3>11.6 radio（单选按钮）</h3>
+            <pre>radio {
+    text = "选项A";
+    x = 20;
+    y = 170;
+    width = 100;
+    height = 25;
+}</pre>
+
+            <h3>11.7 groupbox（分组框）</h3>
+            <pre>groupbox {
+    text = "设置";
+    x = 20;
+    y = 200;
+    width = 200;
+    height = 100;
+}</pre>
+
+            <h3>11.8 progressbar（进度条）</h3>
+            <pre>progressbar {
+    x = 20;
+    y = 370;
+    width = 300;
+    height = 25;
+}</pre>
+
+            <h3>11.9 slider（滑块）</h3>
+            <pre>slider {
+    x = 20;
+    y = 400;
+    width = 300;
+    height = 35;
+}</pre>
+
+            <h3>11.10 listbox（列表框）</h3>
+            <pre>listbox {
+    x = 20;
+    y = 440;
+    width = 200;
+    height = 150;
+    select = "on_select";
+}</pre>
+
+            <h3>11.11 combobox（下拉框）</h3>
+            <pre>combobox {
+    x = 20;
+    y = 600;
+    width = 200;
+    height = 30;
+    select = "on_select";
+}</pre>
+
+            <h3>11.12 canvas（画布）</h3>
+            <pre>canvas {
+    x = 0;
+    y = 0;
+    width = 800;
+    height = 600;
+}</pre>
+        </div>
+
+        <!-- 12. 事件 -->
+        <div class="page" id="page13">
+            <h1 class="page-title">12. 事件</h1>
+
+            <h3>12.1 三种事件</h3>
+            <table>
+                <tr><th>事件</th><th>触发时机</th><th>适用控件</th></tr>
+                <tr><td>click</td><td>按钮点击</td><td>button</td></tr>
+                <tr><td>change</td><td>内容改变</td><td>checkbox, textbox</td></tr>
+                <tr><td>select</td><td>选中项改变</td><td>listbox, combobox</td></tr>
+            </table>
+
+            <h3>12.2 绑定</h3>
+            <p>在控件里写：</p>
+            <pre>button {
+    text = "点我";
+    click = "on_button_click";
+}</pre>
+            <p><code>"on_button_click"</code> 是函数名。</p>
+
+            <h3>12.3 定义回调</h3>
+            <pre>func on_button_click() {
+    // 这里写点击后做什么
+    var clicked = 1;
+}</pre>
+
+            <h3>12.4 完整例子</h3>
+            <pre>var count = 0;
+
+func on_click() {
+    count = count + 1;
+}
+
+window Main {
+    title = "计数器";
+    width = 300;
+    height = 200;
+    
+    button {
+        text = "点一下 +1";
+        x = 50;
+        y = 50;
+        width = 200;
+        height = 50;
+        click = "on_click";
+    }
+}</pre>
+            <div class="note">注意：目前回调函数没有参数，也拿不到控件当前状态（比如 textbox 里的内容）。要拿控件内容，用 <code>get_text</code>（控件索引）。</div>
+        </div>
+
+        <!-- 13. 线程 -->
+        <div class="page" id="page14">
+            <h1 class="page-title">13. 线程</h1>
+
+            <h3>13.1 启动线程</h3>
+            <pre>func worker() {
+    // 在线程里跑
+    var result = 42;
+}
+
+thread_run("worker", "参数");</pre>
+            <p><code>thread_run(函数名, 参数字符串)</code>。</p>
+            <p><strong>最多8个线程同时跑。</strong></p>
+
+            <h3>13.2 等待所有线程</h3>
+            <pre>thread_run("task1", "a");
+thread_run("task2", "b");
+thread_run("task3", "c");
+thread_wait_all();</pre>
+
+            <h3>13.3 线程休眠</h3>
+            <pre>thread_sleep(1000);  // 睡 1000 毫秒</pre>
+
+            <h3>13.4 完整例子</h3>
+            <pre>var a = 0;
+var b = 0;
+
+func task1() { a = 100; }
+func task2() { b = 200; }
+
+thread_run("task1", "");
+thread_run("task2", "");
+thread_wait_all();
+
+// 此时 a == 100, b == 200</pre>
+            <div class="tip">关键点：线程里写变量，如果变量不存在就写到全局。所以 <code>a = 100</code> 能改到全局的 a。</div>
+        </div>
+
+        <!-- 14. 游戏循环 -->
+        <div class="page" id="page15">
+            <h1 class="page-title">14. 游戏循环</h1>
+
+            <h3>14.1 概念</h3>
+            <p>游戏循环 = 每帧调用 update 和 render。</p>
+            <ul>
+                <li><strong>update()</strong> —— 更新状态（位置、逻辑）</li>
+                <li><strong>render()</strong> —— 绘制画面</li>
+            </ul>
+
+            <h3>14.2 绑定</h3>
+            <pre>window Game {
+    title = "游戏";
+    width = 800;
+    height = 600;
+    fps = 60;
+    on_update = "update";
+    on_paint = "render";
+    
+    canvas {
+        x = 0;
+        y = 0;
+        width = 800;
+        height = 600;
+    }
+}</pre>
+            <p>on_update / on_paint 既可以写在 window 顶层，也可以写在 canvas 控件里。</p>
+
+            <h3>14.3 定义回调</h3>
+            <pre>func update() {
+    // 更新逻辑
+}
+
+func render() {
+    // 绘制画面
+}</pre>
+
+            <h3>14.4 完整例子</h3>
+            <pre>var x = 0;
+var dir = 1;
+
+func update() {
+    x = x + dir * 5;
+    if (x &gt; 700) { dir = -1; }
+    if (x &lt; 0) { dir = 1; }
+}
+
+func render() {
+    // 画东西
+}
+
+window Game {
+    title = "小球";
+    width = 800;
+    height = 600;
+    fps = 60;
+    on_update = "update";
+    on_paint = "render";
+}</pre>
+        </div>
+
+        <!-- 15. 模块 -->
+        <div class="page" id="page16">
+            <h1 class="page-title">15. 模块</h1>
+
+            <h3>15.1 概念</h3>
+            <p>模块 = DLL。W 可以加载 C 写的 DLL，调用里面的函数。</p>
+
+            <h3>15.2 导入</h3>
+            <pre>import "w_math_ext.dll";</pre>
+
+            <h3>15.3 调用</h3>
+            <pre>var result = w_math_ext.add(10, 20);</pre>
+            <p>语法：<code>模块名.函数名(参数)</code>。</p>
+
+            <h3>15.4 完整例子</h3>
+            <pre>import "w_math_ext.dll";
+
+var a = w_math_ext.add(10, 20);    // 30
+var b = w_math_ext.square(7);       // 49
+var c = w_math_ext.fib(10);         // 55
+
+window Main {
+    title = "模块测试";
+    width = 400;
+    height = 300;
+}</pre>
+
+            <h3>15.5 写一个 C 模块（进阶）</h3>
+            <pre>#include "w_module_sdk.h"
+
+static int my_add(int a, int b) {
+    return a + b;
+}
+
+static WMModuleFunc g_functions[] = {
+    {"add", (void*)my_add, "int(int,int)"},
+};
+
+static WMModule g_module = {
+    {"my_module", "1.0.0", "Me", "My module", W_API_VERSION},
+    NULL, NULL, 0,
+    NULL, NULL, 1, g_functions, 0, NULL, 0, NULL
+};
+
+W_MODULE_EXPORT int _stdcall Module_Register(WModule* module) {
+    if (!module) return -1;
+    *module = g_module;
+    return 0;
+}
+
+BOOL WINAPI DllMain(HINSTANCE h, DWORD r, LPVOID p) { return TRUE; }</pre>
+            <p>编译成 my_module.dll，就能 <code>import "my_module.dll"</code> 用了。</p>
+        </div>
+
+        <!-- 16. 文件读写 -->
+        <div class="page" id="page17">
+            <h1 class="page-title">16. 文件读写</h1>
+
+            <h3>16.1 读文件</h3>
+            <pre>var content = file_read("data.txt");</pre>
+            <p>读到的内容存到 content。</p>
+
+            <h3>16.2 写文件</h3>
+            <pre>file_write("output.txt", "内容");</pre>
+
+            <h3>16.3 例子</h3>
+            <pre>var text = file_read("input.txt");
+file_write("output.txt", "处理后的：" + text);</pre>
+        </div>
+
+        <!-- 17. 内置函数速查 -->
+        <div class="page" id="page18">
+            <h1 class="page-title">17. 内置函数速查</h1>
+
+            <h3>17.1 线程</h3>
+            <table>
+                <tr><th>函数</th><th>说明</th></tr>
+                <tr><td>thread_run(funcName, arg)</td><td>启动线程</td></tr>
+                <tr><td>thread_sleep(ms)</td><td>睡 ms 毫秒</td></tr>
+                <tr><td>thread_wait_all()</td><td>等所有线程结束</td></tr>
+            </table>
+
+            <h3>17.2 游戏</h3>
+            <table>
+                <tr><th>函数</th><th>说明</th></tr>
+                <tr><td>run_game_loop</td><td>手动启动游戏循环</td></tr>
+            </table>
+
+            <h3>17.3 文件</h3>
+            <table>
+                <tr><th>函数</th><th>说明</th></tr>
+                <tr><td>file_read(path)</td><td>读文件，返回内容</td></tr>
+                <tr><td>file_write(path, content)</td><td>写文件</td></tr>
+            </table>
+
+            <h3>17.4 控件</h3>
+            <table>
+                <tr><th>函数</th><th>说明</th></tr>
+                <tr><td>get_text(index)</td><td>读第 index 个控件的文字</td></tr>
+                <tr><td>set_text(index, text)</td><td>改第 index 个控件的文字</td></tr>
+                <tr><td>get_value(index)</td><td>读控件的值（进度条/滑块位置）</td></tr>
+            </table>
+            <p>index 是控件创建顺序（从0开始）。</p>
+
+            <h3>17.5 系统调用</h3>
+            <table>
+                <tr><th>函数</th><th>说明</th></tr>
+                <tr><td>callAPI(dll, func, ...args)</td><td>调系统 DLL 函数</td></tr>
+            </table>
+            <p>例子：</p>
+            <pre>callAPI("user32.dll", "MessageBoxA", 0, "你好", "标题", 0);</pre>
+        </div>
+
+        <!-- 18. 语法速查表 -->
+        <div class="page" id="page19">
+            <h1 class="page-title">18. 语法速查表</h1>
+
+            <h3>18.1 关键字</h3>
+            <pre>window  func  var  return
+if  else  while  for
+import  true  false  null</pre>
+
+            <h3>18.2 运算符</h3>
+            <pre>+  -  *  /  %
+==  !=  &gt;  &lt;  &gt;=  &lt;=
+&amp;&amp;  ||  !</pre>
+
+            <h3>18.3 分隔符</h3>
+            <table>
+                <tr><th>符号</th><th>说明</th></tr>
+                <tr><td>{ }</td><td>代码块</td></tr>
+                <tr><td>( )</td><td>条件/参数</td></tr>
+                <tr><td>[ ]</td><td>数组</td></tr>
+                <tr><td>,</td><td>分隔</td></tr>
+                <tr><td>;</td><td>语句结束</td></tr>
+                <tr><td>=</td><td>赋值</td></tr>
+                <tr><td>.</td><td>模块调用</td></tr>
+            </table>
+
+            <h3>18.4 注释</h3>
+            <pre>// 单行注释
+
+/* 多行注释 */</pre>
+
+            <h3>18.5 完整语法骨架</h3>
+            <pre>// 1. 导入模块（可选）
+import "module.dll";
+
+// 2. 全局变量
+var global = 0;
+
+// 3. 函数定义
+func my_func(param1, param2) {
+    var local = param1 + param2;
+    return local;
+}
+
+// 4. 顶层语句（会被执行）
+var result = my_func(10, 20);
+
+// 5. 窗口
+window Main {
+    title = "窗口标题";
+    width = 800;
+    height = 600;
+    style = "metro";
+    
+    button {
+        text = "按钮";
+        x = 20;
+        y = 20;
+        width = 100;
+        height = 30;
+        click = "on_click";
+    }
+}
+
+// 6. 事件回调
+func on_click() {
+    global = global + 1;
+}</pre>
+        </div>
+
+        <!-- 附录A -->
+        <div class="page" id="page20">
+            <h1 class="page-title">附录A：常见错误</h1>
+
+            <h3>A.1 "function not found"</h3>
+            <p>原因：调用了不存在的函数。</p>
+            <pre>foo();  // foo 没定义</pre>
+            <p>修：先 <code>func foo(){}</code> 定义。</p>
+
+            <h3>A.2 事件不触发</h3>
+            <p>原因：回调函数名拼错，或函数没定义。</p>
+            <pre>button {
+    click = "on_click";  // 拼错了
+}</pre>
+            <p>修：确认 click 的值和函数名完全一致。</p>
+
+            <h3>A.3 变量改了没用</h3>
+            <p>原因：局部变量覆盖了全局。</p>
+            <pre>var x = 10;
+
+func test() {
+    var x = 20;  // 这是新的局部 x，不是全局
+}
+
+test();
+// 全局 x 还是10</pre>
+            <p>修：函数里用 <code>x = 20;</code>（不加 var）改全局。</p>
+
+            <h3>A.4 中文乱码</h3>
+            <p>原因：.w 文件编码不是 UTF-8。</p>
+            <p>修：把 .w 文件存成 UTF-8 编码。</p>
+        </div>
+
+        <!-- 附录B -->
+        <div class="page" id="page21">
+            <h1 class="page-title">附录B：W_Runner用法</h1>
+            <pre>W_Runner.exe
+
+W&gt; cd C:\my_w_project    ← 切换目录
+W&gt; ls                    ← 列出 .w 文件
+W&gt; hello.w               ← 运行 hello.w
+W&gt; exit                  ← 退出</pre>
+            <p>也可以直接拖 .w 文件到 W_Runner.exe 上。</p>
+        </div>
+
+        <!-- 附录C -->
+        <div class="page" id="page22">
+            <h1 class="page-title">附录C：完整示例——计数器</h1>
+            <pre>// counter.w
+
+var count = 0;
+
+func on_inc() {
+    count = count + 1;
+}
+
+func on_dec() {
+    count = count - 1;
+}
+
+window Counter {
+    title = "计数器";
+    width = 400;
+    height = 250;
+    
+    label {
+        text = "计数：0";
+        x = 100;
+        y = 30;
+        width = 200;
+        height = 40;
+    }
+    
+    button {
+        text = "+1";
+        x = 80;
+        y = 100;
+        width = 100;
+        height = 50;
+        click = "on_inc";
+    }
+    
+    button {
+        text = "-1";
+        x = 220;
+        y = 100;
+        width = 100;
+        height = 50;
+        click = "on_dec";
+    }
+}</pre>
+        </div>
+
+        <!-- 附录D -->
+        <div class="page" id="page23">
+            <h1 class="page-title">附录D：完整示例——方块移动</h1>
+            <pre>// square.w
+
+var x = 0;
+var dir = 1;
+
+func update() {
+    x = x + dir * 5;
+    if (x &gt; 700) { dir = -1; }
+    if (x &lt; 0) { dir = 1; }
+}
+
+func render() {
+    // 这里画方块（暂未实现 GDI 绑定）
+}
+
+window Game {
+    title = "移动方块";
+    width = 800;
+    height = 600;
+    fps = 60;
+    on_update = "update";
+    on_paint = "render";
+}</pre>
+            <p style="text-align:center;margin-top:40px;color:#888;">
+                W语言教学手册·完<br>
+                版本 1.0 · 2026 年 9 月
+            </p>
+        </div>
+
+    </div>
+
+    <!-- 页码指示器 -->
+    <div class="page-indicator">
+        <span class="current" id="pageCurrent">1</span> / <span class="total" id="pageTotal">24</span>
+    </div>
+
+    <!-- 翻页按钮 -->
+    <div class="page-nav">
+        <button id="btnPrev" onclick="prevPage()">← 上一页</button>
+        <button id="btnNext" onclick="nextPage()">下一页 →</button>
+    </div>
+
+</div>
+
+<script>
+var currentPage = 0;
+var totalPages = 24;
+
+function goPage(n) {
+    if (n < 0 || n >= totalPages) return;
+    document.querySelectorAll('.page').forEach(function(p) {
+        p.classList.remove('active');
+    });
+    document.getElementById('page' + n).classList.add('active');
+    currentPage = n;
+    document.getElementById('pageCurrent').textContent = n + 1;
+    document.getElementById('btnPrev').disabled = n === 0;
+    document.getElementById('btnNext').disabled = n === totalPages - 1;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    updateTocActive();
+}
+
+function prevPage() {
+    goPage(currentPage - 1);
+}
+
+function nextPage() {
+    goPage(currentPage + 1);
+}
+
+function updateTocActive() {
+    document.querySelectorAll('.toc-item').forEach(function(item) {
+        item.classList.remove('active');
+    });
+}
+
+// 键盘方向键翻页
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowLeft') prevPage();
+    if (e.key === 'ArrowRight') nextPage();
+});
+
+// 初始化
+goPage(0);
+</script>
+
+</body>
+</html>

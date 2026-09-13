@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RF 语言 - Rapid Forge</title>
+<style>
+:root {
+    --bg: #0a0a1e;
+    --card: #12122a;
+    --text: #e0e0e0;
+    --accent: #0078D4;
+    --accent2: #00ccff;
+    --gold: #FFD700;
+    --green: #00ff41;
+    --purple: #9944ff;
+    --orange: #ff8800;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+    overflow-x: hidden;
+}
+
+/* 导航 */
+nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(10,10,30,0.9);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding: 12px 0;
+}
+nav .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+nav .logo {
+    font-size: 22px;
+    font-weight: bold;
+    color: var(--accent2);
+    letter-spacing: 2px;
+}
+nav .logo span { color: var(--green); }
+nav a {
+    color: #aaa;
+    text-decoration: none;
+    margin-left: 20px;
+    font-size: 13px;
+    transition: color 0.2s;
+}
+nav a:hover { color: #fff; }
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Hero */
+.hero {
+    padding: 150px 0 80px;
+    text-align: center;
+    background: radial-gradient(ellipse at 50% 0%, rgba(0,120,212,0.15) 0%, transparent 70%);
+}
+.hero h1 {
+    font-size: 52px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    letter-spacing: 4px;
+}
+.hero h1 .hl { color: var(--accent2); }
+.hero .subtitle {
+    font-size: 18px;
+    color: #888;
+    margin-bottom: 10px;
+}
+.hero .slogan {
+    font-size: 15px;
+    color: var(--gold);
+    margin-bottom: 20px;
+}
+.hero .badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    margin: 0 3px;
+    border: 1px solid;
+}
+.badge-green { background: rgba(0,255,65,0.1); color: var(--green); border-color: rgba(0,255,65,0.2); }
+.badge-blue { background: rgba(0,204,255,0.1); color: var(--accent2); border-color: rgba(0,204,255,0.2); }
+.badge-gold { background: rgba(255,215,0,0.1); color: var(--gold); border-color: rgba(255,215,0,0.2); }
+.badge-purple { background: rgba(153,68,255,0.1); color: var(--purple); border-color: rgba(153,68,255,0.2); }
+
+/* 统计 */
+.stats {
+    display: flex;
+    gap: 26px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 30px;
+}
+.stat-item .num {
+    font-size: 38px;
+    font-weight: bold;
+    color: var(--accent2);
+}
+.stat-item .label {
+    font-size: 12px;
+    color: #666;
+}
+
+/* 章节 */
+.section {
+    padding: 60px 0;
+}
+.section h2 {
+    text-align: center;
+    font-size: 30px;
+    margin-bottom: 40px;
+    color: #fff;
+}
+.section h2::after {
+    content: '';
+    display: block;
+    width: 60px;
+    height: 3px;
+    background: var(--accent2);
+    margin: 12px auto 0;
+    border-radius: 2px;
+}
+.section p.desc {
+    text-align: center;
+    color: #888;
+    max-width: 700px;
+    margin: -20px auto 30px;
+    font-size: 14px;
+}
+
+/* 卡片 */
+.features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+.feature-card {
+    background: var(--card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 24px;
+    transition: all 0.3s;
+}
+.feature-card:hover {
+    border-color: rgba(0,204,255,0.3);
+    transform: translateY(-3px);
+}
+.feature-card .icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+}
+.feature-card h3 {
+    font-size: 17px;
+    color: var(--accent2);
+    margin-bottom: 8px;
+}
+.feature-card p {
+    font-size: 13px;
+    color: #999;
+}
+
+/* 代码块 */
+.code-block {
+    background: #1a1a2e;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 20px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #d4d4d4;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 16px 0;
+}
+.code-block .kw { color: #569cd6; }
+.code-block .str { color: #ce9178; }
+.code-block .num { color: #b5cea8; }
+.code-block .com { color: #6a9955; }
+.code-block .fn { color: #dcdcaa; }
+.code-block .var { color: #9cdcfe; }
+
+/* 表格 */
+.cmd-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 20px 0;
+}
+.cmd-table th {
+    background: rgba(0,204,255,0.1);
+    color: var(--accent2);
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.cmd-table td {
+    padding: 10px 14px;
+    border: 1px solid rgba(255,255,255,0.04);
+    color: #aaa;
+}
+.cmd-table td:first-child {
+    font-family: 'Consolas', monospace;
+    color: var(--green);
+    white-space: nowrap;
+}
+
+/* 模块卡片 */
+.module-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+}
+.module-card {
+    background: var(--card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.3s;
+}
+.module-card:hover {
+    border-color: rgba(255,215,0,0.3);
+}
+.module-card .m-icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+}
+.module-card .m-name {
+    font-family: 'Consolas', monospace;
+    font-size: 14px;
+    color: var(--gold);
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+.module-card .m-desc {
+    font-size: 12px;
+    color: #999;
+}
+.module-card .m-status {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 11px;
+    padding: 2px 10px;
+    background: rgba(0,255,65,0.1);
+    color: var(--green);
+    border-radius: 10px;
+}
+
+/* 语法示例 */
+.demo-box {
+    background: var(--card);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+.demo-header {
+    padding: 10px 16px;
+    background: rgba(0,204,255,0.08);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 13px;
+    color: var(--accent2);
+    font-weight: 600;
+}
+.demo-content {
+    padding: 16px;
+}
+
+/* 目录结构 */
+.tree {
+    background: #1a1a2e;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 20px;
+    font-family: 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    color: #aaa;
+    overflow-x: auto;
+}
+.tree .folder { color: var(--accent2); }
+.tree .file { color: var(--green); }
+.tree .comment { color: #6a9955; }
+
+/* 页脚 */
+footer {
+    text-align: center;
+    padding: 40px 0 60px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 40px;
+}
+footer .cta-text {
+    font-size: 20px;
+    margin-bottom: 20px;
+    color: #fff;
+}
+footer .btn-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.btn {
+    display: inline-block;
+    padding: 13px 32px;
+    border-radius: 30px;
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s;
+}
+.btn-primary {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(0,120,212,0.4);
+}
+.btn-primary:hover {
+    background: #005A9E;
+    transform: scale(1.05);
+}
+.btn-outline {
+    border: 2px solid var(--accent2);
+    color: var(--accent2);
+}
+.btn-outline:hover {
+    background: rgba(0,204,255,0.1);
+}
+
+/* 移动端 */
+@media (max-width: 768px) {
+    .hero h1 { font-size: 32px; letter-spacing: 2px; }
+    nav a { margin-left: 8px; font-size: 11px; }
+    .stats { gap: 12px; }
+    .stat-item .num { font-size: 26px; }
+    .code-block { font-size: 11px; }
+    .cmd-table { font-size: 11px; }
+    .cmd-table th, .cmd-table td { padding: 8px; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+    <div class="container">
+        <div class="logo">RF<span>语言</span></div>
+        <div>
+            <a href="#about">简介</a>
+            <a href="#features">特性</a>
+            <a href="#syntax">语法</a>
+            <a href="#functions">函数</a>
+            <a href="#modules">模块</a>
+            <a href="#structure">结构</a>
+        </div>
+    </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+    <div class="container">
+        <h1>RF<span class="hl"> Language</span></h1>
+        <p class="subtitle">Rapid Forge · 快速锻造</p>
+        <p class="slogan">用纯 C 打造的轻量级编程语言</p>
+        <p>
+            <span class="badge badge-green">⚡ 纯 C 实现</span>
+            <span class="badge badge-blue">🪟 Win32 原生</span>
+            <span class="badge badge-gold">🎮 2D/3D 图形</span>
+            <span class="badge badge-purple">📦 包管理</span>
+        </p>
+        <div class="stats">
+            <div class="stat-item"><div class="num">6</div><div class="label">核心 DLL</div></div>
+            <div class="stat-item"><div class="num">50+</div><div class="label">内置函数</div></div>
+            <div class="stat-item"><div class="num">8</div><div class="label">并发线程</div></div>
+            <div class="stat-item"><div class="num">v7.1</div><div class="label">编译器版本</div></div>
+        </div>
+    </div>
+</section>
+
+<!-- 简介 -->
+<section class="section" id="about">
+    <div class="container">
+        <h2>RF 是什么</h2>
+        <p class="desc">一门用纯 C 语言编写的轻量级编程语言</p>
+        <div class="features" style="grid-template-columns:1fr;max-width:800px;margin:0 auto;">
+            <div class="feature-card" style="text-align:center;">
+                <p style="font-size:15px;color:#ccc;line-height:1.9;">
+                    RF（Rapid Forge）是一门用纯 C 语言编写的轻量级编程语言。<br>
+                    语法独创、中英文编码友好，能调用 Win32 API 和任意 DLL，<br>
+                    支持 2D/3D 图形、多线程、文件操作，并自带包管理和图形化设计器。<br>
+                    <span style="color:var(--gold);">目标：让新手快速上手写 Windows 桌面程序和小游戏。</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 特性 -->
+<section class="section" id="features" style="background:rgba(255,255,255,0.02);">
+    <div class="container">
+        <h2>核心特性</h2>
+        <p class="desc">6 大核心能力，覆盖桌面开发全流程</p>
+        <div class="features">
+            <div class="feature-card">
+                <div class="icon">🔤</div>
+                <h3>语言核心</h3>
+                <p>独创语法、中英文支持、动态/静态类型、8 线程并发、内存操作、文件读写</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🪟</div>
+                <h3>Windows 生态</h3>
+                <p>10 种 Win32 控件、直接调用系统 API、DLL 动态加载、SYS 驱动加载、音频播放</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🎮</div>
+                <h3>图形与游戏</h3>
+                <p>DirectX 2D 绘图、Direct3D 11 3D 渲染、内置游戏循环、相机控制</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">💻</div>
+                <h3>编辑器 IDE</h3>
+                <p>语法高亮、代码折叠、断点调试、多标签页、内置 Shell 终端、一键打包 exe</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📦</div>
+                <h3>包管理</h3>
+                <p>库安装、版本管理、签名校验、循环依赖检测、沙箱测试模式</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🔌</div>
+                <h3>扩展机制</h3>
+                <p>C 模块编译、DLL 导入、通用 callAPI、多窗口管理</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 语法 -->
+<section class="section" id="syntax">
+    <div class="container">
+        <h2>语法示例</h2>
+        <p class="desc">简洁直观的语法，几分钟上手</p>
+
+        <div class="demo-box">
+            <div class="demo-header">📝 变量与运算</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="var">x</span> = <span class="num">10</span>
+<span class="var">y</span> = <span class="num">20</span>
+<span class="var">z</span> = <span class="var">x</span> + <span class="var">y</span>
+<span class="fn">print</span>(<span class="var">z</span>)</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🔄 条件与循环</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">if</span> (<span class="var">x</span> > <span class="num">5</span>) {
+    <span class="fn">print</span>(<span class="str">"x > 5"</span>)
+} <span class="kw">else</span> {
+    <span class="fn">print</span>(<span class="str">"x <= 5"</span>)
+}
+
+<span class="var">i</span> = <span class="num">0</span>
+<span class="kw">while</span> (<span class="var">i</span> < <span class="num">5</span>) {
+    <span class="fn">print</span>(<span class="var">i</span>)
+    <span class="var">i</span> = <span class="var">i</span> + <span class="num">1</span>
+}
+
+<span class="kw">for</span> (<span class="var">j</span> = <span class="num">0</span>; <span class="var">j</span> < <span class="num">3</span>; <span class="var">j</span> = <span class="var">j</span> + <span class="num">1</span>) {
+    <span class="fn">print</span>(<span class="var">j</span>)
+}</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🔧 函数定义</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">func</span> <span class="fn">add</span>(<span class="var">a</span>, <span class="var">b</span>) {
+    <span class="kw">return</span> <span class="var">a</span> + <span class="var">b</span>
+}
+<span class="var">result</span> = <span class="fn">add</span>(<span class="num">10</span>, <span class="num">20</span>)
+<span class="fn">print</span>(<span class="var">result</span>)  <span class="com">// 30</span></div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🪟 创建窗口</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="fn">new_window</span>(<span class="str">"RF 窗口"</span>, <span class="num">700</span>, <span class="num">550</span>)
+<span class="fn">create_button</span>(<span class="str">"按钮"</span>, <span class="num">20</span>, <span class="num">40</span>, <span class="num">100</span>, <span class="num">30</span>)
+<span class="fn">create_label</span>(<span class="str">"标签"</span>, <span class="num">20</span>, <span class="num">80</span>, <span class="num">150</span>, <span class="num">25</span>)
+<span class="fn">create_textbox</span>(<span class="str">"文本框"</span>, <span class="num">20</span>, <span class="num">110</span>, <span class="num">200</span>, <span class="num">25</span>)
+<span class="fn">run</span>()</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🎮 2D 绘图</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="fn">dx2d_init</span>(<span class="num">800</span>, <span class="num">600</span>)
+<span class="fn">dx2d_rect</span>(<span class="num">100</span>, <span class="num">100</span>, <span class="num">200</span>, <span class="num">150</span>, <span class="num">255</span>, <span class="num">0</span>, <span class="num">0</span>)
+<span class="fn">dx2d_circle</span>(<span class="num">400</span>, <span class="num">300</span>, <span class="num">80</span>, <span class="num">0</span>, <span class="num">255</span>, <span class="num">0</span>)
+<span class="fn">dx2d_text</span>(<span class="str">"Hello RF"</span>, <span class="num">300</span>, <span class="num">400</span>, <span class="num">255</span>, <span class="num">255</span>, <span class="num">0</span>)
+<span class="fn">dx2d_present</span>()</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🎯 游戏循环</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">func</span> <span class="fn">init</span>() { <span class="fn">print</span>(<span class="str">"Game Init"</span>) }
+<span class="kw">func</span> <span class="fn">update</span>() { <span class="fn">print</span>(<span class="str">"Update"</span>) }
+<span class="kw">func</span> <span class="fn">render</span>() {
+    <span class="fn">dx2d_rect</span>(<span class="num">100</span>, <span class="num">100</span>, <span class="num">200</span>, <span class="num">150</span>, <span class="num">255</span>, <span class="num">0</span>, <span class="num">0</span>)
+    <span class="fn">dx2d_present</span>()
+}
+<span class="fn">game_loop</span>(<span class="str">"init"</span>, <span class="str">"update"</span>, <span class="str">"render"</span>)</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🔌 调用系统 API</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="fn">callAPI</span>(<span class="str">"user32.dll"</span>, <span class="str">"MessageBoxA"</span>, <span class="num">0</span>, <span class="str">"Hello"</span>, <span class="str">"RF"</span>, <span class="num">0</span>)
+<span class="fn">callAPI</span>(<span class="str">"kernel32.dll"</span>, <span class="str">"Beep"</span>, <span class="num">800</span>, <span class="num">300</span>)</div>
+            </div>
+        </div>
+
+        <div class="demo-box">
+            <div class="demo-header">🧵 多线程</div>
+            <div class="demo-content">
+                <div class="code-block"><span class="kw">func</span> <span class="fn">task</span>(<span class="var">name</span>) {
+    <span class="fn">print</span>(<span class="str">"Thread: "</span> + <span class="var">name</span>)
+}
+<span class="fn">thread_run</span>(<span class="str">"task"</span>, <span class="str">"hello"</span>)
+<span class="fn">thread_wait_all</span>()</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 内置函数 -->
+<section class="section" id="functions" style="background:rgba(255,255,255,0.02);">
+    <div class="container">
+        <h2>内置函数速查</h2>
+        <p class="desc">按功能分类，快速查找</p>
+
+        <h3 style="color:var(--gold);font-size:16px;margin:20px 0 10px;">核心</h3>
+        <table class="cmd-table">
+            <tr><th>函数</th><th>说明</th></tr>
+            <tr><td>print(内容)</td><td>输出到控制台</td></tr>
+            <tr><td>beep(频率, 时长)</td><td>蜂鸣</td></tr>
+            <tr><td>callAPI(dll, 函数, 参数...)</td><td>调用系统 API</td></tr>
+        </table>
+
+        <h3 style="color:var(--gold);font-size:16px;margin:20px 0 10px;">窗口控件</h3>
+        <table class="cmd-table">
+            <tr><th>函数</th><th>说明</th></tr>
+            <tr><td>new_window(标题, w, h)</td><td>创建窗口</td></tr>
+            <tr><td>run()</td><td>运行消息循环</td></tr>
+            <tr><td>create_button(文本, x, y, w, h)</td><td>创建按钮</td></tr>
+            <tr><td>create_label(文本, x, y, w, h)</td><td>创建标签</td></tr>
+            <tr><td>create_textbox(文本, x, y, w, h)</td><td>创建文本框</td></tr>
+            <tr><td>create_checkbox(文本, x, y, w, h)</td><td>创建复选框</td></tr>
+            <tr><td>create_progress(x, y, w, h)</td><td>创建进度条</td></tr>
+            <tr><td>create_slider(x, y, w, h)</td><td>创建滑块</td></tr>
+            <tr><td>create_listbox(x, y, w, h)</td><td>创建列表框</td></tr>
+            <tr><td>create_combobox(x, y, w, h)</td><td>创建下拉框</td></tr>
+            <tr><td>create_radio(文本, x, y, w, h)</td><td>创建单选按钮</td></tr>
+            <tr><td>create_group(文本, x, y, w, h)</td><td>创建分组框</td></tr>
+        </table>
+
+        <h3 style="color:var(--gold);font-size:16px;margin:20px 0 10px;">DX2D 绘图</h3>
+        <table class="cmd-table">
+            <tr><th>函数</th><th>说明</th></tr>
+            <tr><td>dx2d_init(w, h)</td><td>初始化画布</td></tr>
+            <tr><td>dx2d_rect(x, y, w, h, r, g, b)</td><td>绘制矩形</td></tr>
+            <tr><td>dx2d_circle(x, y, r, r, g, b)</td><td>绘制圆形</td></tr>
+            <tr><td>dx2d_line(x1, y1, x2, y2, r, g, b)</td><td>绘制线条</td></tr>
+            <tr><td>dx2d_text(文本, x, y, r, g, b)</td><td>绘制文字</td></tr>
+            <tr><td>dx2d_present()</td><td>刷新画面</td></tr>
+        </table>
+
+        <h3 style="color:var(--gold);font-size:16px;margin:20px 0 10px;">文件</h3>
+        <table class="cmd-table">
+            <tr><th>函数</th><th>说明</th></tr>
+            <tr><td>file_write(文件名, 内容)</td><td>写入文件</td></tr>
+            <tr><td>file_read(文件名)</td><td>读取文件</td></tr>
+        </table>
+
+        <h3 style="color:var(--gold);font-size:16px;margin:20px 0 10px;">多线程</h3>
+        <table class="cmd-table">
+            <tr><th>函数</th><th>说明</th></tr>
+            <tr><td>thread_run(函数名, 参数)</td><td>在 8 线程池中执行</td></tr>
+            <tr><td>thread_sleep(毫秒)</td><td>线程休眠</td></tr>
+            <tr><td>thread_wait_all()</td><td>等待所有线程</td></tr>
+        </table>
+
+        <h3 style="color:var(--gold);font-size:16px;margin:20px 0 10px;">内存</h3>
+        <table class="cmd-table">
+            <tr><th>函数</th><th>说明</th></tr>
+            <tr><td>mem_alloc(大小)</td><td>分配内存</td></tr>
+            <tr><td>mem_free(指针)</td><td>释放内存</td></tr>
+        </table>
+    </div>
+</section>
+
+<!-- 模块 -->
+<section class="section" id="modules">
+    <div class="container">
+        <h2>核心模块（6 个 DLL）</h2>
+        <p class="desc">语言、图形、3D、包管理全覆盖</p>
+        <div class="module-grid">
+            <div class="module-card">
+                <div class="m-icon">⚙️</div>
+                <div class="m-name">RF_Compiler.dll</div>
+                <div class="m-desc">语言核心 + Win32 UI + DX2D + 游戏循环 + 多线程 + 内存</div>
+                <span class="m-status">✅ v7.1 完成</span>
+            </div>
+            <div class="module-card">
+                <div class="m-icon">📦</div>
+                <div class="m-name">RF_Package.dll</div>
+                <div class="m-desc">包管理（安装/卸载/枚举/签名/编译/依赖）</div>
+                <span class="m-status">✅ 完成</span>
+            </div>
+            <div class="module-card">
+                <div class="m-icon">🎮</div>
+                <div class="m-name">RF_Game.dll</div>
+                <div class="m-desc">2D 游戏引擎（精灵/碰撞/粒子/场景/音效/计时器）</div>
+                <span class="m-status">✅ 完成</span>
+            </div>
+            <div class="module-card">
+                <div class="m-icon">🎲</div>
+                <div class="m-name">RF_D3D.dll</div>
+                <div class="m-desc">Direct3D 11 3D 渲染引擎（立方体/球体/相机/光照）</div>
+                <span class="m-status">✅ 完成</span>
+            </div>
+            <div class="module-card">
+                <div class="m-icon">🌐</div>
+                <div class="m-name">RF_ThreeJS.dll</div>
+                <div class="m-desc">Three.js 桥接（场景/相机/几何体/材质/灯光）</div>
+                <span class="m-status">✅ 完成</span>
+            </div>
+            <div class="module-card">
+                <div class="m-icon">💻</div>
+                <div class="m-name">RF_Studio.exe</div>
+                <div class="m-desc">IDE 编辑器（语法高亮/断点调试/多标签/Shell 终端）</div>
+                <span class="m-status">✅ 源码完成</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 目录结构 -->
+<section class="section" id="structure" style="background:rgba(255,255,255,0.02);">
+    <div class="container">
+        <h2>目录结构</h2>
+        <p class="desc">清晰的项目组织</p>
+        <div class="tree">RF_Language/
+├── <span class="file">RF_Compiler.dll</span>        <span class="comment"># 语言核心</span>
+├── <span class="file">RF_Package.dll</span>         <span class="comment"># 包管理</span>
+├── <span class="file">RF_Game.dll</span>            <span class="comment"># 2D 游戏引擎</span>
+├── <span class="file">RF_D3D.dll</span>             <span class="comment"># 3D 渲染引擎</span>
+├── <span class="file">RF_ThreeJS.dll</span>         <span class="comment"># Three.js 桥接</span>
+├── <span class="file">RF_Studio.exe</span>          <span class="comment"># IDE 编辑器</span>
+├── <span class="file">rf_run.exe</span>             <span class="comment"># 脚本执行器</span>
+├── <span class="folder">lib/</span>                   <span class="comment"># 库目录</span>
+│   ├── <span class="folder">official/</span>          <span class="comment"># 官方库</span>
+│   └── <span class="folder">test/</span>              <span class="comment"># 测试库</span>
+├── <span class="folder">examples/</span>              <span class="comment"># 示例</span>
+│   ├── <span class="file">hello.rf</span>
+│   ├── <span class="file">snake.rf</span>
+│   ├── <span class="file">calculator.rf</span>
+│   └── <span class="file">game_demo.rf</span>
+└── <span class="folder">docs/</span>                  <span class="comment"># 文档</span></div>
+    </div>
+</section>
+
+<!-- 页脚 -->
+<footer>
+    <div class="container">
+        <p class="cta-text">🔨 准备好用 RF 写程序了吗？</p>
+        <div class="btn-row">
+            <a href="#" class="btn btn-primary">📥 下载 RF</a>
+            <a href="#" class="btn btn-outline">📖 查看文档</a>
+            <a href="index.html" class="btn btn-outline">← 返回导航</a>
+        </div>
+        <p style="margin-top:30px;font-size:12px;color:#555;">
+            RF 语言项目组 · 2026 年 9 月 · MIT License
+        </p>
+    </div>
+</footer>
+
+</body>
+</html>

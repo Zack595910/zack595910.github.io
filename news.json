@@ -1,0 +1,49 @@
+{
+  "news": [
+    {
+      "id": 1,
+      "date": "2026-09-13",
+      "title": "tkemu v1.9.6 正式发布",
+      "summary": "新增 SRM 系统资源管理器、TrustedInstaller 安全体系、硬件桥接等重大更新。",
+      "content": "## tkemu v1.9.6 正式发布\n\n本次更新是 tkemu 历史上最大的一次安全重构。\n\n### 主要更新\n\n- **SRM 系统资源管理器**：21 个管理单元，统一管理系统的一切\n- **TrustedInstaller 安全体系**：5 层安全检查，保护 sys 脚本执行\n- **硬件桥接**：摄像头、麦克风、U盘、打印机、扬声器\n- **多用户数据隔离**：每个用户独立文件、设置、图标位置\n- **文件权限控制**：所有者才能修改删除文件\n\n### Bug 修复\n\n- 修复 IndexedDB 读取返回 null 问题\n- 修复分辨率切换窗口不重绘\n- 修复 rf wait 阻塞浏览器\n- 修复文件夹双击无法打开\n\n### 下载\n\n访问 [tkemu 官网](https://zack595910.github.io/PTD.html) 立即体验。",
+      "tags": ["tkemu", "更新", "安全"],
+      "category": "update"
+    },
+    {
+      "id": 2,
+      "date": "2026-09-10",
+      "title": "RF 语言 v7.1 全部完成",
+      "summary": "6 个核心 DLL 全部交付，包含语言核心、包管理、2D/3D 引擎和 IDE。",
+      "content": "## RF 语言 v7.1 全部完成\n\nRF（Rapid Forge）语言的 6 个核心 DLL 全部交付。\n\n### 交付清单\n\n| 模块 | 功能 | 状态 |\n|------|------|------|\n| RF_Compiler.dll | 语言核心 + Win32 UI + DX2D | ✅ 完成 |\n| RF_Package.dll | 包管理 | ✅ 完成 |\n| RF_Game.dll | 2D 游戏引擎 | ✅ 完成 |\n| RF_D3D.dll | Direct3D 11 3D 渲染 | ✅ 完成 |\n| RF_ThreeJS.dll | Three.js 桥接 | ✅ 完成 |\n| RF_Studio.exe | IDE 编辑器 | ✅ 源码完成 |\n\n### 特性\n\n- 纯 C 实现\n- 支持 Win32 API 调用\n- 8 线程并发\n- 多窗口\n- 游戏循环\n\n### 了解更多\n\n访问 [RF 语言官网](https://zack595910.github.io/RF.html)。",
+      "tags": ["RF", "编程语言", "发布"],
+      "category": "release"
+    },
+    {
+      "id": 3,
+      "date": "2026-09-08",
+      "title": "W 语言教学手册完成",
+      "summary": "18 章完整教程，从变量到游戏循环，附带电子书式翻页体验。",
+      "content": "## W 语言教学手册完成\n\nW 语言（专为 Windows 界面开发设计的语言）的完整教学手册已完成。\n\n### 目录\n\n1. W语言是什么\n2. 第一个程序\n3. 变量\n4. 运算\n5. 字符串\n6. 条件判断\n7. 循环\n8. 函数\n9. 数组\n10. 窗口\n11. 控件\n12. 事件\n13. 线程\n14. 游戏循环\n15. 模块\n16. 文件读写\n17. 内置函数速查\n18. 语法速查表\n\n附录：常见错误、W_Runner 用法、完整示例\n\n### 特色\n\n- 电子书式翻页\n- 侧边目录跳转\n- 页码指示器\n- 键盘方向键翻页\n\n### 开始学习\n\n访问 [W 语言教程](https://zack595910.github.io/W-tutorial.html)。",
+      "tags": ["W", "教程", "发布"],
+      "category": "release"
+    },
+    {
+      "id": 4,
+      "date": "2026-09-05",
+      "title": "KSD Core 10.0 发布",
+      "summary": "15 大新系统上线，联机、成就、商店、合成一应俱全。",
+      "content": "## KSD Core 10.0 发布\n\nKSD 冒险游戏框架更新到 Core 10.0，新增 15 大系统。\n\n### 新系统\n\n1. 联机任务协作\n2. 单程序双人同屏\n3. 任务链系统\n4. 成就系统\n5. 皮肤/外观系统\n6. 音效系统\n7. 排行榜\n8. 天气/昼夜系统\n9. 物品合成\n10. 商店系统\n11. 邮件/公告系统\n12. 小地图\n13. NPC 对话历史\n14. 统计面板\n15. 自定义快捷键\n\n### 了解更多\n\n访问 [KSD 官网](https://zack595910.github.io/KSD.html)。",
+      "tags": ["KSD", "游戏框架", "发布"],
+      "category": "release"
+    },
+    {
+      "id": 5,
+      "date": "2026-09-01",
+      "title": "Search 导航站上线",
+      "summary": "一站式导航，搜索所有项目，分类浏览，详情页展示。",
+      "content": "## Search 导航站上线\n\n所有项目的统一入口正式上线。\n\n### 功能\n\n- 搜索项目（名称/描述/标签）\n- 分类浏览（Windows应用/网页/媒体）\n- 详情页展示\n- 新闻入口\n\n### 访问\n\n[Search 导航站](https://zack595910.github.io/KSD-/index.html)",
+      "tags": ["导航", "上线"],
+      "category": "release"
+    }
+  ]
+}
