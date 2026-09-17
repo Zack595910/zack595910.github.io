@@ -5,25 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>最新资讯 - Search</title>
 <style>
+html, body {
+    background: #0a0a1e !important;
+    color: #e0e0e0 !important;
+    margin: 0;
+    padding: 0;
+}
 :root {
     --bg: #0a0a1e;
     --card: #12122a;
-    --text: #e0e0e0;
     --accent: #0078D4;
     --accent2: #00ccff;
     --gold: #FFD700;
     --green: #00ff41;
-    --purple: #9944ff;
     --red: #ff4444;
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* { box-sizing: border-box; }
 body {
     font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
-    background: var(--bg);
-    color: var(--text);
     line-height: 1.8;
     min-height: 100vh;
-    background: radial-gradient(ellipse at 50% 0%, rgba(0,120,212,0.15) 0%, transparent 70%);
+    background: #0a0a1e;
+    background-image: radial-gradient(ellipse at 50% 0%, rgba(0,120,212,0.15) 0%, transparent 70%);
+    background-attachment: fixed;
 }
 .container {
     max-width: 800px;
@@ -52,8 +56,8 @@ body {
 .back-btn {
     display: inline-block;
     padding: 8px 20px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
+    background: #1a1a2e;
+    border: 1px solid #333;
     border-radius: 20px;
     color: #aaa;
     font-size: 13px;
@@ -76,8 +80,8 @@ body {
 }
 .filter-btn {
     padding: 8px 20px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
+    background: #1a1a2e;
+    border: 1px solid #333;
     border-radius: 20px;
     color: #aaa;
     font-size: 13px;
@@ -122,9 +126,7 @@ body {
     font-size: 12px;
     color: #888;
 }
-.news-item .date {
-    color: var(--accent2);
-}
+.news-item .date { color: var(--accent2); }
 .news-item .category {
     padding: 2px 10px;
     background: rgba(0,204,255,0.1);
@@ -166,8 +168,8 @@ body {
 .detail-back {
     display: inline-block;
     padding: 8px 18px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
+    background: #1a1a2e;
+    border: 1px solid #333;
     border-radius: 20px;
     color: #aaa;
     font-size: 13px;
@@ -220,18 +222,12 @@ body {
     color: #fff;
     margin: 22px 0 10px;
 }
-.detail-content p {
-    margin-bottom: 14px;
-}
+.detail-content p { margin-bottom: 14px; }
 .detail-content ul, .detail-content ol {
     margin: 12px 0 12px 24px;
 }
-.detail-content li {
-    margin-bottom: 6px;
-}
-.detail-content strong {
-    color: var(--gold);
-}
+.detail-content li { margin-bottom: 6px; }
+.detail-content strong { color: var(--gold); }
 .detail-content code {
     background: rgba(255,255,255,0.08);
     padding: 2px 8px;
@@ -257,9 +253,7 @@ body {
     color: var(--accent2);
     text-decoration: none;
 }
-.detail-content a:hover {
-    text-decoration: underline;
-}
+.detail-content a:hover { text-decoration: underline; }
 .detail-content table {
     width: 100%;
     border-collapse: collapse;
@@ -304,7 +298,6 @@ body {
     font-size: 14px;
 }
 
-/* 页脚 */
 footer {
     text-align: center;
     padding: 30px 0;
@@ -330,7 +323,6 @@ footer {
 
 <div class="container">
 
-    <!-- 列表页 -->
     <div id="listPage">
         <div class="header">
             <div class="logo">📰 <span>News</span></div>
@@ -344,7 +336,6 @@ footer {
         </div>
     </div>
 
-    <!-- 详情页 -->
     <div class="detail" id="detailPage">
         <div class="detail-back" onclick="backToList()">← 返回列表</div>
         <div class="detail-header">
@@ -364,18 +355,20 @@ footer {
 </footer>
 
 <script>
-// ═══════════════════════════════════════════════════════════════
-//  配置：news.json 的路径
-// ═══════════════════════════════════════════════════════════════
 var NEWS_JSON_URL = 'news.json';
 
 var newsData = [];
 var currentFilter = 'all';
 var currentNews = null;
 
-// ═══════════════════════════════════════════════════════════════
-//  加载新闻
-// ═══════════════════════════════════════════════════════════════
+var categoryNames = {
+    'update': '🔄 更新',
+    'release': '📦 发布',
+    'event': '🎉 活动',
+    'notice': '📢 公告',
+    'fun': '🎲 趣闻'
+};
+
 function loadNews() {
     fetch(NEWS_JSON_URL + '?t=' + Date.now())
         .then(function(res) {
@@ -394,26 +387,16 @@ function loadNews() {
         });
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  渲染筛选按钮
-// ═══════════════════════════════════════════════════════════════
 function renderFilters() {
-    var categories = {};
+    var cats = {};
     newsData.forEach(function(n) {
-        categories[n.category] = (categories[n.category] || 0) + 1;
+        cats[n.category] = (cats[n.category] || 0) + 1;
     });
 
-    var categoryNames = {
-        'update': '🔄 更新',
-        'release': '📦 发布',
-        'event': '🎉 活动',
-        'notice': '📢 公告'
-    };
-
     var h = '<button class="filter-btn' + (currentFilter === 'all' ? ' active' : '') + '" onclick="setFilter(\'all\')">全部 (' + newsData.length + ')</button>';
-    Object.keys(categories).forEach(function(cat) {
+    Object.keys(cats).forEach(function(cat) {
         var name = categoryNames[cat] || cat;
-        h += '<button class="filter-btn' + (currentFilter === cat ? ' active' : '') + '" onclick="setFilter(\'' + cat + '\')">' + name + ' (' + categories[cat] + ')</button>';
+        h += '<button class="filter-btn' + (currentFilter === cat ? ' active' : '') + '" onclick="setFilter(\'' + cat + '\')">' + name + ' (' + cats[cat] + ')</button>';
     });
     document.getElementById('filters').innerHTML = h;
 }
@@ -424,9 +407,6 @@ function setFilter(f) {
     renderNewsList();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  渲染新闻列表
-// ═══════════════════════════════════════════════════════════════
 function renderNewsList() {
     var list = document.getElementById('newsList');
     var filtered = newsData.filter(function(n) {
@@ -437,13 +417,6 @@ function renderNewsList() {
         list.innerHTML = '<div class="loading">暂无新闻</div>';
         return;
     }
-
-    var categoryNames = {
-        'update': '🔄 更新',
-        'release': '📦 发布',
-        'event': '🎉 活动',
-        'notice': '📢 公告'
-    };
 
     var h = '';
     filtered.forEach(function(n, i) {
@@ -466,20 +439,10 @@ function renderNewsList() {
     list.innerHTML = h;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  打开新闻详情
-// ═══════════════════════════════════════════════════════════════
 function openNews(id) {
     var n = newsData.find(function(x) { return x.id === id; });
     if (!n) return;
     currentNews = n;
-
-    var categoryNames = {
-        'update': '🔄 更新',
-        'release': '📦 发布',
-        'event': '🎉 活动',
-        'notice': '📢 公告'
-    };
 
     document.getElementById('detailTitle').textContent = n.title;
     document.getElementById('detailDate').textContent = n.date;
@@ -498,19 +461,14 @@ function backToList() {
     window.scrollTo(0, 0);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  简易 Markdown 渲染
-// ═══════════════════════════════════════════════════════════════
 function renderMarkdown(text) {
     if (!text) return '';
     var html = text;
 
-    // 代码块
     html = html.replace(/```([\s\S]*?)```/g, function(m, code) {
         return '<pre>' + escapeHtml(code.trim()) + '</pre>';
     });
 
-    // 表格
     html = html.replace(/((?:^\|.*\|$\n?)+)/gm, function(match) {
         var lines = match.trim().split('\n');
         if (lines.length < 2) return match;
@@ -529,26 +487,18 @@ function renderMarkdown(text) {
         return h;
     });
 
-    // 标题
     html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
     html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
     html = html.replace(/^# (.*$)/gm, '<h2>$1</h2>');
 
-    // 列表
     html = html.replace(/^\s*[-*] (.*$)/gm, '<li>$1</li>');
     html = html.replace(/^\s*\d+\. (.*$)/gm, '<li>$1</li>');
     html = html.replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, '<ul>$1</ul>');
 
-    // 加粗
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-    // 行内代码
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-    // 链接
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
 
-    // 段落
     var lines = html.split('\n');
     var result = [];
     lines.forEach(function(line) {
@@ -570,14 +520,12 @@ function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// 键盘 Esc 返回
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && currentNews) {
         backToList();
     }
 });
 
-// 启动
 loadNews();
 </script>
 
