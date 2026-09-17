@@ -3,27 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Search - 一站式导航</title>
+<title>Search</title>
 <style>
 :root {
     --bg: #0a0a1e;
     --card: #12122a;
-    --text: #e0e0e0;
     --accent: #0078D4;
     --accent2: #00ccff;
-    --gold: #FFD700;
     --green: #00ff41;
-    --purple: #9944ff;
-    --orange: #ff8800;
     --red: #ff4444;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
     font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
     background: var(--bg);
-    color: var(--text);
+    color: #e0e0e0;
     min-height: 100vh;
-    overflow-x: hidden;
     background: radial-gradient(ellipse at 50% 0%, rgba(0,120,212,0.15) 0%, transparent 70%);
 }
 .container {
@@ -60,8 +55,8 @@ body {
 .search-box {
     width: 100%;
     padding: 18px 60px 18px 60px;
-    background: rgba(255,255,255,0.05);
-    border: 2px solid rgba(255,255,255,0.1);
+    background: #1a1a2e;
+    border: 2px solid #333;
     border-radius: 40px;
     color: #ffffff;
     font-size: 16px;
@@ -71,7 +66,6 @@ body {
 }
 .search-box:focus {
     border-color: var(--accent2);
-    background: rgba(255,255,255,0.08);
     box-shadow: 0 0 30px rgba(0,204,255,0.2);
 }
 .search-box::placeholder { color: #666; }
@@ -109,8 +103,8 @@ body {
 }
 .cat-btn {
     padding: 10px 24px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
+    background: #1a1a2e;
+    border: 1px solid #333;
     border-radius: 20px;
     color: #aaa;
     font-size: 13px;
@@ -131,7 +125,7 @@ body {
 /* 项目网格 */
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 14px;
     padding-bottom: 80px;
 }
@@ -139,14 +133,9 @@ body {
     background: var(--card);
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 14px;
-    padding: 22px 18px;
+    padding: 24px 20px;
     cursor: pointer;
     transition: all 0.25s;
-    text-decoration: none;
-    color: inherit;
-    display: block;
-    position: relative;
-    overflow: hidden;
 }
 .card:hover {
     border-color: rgba(0,204,255,0.4);
@@ -154,44 +143,20 @@ body {
     box-shadow: 0 10px 30px rgba(0,120,212,0.2);
 }
 .card .icon {
-    font-size: 38px;
-    margin-bottom: 12px;
+    font-size: 42px;
+    margin-bottom: 14px;
     display: block;
 }
 .card .name {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
     color: #fff;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 .card .desc {
-    font-size: 12px;
+    font-size: 13px;
     color: #888;
-    line-height: 1.5;
-}
-.card .tags {
-    display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
-    margin-top: 10px;
-}
-.card .tag {
-    font-size: 10px;
-    padding: 2px 8px;
-    background: rgba(0,204,255,0.1);
-    color: var(--accent2);
-    border-radius: 10px;
-}
-.card .news-badge {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    font-size: 9px;
-    padding: 3px 8px;
-    background: rgba(255,68,68,0.2);
-    color: var(--red);
-    border-radius: 8px;
-    font-weight: bold;
+    line-height: 1.6;
 }
 
 /* 空状态 */
@@ -200,138 +165,6 @@ body {
     text-align: center;
     padding: 60px 0;
     color: #666;
-}
-.empty .empty-icon { font-size: 48px; margin-bottom: 12px; }
-
-/* 详情页 */
-.detail-page {
-    display: none;
-    padding: 80px 0 60px;
-    max-width: 700px;
-    margin: 0 auto;
-}
-.detail-page.active { display: block; }
-.detail-back {
-    display: inline-block;
-    padding: 8px 18px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 20px;
-    color: #aaa;
-    font-size: 13px;
-    cursor: pointer;
-    margin-bottom: 30px;
-    transition: all 0.2s;
-}
-.detail-back:hover {
-    border-color: var(--accent2);
-    color: #fff;
-}
-.detail-header {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    margin-bottom: 30px;
-}
-.detail-icon {
-    font-size: 64px;
-    flex-shrink: 0;
-}
-.detail-title {
-    font-size: 28px;
-    font-weight: bold;
-    color: #fff;
-    margin-bottom: 6px;
-}
-.detail-category {
-    font-size: 12px;
-    color: var(--accent2);
-    padding: 3px 12px;
-    background: rgba(0,204,255,0.1);
-    border-radius: 12px;
-    display: inline-block;
-}
-.detail-body {
-    background: var(--card);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 14px;
-    padding: 28px;
-    margin-bottom: 24px;
-    line-height: 1.8;
-}
-.detail-body h3 {
-    font-size: 15px;
-    color: var(--accent2);
-    margin-bottom: 12px;
-}
-.detail-body p {
-    font-size: 14px;
-    color: #aaa;
-    margin-bottom: 10px;
-}
-.detail-tags {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-top: 16px;
-}
-.detail-tag {
-    font-size: 12px;
-    padding: 4px 12px;
-    background: rgba(0,204,255,0.1);
-    color: var(--accent2);
-    border-radius: 12px;
-}
-.detail-btn-row {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-.detail-btn {
-    display: inline-block;
-    padding: 16px 40px;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    color: #fff;
-    font-size: 16px;
-    font-weight: 600;
-    text-decoration: none;
-    border-radius: 40px;
-    box-shadow: 0 4px 20px rgba(0,120,212,0.4);
-    transition: all 0.3s;
-    cursor: pointer;
-    border: none;
-    font-family: inherit;
-}
-.detail-btn:hover {
-    transform: scale(1.05);
-    box-shadow: 0 6px 30px rgba(0,120,212,0.6);
-}
-.detail-btn.secondary {
-    background: rgba(255,255,255,0.05);
-    border: 2px solid rgba(255,255,255,0.15);
-    box-shadow: none;
-    color: #aaa;
-}
-.detail-btn.secondary:hover {
-    border-color: var(--accent2);
-    color: #fff;
-}
-.detail-news {
-    background: rgba(255,215,0,0.05);
-    border: 1px solid rgba(255,215,0,0.2);
-    border-radius: 14px;
-    padding: 20px;
-    margin-bottom: 24px;
-}
-.detail-news h3 {
-    font-size: 14px;
-    color: var(--gold);
-    margin-bottom: 10px;
-}
-.detail-news p {
-    font-size: 13px;
-    color: #aaa;
-    line-height: 1.7;
 }
 
 /* 页脚 */
@@ -343,19 +176,10 @@ footer {
     color: #555;
 }
 
-/* 移动端 */
 @media (max-width: 600px) {
     .hero { padding: 80px 0 40px; }
     .hero .logo { font-size: 30px; }
-    .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-    .card { padding: 16px 14px; }
-    .card .icon { font-size: 30px; }
-    .card .name { font-size: 13px; }
-    .card .desc { font-size: 11px; }
-    .detail-icon { font-size: 48px; }
-    .detail-title { font-size: 22px; }
-    .detail-body { padding: 20px; }
-    .detail-btn { padding: 14px 28px; font-size: 14px; }
+    .grid { grid-template-columns: 1fr; }
 }
 
 @keyframes fadeIn {
@@ -369,49 +193,20 @@ footer {
 
 <div class="container">
 
-    <div id="mainPage">
-        <div class="hero">
-            <div class="logo">Sea<span>rch</span></div>
-            <div class="subtitle">一站式导航 · 项目·资讯·媒体</div>
+    <div class="hero">
+        <div class="logo">Sea<span>rch</span></div>
+        <div class="subtitle">一站式导航</div>
 
-            <div class="search-wrap">
-                <span class="search-icon">🔍</span>
-                <input type="text" class="search-box" id="searchBox" placeholder="搜索..." autocomplete="off">
-                <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
-            </div>
-
-            <div class="categories" id="categories"></div>
+        <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-box" id="searchBox" placeholder="搜索..." autocomplete="off">
+            <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
         </div>
 
-        <div class="grid" id="grid"></div>
+        <div class="categories" id="categories"></div>
     </div>
 
-    <div class="detail-page" id="detailPage">
-        <div class="detail-back" onclick="backToMain()">← 返回</div>
-        <div class="detail-header">
-            <div class="detail-icon" id="detailIcon">🖥️</div>
-            <div>
-                <div class="detail-title" id="detailTitle">项目名</div>
-                <span class="detail-category" id="detailCategory">分类</span>
-            </div>
-        </div>
-
-        <div class="detail-body">
-            <h3>这是什么？</h3>
-            <p id="detailDesc">项目介绍...</p>
-            <div class="detail-tags" id="detailTags"></div>
-        </div>
-
-        <div class="detail-news" id="detailNews" style="display:none;">
-            <h3>📰 相关资讯</h3>
-            <p id="detailNewsText">暂无资讯</p>
-        </div>
-
-        <div class="detail-btn-row">
-            <button class="detail-btn" id="detailMainBtn" onclick="openProjectUrl()">🔗 打开链接</button>
-            <button class="detail-btn secondary" id="detailExtraBtn" onclick="openExtraUrl()" style="display:none;">📄 查看详情</button>
-        </div>
-    </div>
+    <div class="grid" id="grid"></div>
 
 </div>
 
@@ -427,110 +222,14 @@ var projects = [
         icon: '🖥️',
         url: 'PTD.html',
         desc: '浏览器中的 Windows 桌面模拟器',
-        longDesc: 'tkemu 是一个运行在浏览器中的 Windows 桌面模拟器，基于 Pyodide 0.27.0。支持完整的窗口管理、任务栏、开始菜单、虚拟文件系统、rf 脚本引擎、KD 应用系统和 sys 系统更新。',
-        news: '最新版本 v1.9.6 已发布，新增 SRM 系统资源管理器、TrustedInstaller 安全体系、硬件桥接等功能。',
-        category: 'windows',
-        tags: ['桌面', 'Python', '模拟器']
+        category: 'windows'
     },
     {
         name: 'Core System',
         icon: '💠',
         url: 'CS.html',
         desc: '全新架构的浏览器操作系统',
-        longDesc: 'Core System 是一个基于服务化架构的浏览器操作系统，独立于 tkemu。所有功能通过 Core 内核统一调度，支持服务注册、事件总线、状态管理和数据存储。',
-        news: 'v0.1 已发布，包含最简内核 + 桌面 + 任务栏。',
-        category: 'windows',
-        tags: ['操作系统', '服务化', '内核']
-    },
-    {
-        name: 'Windows Control',
-        icon: '⚙️',
-        url: 'PTD.html',
-        desc: '仿 Windows 控制面板',
-        longDesc: '完整模拟 Windows 7 控制面板，包含类别视图、图标视图、搜索、侧边栏，25+ 设置项。',
-        news: '新增分辨率设置、管理员密码修改功能。',
-        category: 'windows',
-        tags: ['控制', '设置']
-    },
-    {
-        name: 'System Control',
-        icon: '⚡',
-        url: 'PTD.html',
-        desc: '系统级脚本控制台',
-        longDesc: '运行 .sys 系统级脚本，拥有系统最高权限。需要 TrustedInstaller 验证。',
-        news: '新增 5 层安全检查：密码 + 密钥 + 危险扫描 + 验证码。',
-        category: 'windows',
-        tags: ['脚本', '系统']
-    },
-    {
-        name: '任务管理器',
-        icon: '📊',
-        url: 'PTD.html',
-        desc: '窗口和进程管理',
-        longDesc: '查看所有运行中的窗口和进程，可以结束进程。',
-        news: '支持 CPU/内存/存储性能图表。',
-        category: 'windows',
-        tags: ['进程']
-    },
-    {
-        name: '存储管理',
-        icon: '💿',
-        url: 'PTD.html',
-        desc: '系统存储空间管理',
-        longDesc: '查看 localStorage 和 IndexedDB 使用情况，清理回收站、系统更新、大文件。',
-        news: '新增按类型统计占用详情。',
-        category: 'windows',
-        tags: ['存储']
-    },
-    {
-        name: '注册表编辑器',
-        icon: '📋',
-        url: 'PTD.html',
-        desc: '系统注册表编辑',
-        longDesc: '树形目录浏览注册表，支持读取、修改、创建、删除键值。',
-        news: '和 Windows regedit 一样的操作体验。',
-        category: 'windows',
-        tags: ['注册表']
-    },
-    {
-        name: '组策略编辑器',
-        icon: '🛡️',
-        url: 'PTD.html',
-        desc: '系统策略管理',
-        longDesc: '配置系统策略，控制用户可执行的操作。',
-        news: '包含 12 项安全策略。',
-        category: 'windows',
-        tags: ['策略']
-    },
-    {
-        name: '设备管理器',
-        icon: '🔌',
-        url: 'PTD.html',
-        desc: '硬件设备桥接',
-        longDesc: '通过浏览器 API 桥接真实硬件：摄像头、麦克风、U盘、打印机、扬声器。',
-        news: '支持摄像头拍照、麦克风录音、U盘文件导入、打印文件。',
-        category: 'windows',
-        tags: ['硬件']
-    },
-    {
-        name: '多用户系统',
-        icon: '👥',
-        url: 'PTD.html',
-        desc: '多用户登录管理',
-        longDesc: '支持多用户，每个用户独立文件、设置、桌面图标位置。',
-        news: '数据隔离 + 权限控制。',
-        category: 'windows',
-        tags: ['用户']
-    },
-    {
-        name: '锁屏',
-        icon: '🔒',
-        url: 'PTD.html',
-        desc: '屏幕锁定保护',
-        longDesc: 'Win+L 快捷键锁屏，输入密码解锁。',
-        news: '显示时间和日期。',
-        category: 'windows',
-        tags: ['安全']
+        category: 'windows'
     },
 
     // ═══ 网页 ═══
@@ -539,133 +238,42 @@ var projects = [
         icon: '🐍',
         url: 'Python.html',
         desc: '在线 Python 集成开发环境',
-        longDesc: '基于 Pyodide 的在线 Python IDE，支持 tkinter 模拟、代码运行、Shell 交互、文件保存。类似 Thonny 的界面。',
-        news: '支持 tkinter 组件模拟，可在浏览器中运行 Python GUI 程序。',
-        category: 'web',
-        tags: ['Python', 'IDE', 'tkinter']
+        category: 'web'
     },
     {
         name: 'RF 语言',
         icon: '🔨',
         url: 'RF.html',
         desc: 'C 语言编写的轻量级编程语言',
-        longDesc: 'RF（Rapid Forge）是一门用纯 C 语言编写的轻量级编程语言。语法独创、中英文编码友好，能调用 Win32 API 和任意 DLL，支持 2D/3D 图形、多线程、文件操作，自带包管理和图形化设计器。',
-        news: '已完成 RF_Compiler.dll、RF_Package.dll、RF_Game.dll、RF_D3D.dll、RF_ThreeJS.dll 和 RF_Studio.exe IDE。',
-        category: 'web',
-        tags: ['编程', 'C', 'Windows'],
-        extraUrl: 'RF.html'
+        category: 'web'
     },
     {
         name: 'W 语言',
         icon: '🪟',
         url: 'W.html',
         desc: '专为 Windows 界面设计的语言',
-        longDesc: 'W 语言是专为 Windows 界面开发设计的语言。纯 C 实现，直接调 Win32 原生 API，.w 文件即写即运行。目标是让 Windows 界面开发像写 HTML 一样简单，但跑的是原生窗口。',
-        news: '核心已全部跑通，24 个断言全部通过。',
-        category: 'web',
-        tags: ['编程', 'C', 'Windows', '界面'],
-        extraUrl: 'W-tutorial.html',
-        extraText: '📖 查看教程'
+        category: 'web'
     },
     {
-        name: 'KSD 冒险游戏框架',
+        name: 'KSD 游戏框架',
         icon: '🎮',
         url: 'KSD.html',
         desc: '纯 Python 打造的模块化游戏框架',
-        longDesc: 'KSD 是一个用纯 Python 打造的模块化游戏框架，从 Core 1.0 迭代到 Core 10.0，功能涵盖用户系统、任务剧情、联机、成就、商店、合成等 30+ 模块。',
-        news: 'Core 10.0 已发布，包含 15 大新系统。',
-        category: 'web',
-        tags: ['游戏', 'Python', '框架']
+        category: 'web'
+    },
+    {
+        name: '双人聊天室',
+        icon: '💬',
+        url: 'chat.html',
+        desc: '基于 WebSocket 的双人实时聊天',
+        category: 'web'
     },
     {
         name: 'GitHub 仓库',
         icon: '📂',
         url: 'https://github.com/Zack595910/KSD-',
         desc: '开源项目源代码',
-        longDesc: '所有项目的源代码都托管在 GitHub。',
-        news: '欢迎 Star 和 Fork。',
-        category: 'web',
-        tags: ['源码']
-    },
-    {
-        name: '代码编辑器',
-        icon: '📝',
-        url: 'PTD.html',
-        desc: '在线代码编辑器',
-        longDesc: '支持 Python、rf、KD、sys 等多种文件编辑。',
-        news: '支持 Ctrl+S 保存和 F5 运行。',
-        category: 'web',
-        tags: ['编辑']
-    },
-    {
-        name: 'Python Shell',
-        icon: '⬛',
-        url: 'PTD.html',
-        desc: '在线 Python 交互环境',
-        longDesc: '基于 Pyodide 的 Python 交互环境，支持 tkinter 模拟层。',
-        news: '支持 20+ tkinter 组件。',
-        category: 'web',
-        tags: ['Python']
-    },
-    {
-        name: '文件管理器',
-        icon: '📁',
-        url: 'PTD.html',
-        desc: '虚拟文件系统管理',
-        longDesc: '管理虚拟文件系统中的文件，支持搜索、分类、上传下载。',
-        news: '支持拖拽上传、批量选择。',
-        category: 'web',
-        tags: ['文件']
-    },
-    {
-        name: 'KD 应用生成器',
-        icon: '🛠️',
-        url: 'PTD.html',
-        desc: '可视化生成 KD 应用',
-        longDesc: '拖拽组件生成 KD 应用代码。',
-        news: '支持一键安装为应用。',
-        category: 'web',
-        tags: ['开发']
-    },
-    {
-        name: 'KD 教程',
-        icon: '📘',
-        url: 'PTD.html',
-        desc: 'KD 应用开发教程',
-        longDesc: '从零开始学会写 KD 应用。',
-        news: '包含 9 章完整教程。',
-        category: 'web',
-        tags: ['教程']
-    },
-    {
-        name: 'RF 帮助器',
-        icon: '📜',
-        url: 'PTD.html',
-        desc: 'RF 脚本语言参考',
-        longDesc: '图形化 RF 脚本帮助文档。',
-        news: '包含命令速查、模板库、入门教程。',
-        category: 'web',
-        tags: ['RF']
-    },
-    {
-        name: '聊天室',
-        icon: '💬',
-        url: 'PTD.html',
-        desc: '局域网聊天',
-        longDesc: '简单的聊天室应用。',
-        news: '支持多用户聊天。',
-        category: 'web',
-        tags: ['聊天']
-    },
-    {
-        name: '系统备份',
-        icon: '💾',
-        url: 'PTD.html',
-        desc: '数据备份和还原',
-        longDesc: '导出系统数据为 JSON 文件。',
-        news: '支持完整备份和恢复。',
-        category: 'web',
-        tags: ['备份']
+        category: 'web'
     },
 
     // ═══ 媒体 ═══
@@ -674,121 +282,32 @@ var projects = [
         icon: '🏰',
         url: 'tafang.html',
         desc: '策略塔防游戏',
-        longDesc: '一款均衡版塔防游戏，支持轻机枪、中机枪、重机枪、激光炮 4 种炮塔，路障系统，A* 寻路，存档读档。',
-        news: '均衡版已发布，支持存档/读档/暂停/重置。',
-        category: 'media',
-        tags: ['游戏', '塔防', '策略']
-    },
-    {
-        name: 'KSD 3D Edition',
-        icon: '📱',
-        url: 'https://zack595910.github.io/',
-        desc: 'NovaSoftEngine 驱动的 3D 游戏引擎',
-        longDesc: 'KSD 3D Edition 是 KSD 的 3D 分支，使用 NovaSoftEngine GPU Hybrid 渲染，支持 glTF 2.0、OBJ、FBX 加载。',
-        news: '框架搭建中，未完成。',
-        category: 'media',
-        tags: ['游戏', '3D'],
-        isNews: false
+        category: 'media'
     },
     {
         name: '最新资讯',
         icon: '📰',
         url: 'news.html',
-        desc: '项目最新新闻和公告',
-        longDesc: '查看所有项目的最新新闻、更新公告、开发进度。',
-        news: '持续更新中。',
-        category: 'media',
-        tags: ['新闻'],
-        isNews: true
-    },
-    {
-        name: '画图工具',
-        icon: '🎨',
-        url: 'PTD.html',
-        desc: '简易在线画板',
-        longDesc: '简单的画图工具，支持画笔、橡皮、颜色。',
-        news: '支持导出 PNG。',
-        category: 'media',
-        tags: ['绘图']
-    },
-    {
-        name: '写字板',
-        icon: '📄',
-        url: 'PTD.html',
-        desc: '文本编辑工具',
-        longDesc: '简单的文本编辑工具。',
-        news: '支持自动保存。',
-        category: 'media',
-        tags: ['文本']
-    },
-    {
-        name: '扫雷',
-        icon: '💣',
-        url: 'PTD.html',
-        desc: '经典扫雷游戏',
-        longDesc: 'Windows 经典游戏扫雷。',
-        news: '支持三个难度。',
-        category: 'media',
-        tags: ['游戏']
-    },
-    {
-        name: '贪吃蛇',
-        icon: '🐍',
-        url: 'PTD.html',
-        desc: '经典贪吃蛇游戏',
-        longDesc: '经典贪吃蛇游戏。',
-        news: '支持键盘和触屏操作。',
-        category: 'media',
-        tags: ['游戏']
-    },
-    {
-        name: '虚拟钢琴',
-        icon: '🎹',
-        url: 'PTD.html',
-        desc: '在线弹奏钢琴',
-        longDesc: '用键盘弹奏钢琴。',
-        news: '支持录音。',
-        category: 'media',
-        tags: ['音乐']
-    },
-    {
-        name: '像素画板',
-        icon: '🖼️',
-        url: 'PTD.html',
-        desc: '像素艺术创作',
-        longDesc: '创作像素画，支持导出。',
-        news: '支持多种尺寸。',
-        category: 'media',
-        tags: ['像素']
-    },
-    {
-        name: '桌面宠物',
-        icon: '🐱',
-        url: 'PTD.html',
-        desc: '桌面小宠物',
-        longDesc: '桌面上的小宠物，会走动、睡觉、互动。',
-        news: '支持喂食。',
-        category: 'media',
-        tags: ['宠物']
+        desc: '项目新闻和公告',
+        category: 'media'
     }
 ];
 
 var categories = [
-    { id: 'all', name: '全部', icon: '📦' },
-    { id: 'windows', name: 'Windows应用', icon: '🖥️' },
-    { id: 'web', name: '网页', icon: '🌐' },
-    { id: 'media', name: '媒体', icon: '🎬' }
+    { id: 'all', name: '全部' },
+    { id: 'windows', name: 'Windows应用' },
+    { id: 'web', name: '网页' },
+    { id: 'media', name: '媒体' }
 ];
 
 var currentCategory = 'all';
 var currentSearch = '';
-var currentProject = null;
 
 function renderCategories() {
     var el = document.getElementById('categories');
     var h = '';
     categories.forEach(function(cat) {
-        h += '<button class="cat-btn' + (currentCategory === cat.id ? ' active' : '') + '" onclick="setCategory(\'' + cat.id + '\')">' + cat.icon + ' ' + cat.name + '</button>';
+        h += '<button class="cat-btn' + (currentCategory === cat.id ? ' active' : '') + '" onclick="setCategory(\'' + cat.id + '\')">' + cat.name + '</button>';
     });
     el.innerHTML = h;
 }
@@ -799,30 +318,21 @@ function renderProjects() {
         var catMatch = currentCategory === 'all' || p.category === currentCategory;
         var searchMatch = !currentSearch ||
             p.name.toLowerCase().indexOf(currentSearch.toLowerCase()) !== -1 ||
-            p.desc.toLowerCase().indexOf(currentSearch.toLowerCase()) !== -1 ||
-            p.tags.some(function(t) { return t.toLowerCase().indexOf(currentSearch.toLowerCase()) !== -1; });
+            p.desc.toLowerCase().indexOf(currentSearch.toLowerCase()) !== -1;
         return catMatch && searchMatch;
     });
 
     if (filtered.length === 0) {
-        grid.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div>没有找到匹配的项目</div>';
+        grid.innerHTML = '<div class="empty">没有找到匹配的项目</div>';
         return;
     }
 
     var h = '';
     filtered.forEach(function(p, i) {
-        h += '<div class="card" onclick="openDetail(\'' + p.name + '\')" style="animation-delay:' + (i * 0.03) + 's">';
-        if (p.isNews) h += '<div class="news-badge">NEW</div>';
+        h += '<div class="card" onclick="window.open(\'' + p.url + '\', \'_blank\')" style="animation-delay:' + (i * 0.03) + 's">';
         h += '<span class="icon">' + p.icon + '</span>';
         h += '<div class="name">' + p.name + '</div>';
         h += '<div class="desc">' + p.desc + '</div>';
-        if (p.tags && p.tags.length > 0) {
-            h += '<div class="tags">';
-            p.tags.forEach(function(t) {
-                h += '<span class="tag">' + t + '</span>';
-            });
-            h += '</div>';
-        }
         h += '</div>';
     });
     grid.innerHTML = h;
@@ -847,83 +357,10 @@ document.getElementById('searchBox').addEventListener('input', function(e) {
     renderProjects();
 });
 
-function openDetail(name) {
-    var p = projects.find(function(x) { return x.name === name; });
-    if (!p) return;
-
-    if (p.isNews) {
-        window.location.href = p.url;
-        return;
-    }
-
-    currentProject = p;
-
-    document.getElementById('detailIcon').textContent = p.icon;
-    document.getElementById('detailTitle').textContent = p.name;
-    document.getElementById('detailCategory').textContent = getCategoryName(p.category);
-    document.getElementById('detailDesc').textContent = p.longDesc || p.desc;
-
-    var tagsEl = document.getElementById('detailTags');
-    tagsEl.innerHTML = '';
-    if (p.tags) {
-        p.tags.forEach(function(t) {
-            tagsEl.innerHTML += '<span class="detail-tag">' + t + '</span>';
-        });
-    }
-
-    var newsEl = document.getElementById('detailNews');
-    if (p.news) {
-        document.getElementById('detailNewsText').textContent = p.news;
-        newsEl.style.display = 'block';
-    } else {
-        newsEl.style.display = 'none';
-    }
-
-    var extraBtn = document.getElementById('detailExtraBtn');
-    if (p.extraUrl) {
-        extraBtn.style.display = 'inline-block';
-        extraBtn.textContent = p.extraText || '📄 查看详情';
-    } else {
-        extraBtn.style.display = 'none';
-    }
-
-    document.getElementById('mainPage').style.display = 'none';
-    document.getElementById('detailPage').classList.add('active');
-    window.scrollTo(0, 0);
-}
-
-function getCategoryName(id) {
-    var cat = categories.find(function(c) { return c.id === id; });
-    return cat ? cat.name : '';
-}
-
-function openProjectUrl() {
-    if (currentProject) {
-        window.open(currentProject.url, '_blank');
-    }
-}
-
-function openExtraUrl() {
-    if (currentProject && currentProject.extraUrl) {
-        window.open(currentProject.extraUrl, '_blank');
-    }
-}
-
-function backToMain() {
-    document.getElementById('detailPage').classList.remove('active');
-    document.getElementById('mainPage').style.display = 'block';
-    currentProject = null;
-}
-
 document.addEventListener('keydown', function(e) {
     if (e.key === '/' && document.activeElement !== document.getElementById('searchBox')) {
         e.preventDefault();
         document.getElementById('searchBox').focus();
-    }
-    if (e.key === 'Escape') {
-        if (document.getElementById('detailPage').classList.contains('active')) {
-            backToMain();
-        }
     }
 });
 
