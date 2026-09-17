@@ -9,6 +9,9 @@
   body { font-family: -apple-system, sans-serif; background: #111; color: #eee; display: flex; flex-direction: column; height: 100vh; }
   header { padding: 12px; background: #1c1c1e; text-align: center; font-weight: bold; border-bottom: 1px solid #333; }
   #status { font-size: 12px; color: #888; margin-top: 4px; }
+  #online-box { font-size: 13px; color: #aaa; margin-top: 6px; }
+  #online-box .on { color: #4cd964; }
+  #online-box .off { color: #ff3b30; }
   #messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
   .msg { max-width: 75%; padding: 8px 12px; border-radius: 16px; word-break: break-word; font-size: 15px; line-height: 1.4; }
   .me { align-self: flex-end; background: #0b84ff; color: #fff; border-bottom-right-radius: 4px; }
@@ -18,12 +21,34 @@
   input { flex: 1; padding: 10px 14px; border-radius: 20px; border: 1px solid #333; background: #2c2c2e; color: #fff; font-size: 15px; outline: none; }
   button { padding: 0 18px; border-radius: 20px; border: none; background: #0b84ff; color: #fff; font-weight: bold; font-size: 15px; cursor: pointer; }
   button:active { opacity: 0.7; }
+
+  #auth-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.9);
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    padding: 24px; z-index: 100; gap: 12px;
+  }
+  #auth-overlay h2 { margin-bottom: 8px; }
+  #auth-overlay input { width: 100%; max-width: 300px; }
+  #auth-overlay button { width: 100%; max-width: 300px; padding: 12px; }
+  #auth-msg { color: #f44; font-size: 13px; min-height: 18px; }
 </style>
 </head>
 <body>
+
+<div id="auth-overlay">
+  <h2 id="auth-title">创建账户</h2>
+  <input id="auth-name" type="text" placeholder="给自己起个名字" autocomplete="off">
+  <input id="auth-pass" type="password" placeholder="设置密码" autocomplete="off">
+  <input id="auth-room-key" type="password" placeholder="房间密钥（两个人约定好）" autocomplete="off">
+  <button id="auth-btn">创建并进入</button>
+  <div id="auth-msg"></div>
+</div>
+
 <header>
   双人聊天室
-  <div id="status">连接中...</div>
+  <div id="status">未连接</div>
+  <div id="online-box">对方状态：<span id="peer-status" class="off">离线</span></div>
 </header>
 <div id="messages"></div>
 <footer>
@@ -32,51 +57,156 @@
 </footer>
 
 <script>
-  // itty-sockets 的客户端代码，直接粘贴到这里
   let connect=(e,s={})=>{let a,t,n=[],p={},o=()=>(a||(a=new WebSocket((/^wss?:/.test(e)?e:"wss://itty.ws/c/"+e)+"?"+new URLSearchParams(s)),a.onmessage=(e,s=JSON.parse(e.data),a=s?.message,t={...null==a?.[0]&&a,...s})=>[t.type,s.type?0:"message","*"].map(e=>p[e]?.map(e=>e(t))),a.onopen=()=>(n.splice(0).map(e=>a.send(e)),p.open?.map(e=>e(t)),t&&a?.close()),a.onclose=()=>(t=a=null,p.close?.map(e=>e(t)))),l),l={open:o,send:(e,s)=>(e=(s?`${s}`:"")+JSON.stringify(e),1&a?.readyState?a.send(e):n.push(e),o()),on:(e,s)=>((p[e?.[0]?e:"*"]??=[]).push(e?.[0]?s:a=>e?.(a)&&s(a)),o()),remove:(e,s)=>(p[e]=p[e]?.filter(e=>e!=s),l),close:()=>(1&a?.readyState?a.close():t=1,l),push:(e,s)=>(t=1,l.send(e,s))};return l};
 
-  // ⚠️ 房间名：两个人必须用完全一样的，比如 'wo-men-de-chat'
-  const ROOM = 'wo-men-de-chat'; 
+  const STORE_KEY = 'chat_account_v1';
+  const HISTORY_KEY = 'chat_history_v1';
+
+  const authOverlay = document.getElementById('auth-overlay');
+  const authTitle = document.getElementById('auth-title');
+  const authName = document.getElementById('auth-name');
+  const authPass = document.getElementById('auth-pass');
+  const authRoomKey = document.getElementById('auth-room-key');
+  const authBtn = document.getElementById('auth-btn');
+  const authMsg = document.getElementById('auth-msg');
 
   const statusEl = document.getElementById('status');
+  const peerStatusEl = document.getElementById('peer-status');
   const messagesEl = document.getElementById('messages');
   const inputEl = document.getElementById('input');
   const sendBtn = document.getElementById('send');
 
-  function addMessage(text, type) {
-    const div = document.createElement('div');
-    div.className = 'msg ' + type;
-    div.textContent = text;
-    messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+  let socket = null;
+  let nickname = '';
+  let heartbeatTimer = null;
+  let peerCheckTimer = null;
+  let lastPeerHeartbeat = 0;
+
+  const HEARTBEAT_INTERVAL = 3000;
+  const PEER_TIMEOUT = 10000;
+
+  const saved = localStorage.getItem(STORE_KEY);
+  if (saved) {
+    authTitle.textContent = '登录';
+    authName.value = JSON.parse(saved).name || '';
+    authPass.placeholder = '输入密码登录';
+    authBtn.textContent = '登录';
+    authName.disabled = true;
+    authRoomKey.placeholder = '房间密钥';
   }
 
-  // 连接并加入房间
-  const socket = connect(ROOM);
+  authBtn.addEventListener('click', () => {
+    const name = authName.value.trim();
+    const pass = authPass.value;
+    const roomKey = authRoomKey.value.trim();
 
-  // 收到消息
-  socket.on('message', (data) => {
-    // data 里包含了消息和发送者别名
-    addMessage(data.message, 'other');
+    if (!name || !pass || !roomKey) {
+      authMsg.textContent = '名字、密码、房间密钥都要填';
+      return;
+    }
+
+    if (!saved) {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ name, pass }));
+      nickname = name;
+      startChat(roomKey);
+    } else {
+      const acc = JSON.parse(saved);
+      if (pass !== acc.pass) {
+        authMsg.textContent = '密码不对';
+        return;
+      }
+      nickname = acc.name;
+      startChat(roomKey);
+    }
   });
 
-  // 连接状态
-  socket.on('open', () => { statusEl.textContent = '已连接'; });
-  socket.on('close', () => { statusEl.textContent = '连接断开'; });
+  function startChat(room) {
+    authOverlay.style.display = 'none';
 
-  // 发送消息
-  function sendMessage() {
-    const text = inputEl.value.trim();
-    if (!text) return;
-    socket.send(text);
-    addMessage(text, 'me');
-    inputEl.value = '';
+    const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    history.forEach(item => {
+      renderMessage(item.text, item.type, item.name);
+    });
+
+    function renderMessage(text, type, who) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + type;
+      div.textContent = who && type === 'other' ? who + '：' + text : text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function saveMessage(text, type, who) {
+      const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      history.push({ text, type, name: who, time: Date.now() });
+      if (history.length > 500) history.splice(0, history.length - 500);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    }
+
+    function addMessage(text, type, who) {
+      renderMessage(text, type, who);
+      saveMessage(text, type, who);
+    }
+
+    socket = connect(room);
+
+    socket.on('message', (data) => {
+      // 先处理心跳
+      if (data && data.type === 'heartbeat') {
+        if (data.name && data.name !== nickname) {
+          lastPeerHeartbeat = Date.now();
+          peerStatusEl.textContent = '在线';
+          peerStatusEl.className = 'on';
+        }
+        return;
+      }
+
+      // 普通消息
+      if (data.name && data.name === nickname) return;
+      addMessage(data.text || data.message, 'other', data.name);
+    });
+
+    socket.on('open', () => {
+      statusEl.textContent = '已连接';
+
+      // 立刻广播一次“我来了”
+      socket.send({ type: 'heartbeat', name: nickname });
+
+      // 定时心跳
+      heartbeatTimer = setInterval(() => {
+        socket.send({ type: 'heartbeat', name: nickname });
+      }, HEARTBEAT_INTERVAL);
+
+      // 定时检查对方是否超时
+      peerCheckTimer = setInterval(() => {
+        if (lastPeerHeartbeat && Date.now() - lastPeerHeartbeat > PEER_TIMEOUT) {
+          peerStatusEl.textContent = '离线';
+          peerStatusEl.className = 'off';
+        }
+      }, 1000);
+    });
+
+    socket.on('close', () => {
+      statusEl.textContent = '连接断开';
+      peerStatusEl.textContent = '离线';
+      peerStatusEl.className = 'off';
+      clearInterval(heartbeatTimer);
+      clearInterval(peerCheckTimer);
+    });
+
+    sendBtn.addEventListener('click', sendMessage);
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      socket.send({ text: text, name: nickname });
+      addMessage(text, 'me', nickname);
+      inputEl.value = '';
+    }
   }
-
-  sendBtn.addEventListener('click', sendMessage);
-  inputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') sendMessage();
-  });
 </script>
 </body>
 </html>
