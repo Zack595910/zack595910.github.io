@@ -1,0 +1,1897 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JS-H86 C3 32Bit</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: 100%; height: 100vh; overflow: hidden; background: #000; color: #ccc; font-family: 'Consolas', monospace; display: flex; flex-direction: column; }
+    #status-bar { height: 28px; background: #1a1a1a; border-bottom: 1px solid #333; display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: #888; flex-shrink: 0; gap: 14px; }
+    #status-bar .val { color: #4ec9b0; margin-left: 4px; }
+    #terminal { flex: 1; overflow-y: auto; padding: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+    #input-line { height: 32px; background: #141414; border-top: 1px solid #333; display: flex; align-items: center; padding: 0 12px; flex-shrink: 0; }
+    #input-line span { color: #569cd6; margin-right: 8px; }
+    #input-line input { flex: 1; background: transparent; border: none; color: #fff; font-family: inherit; font-size: 14px; outline: none; }
+    .line-info { color: #6a9955; } .line-error { color: #f44747; } .line-success { color: #4ec9b0; } .line-warn { color: #dcdcaa; }
+    #c2-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000; z-index: 9999; display: none; justify-content: center; align-items: center; }
+    #c2-canvas { image-rendering: pixelated; max-width: 100%; max-height: 100%; object-fit: contain; }
+</style>
+</head>
+<body>
+
+<div id="status-bar">
+    <span>C3 32-BIT</span>
+    <span>CPU <span class="val" id="stat-cpu">IDLE</span></span>
+    <span>PC <span class="val" id="stat-pc">0x00000000</span></span>
+    <span>SP <span class="val" id="stat-sp">0x00FFFFFF</span></span>
+    <span>R0 <span class="val" id="stat-r0">0x00000000</span></span>
+    <span>FLAGS <span class="val" id="stat-flags">--------</span></span>
+</div>
+<div id="terminal"></div>
+<div id="input-line">
+    <span>C3&gt;</span>
+    <input type="text" id="input-field" autocomplete="off" spellcheck="false" autofocus>
+</div>
+
+<div id="c2-screen"><canvas id="c2-canvas" width="640" height="480"></canvas></div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+//  内存：16 MB（0x000000 - 0xFFFFFF）
+// ═══════════════════════════════════════════════════════════
+const Memory = (() => {
+    const SIZE = 16777216;
+    const data = new Uint8Array(SIZE);
+    return {
+        SIZE,
+        readByte: a => data[a & 0xFFFFFF],
+        writeByte: (a, v) => { data[a & 0xFFFFFF] = v & 0xFF; },
+        readWord: a => {
+            a &= 0xFFFFFF;
+            return (data[a] | (data[a+1]<<8) | (data[a+2]<<16) | (data[a+3]<<24)) >>> 0;
+        },
+        writeWord: (a, v) => {
+            a &= 0xFFFFFF;
+            data[a]=v&0xFF; data[a+1]=(v>>>8)&0xFF; data[a+2]=(v>>>16)&0xFF; data[a+3]=(v>>>24)&0xFF;
+        },
+        writeBlock: (a, b) => { for (let i=0;i<b.length;i++) data[(a+i)&0xFFFFFF]=b[i]; },
+        clear: () => data.fill(0)
+    };
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  32 位 CPU（8 字节定长指令）
+//  指令布局：[op:1B][dst:1B][src:1B][pad:1B][imm32:4B]
+//  MOV_RI  : [op][dst][0][0][imm32]
+//  MOV_RR/ADD/SUB/MUL/MUL_HI/SWAP : [op][dst][src][0][0]
+//  NEG     : [op][dst][0][0][0]
+//  JMP/JZ/JNZ/CALL : [op][0][0][0][addr32]
+//  RET     : [op][0][0][0][0]
+//  INT     : [op][0][0][0][vector32]  ← 注意 vector 在 [4..7]
+//  HLT/NOP : [op][0][0][0][0]
+// ═══════════════════════════════════════════════════════════
+const CPU = (() => {
+    const regs = new Uint32Array(8);
+    let PC = 0;
+    let SP = 0x00FFFFFF;
+    let FLAGS = 0;
+
+    const F_Z = 0x01, F_C = 0x02, F_N = 0x04, F_V = 0x08, F_I = 0x10;
+    const STACK_TOP = 0x00FFFFFF;
+    const STACK_BOTTOM = 0x00010000;
+
+    let state = 'IDLE';
+    let lastError = null;
+    let instrCount = 0;
+
+    const OP = {
+        NOP: 0x00, HLT: 0x01,
+        MOV_RI: 0x11, MOV_RR: 0x10,
+        ADD: 0x20, SUB: 0x21, MUL: 0x22, MUL_HI: 0x23,
+        SWAP: 0x24, NEG: 0x25,
+        JMP: 0x50, JZ: 0x51, JNZ: 0x52,
+        CALL: 0x60, RET: 0x61,
+        INT: 0x70
+    };
+
+    function getReg(i) { return regs[i & 7]; }
+    function setReg(i, v) { regs[i & 7] = v >>> 0; }
+    function getPC() { return PC; }
+    function setPC(v) { PC = v >>> 0; }
+    function getSP() { return SP; }
+    function setSP(v) { SP = v >>> 0; }
+    function getFLAGS() { return FLAGS; }
+    function getState() { return state; }
+    function setState(s) { state = s; }
+    function getLastError() { return lastError; }
+    function getInstrCount() { return instrCount; }
+
+    function testFlag(m) { return (FLAGS & m) !== 0; }
+    function setFlag(m, on) { if (on) FLAGS |= m; else FLAGS &= ~m; FLAGS &= 0xFFFFFFFF; }
+    function updateZN(r) {
+        setFlag(F_Z, r === 0);
+        setFlag(F_N, (r & 0x80000000) !== 0);
+    }
+
+    function reset() {
+        regs.fill(0);
+        PC = 0; SP = STACK_TOP; FLAGS = 0;
+        state = 'IDLE'; lastError = null; instrCount = 0;
+    }
+
+    function push32(v) {
+        if (SP - 4 < STACK_BOTTOM) throw new Error('栈溢出 SP=0x' + SP.toString(16));
+        SP = (SP - 4) >>> 0;
+        Memory.writeWord(SP, v);
+    }
+    function pop32() {
+        if (SP >= STACK_TOP) throw new Error('栈为空');
+        const v = Memory.readWord(SP);
+        SP = (SP + 4) >>> 0;
+        return v;
+    }
+
+    function fetch() {
+        const b = new Uint8Array(8);
+        for (let i = 0; i < 8; i++) b[i] = Memory.readByte((PC + i) & 0xFFFFFF);
+        return b;
+    }
+
+    function step() {
+        if (state === 'HALTED' || state === 'ERROR') return { ok: true, halted: true };
+        try {
+            const b = fetch();
+            const op = b[0];
+            let advance = 8;
+
+            switch (op) {
+                case OP.NOP: break;
+                case OP.HLT: state = 'HALTED'; break;
+
+                case OP.MOV_RI: {
+                    const dst = b[1] & 7;
+                    const imm = (b[4] | (b[5]<<8) | (b[6]<<16) | (b[7]<<24)) >>> 0;
+                    regs[dst] = imm;
+                    updateZN(imm);
+                    break;
+                }
+                case OP.MOV_RR: {
+                    const dst = b[1] & 7, src = b[2] & 7;
+                    regs[dst] = regs[src];
+                    updateZN(regs[dst]);
+                    break;
+                }
+                case OP.ADD: {
+                    const dst = b[1] & 7, src = b[2] & 7;
+                    const r = regs[dst] + regs[src];
+                    const carry = r > 0xFFFFFFFF;
+                    regs[dst] = r >>> 0;
+                    updateZN(regs[dst]);
+                    setFlag(F_C, carry);
+                    setFlag(F_V, false);
+                    break;
+                }
+                case OP.SUB: {
+                    const dst = b[1] & 7, src = b[2] & 7;
+                    const r = regs[dst] - regs[src];
+                    const borrow = regs[dst] < regs[src];
+                    regs[dst] = r >>> 0;
+                    updateZN(regs[dst]);
+                    setFlag(F_C, borrow);
+                    setFlag(F_V, false);
+                    break;
+                }
+                case OP.MUL: {
+                    const dst = b[1] & 7, src = b[2] & 7;
+                    const prod = BigInt(regs[dst]) * BigInt(regs[src]);
+                    regs[dst] = Number(prod & 0xFFFFFFFFn) >>> 0;
+                    updateZN(regs[dst]);
+                    break;
+                }
+                case OP.MUL_HI: {
+                    const dst = b[1] & 7, src = b[2] & 7;
+                    const prod = BigInt(regs[dst]) * BigInt(regs[src]);
+                    regs[dst] = Number((prod >> 32n) & 0xFFFFFFFFn) >>> 0;
+                    updateZN(regs[dst]);
+                    break;
+                }
+                case OP.SWAP: {
+                    const dst = b[1] & 7, src = b[2] & 7;
+                    const t = regs[dst]; regs[dst] = regs[src]; regs[src] = t;
+                    updateZN(regs[dst]);
+                    break;
+                }
+                case OP.NEG: {
+                    const dst = b[1] & 7;
+                    regs[dst] = (0 - regs[dst]) >>> 0;
+                    updateZN(regs[dst]);
+                    setFlag(F_C, regs[dst] !== 0);
+                    break;
+                }
+                case OP.JMP: {
+                    PC = (b[4] | (b[5]<<8) | (b[6]<<16) | (b[7]<<24)) >>> 0;
+                    advance = 0;
+                    break;
+                }
+                case OP.JZ: {
+                    const addr = (b[4] | (b[5]<<8) | (b[6]<<16) | (b[7]<<24)) >>> 0;
+                    if (testFlag(F_Z)) { PC = addr; advance = 0; }
+                    break;
+                }
+                case OP.JNZ: {
+                    const addr = (b[4] | (b[5]<<8) | (b[6]<<16) | (b[7]<<24)) >>> 0;
+                    if (!testFlag(F_Z)) { PC = addr; advance = 0; }
+                    break;
+                }
+                case OP.CALL: {
+                    const addr = (b[4] | (b[5]<<8) | (b[6]<<16) | (b[7]<<24)) >>> 0;
+                    push32((PC + 8) >>> 0);
+                    PC = addr;
+                    advance = 0;
+                    break;
+                }
+                case OP.RET: {
+                    PC = pop32();
+                    advance = 0;
+                    break;
+                }
+                case OP.INT: {
+                    // ★ 修复：vector 在 [4..7]（emit8 把 imm32 放在 [4..7]）
+                    const vec = b[4] & 0xFF;
+                    const isrAddr = Memory.readWord(vec * 4);
+                    if (isrAddr !== 0) {
+                        push32((PC + 8) >>> 0);
+                        push32(FLAGS);
+                        setFlag(F_I, false);
+                        PC = isrAddr;
+                        advance = 0;
+                    } else {
+                        BIOS.handle(vec, {
+                            getReg, setReg, setState: s => { state = s; }
+                        });
+                    }
+                    break;
+                }
+                default:
+                    throw new Error('未知指令 0x' + op.toString(16).padStart(2, '0'));
+            }
+
+            if (advance) PC = (PC + 8) >>> 0;
+            instrCount++;
+            return { ok: true, halted: state === 'HALTED' };
+        } catch (e) {
+            state = 'ERROR';
+            lastError = e.message;
+            return { ok: false, error: e.message };
+        }
+    }
+
+    function run(maxInstr) {
+        const limit = maxInstr || 1000000;
+        state = 'RUNNING';
+        let n = 0;
+        while ((state === 'RUNNING') && n < limit) {
+            const r = step();
+            if (!r.ok) return { executed: n, halted: false, error: r.error };
+            n++;
+            if (state === 'HALTED') break;
+        }
+        return { executed: n, halted: state === 'HALTED', limitReached: n >= limit };
+    }
+
+    function snapshot() {
+        return {
+            R0: regs[0], R1: regs[1], R2: regs[2], R3: regs[3],
+            R4: regs[4], R5: regs[5], R6: regs[6], R7: regs[7],
+            PC, SP, FLAGS, state, instrCount, lastError
+        };
+    }
+
+    return {
+        OP, F_Z, F_C, F_N, F_V, F_I,
+        getReg, setReg, getPC, setPC, getSP, setSP, getFLAGS,
+        getState, setState, getLastError, getInstrCount,
+        testFlag, setFlag, updateZN,
+        reset, push32, pop32, step, run, snapshot
+    };
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  BIOS
+// ═══════════════════════════════════════════════════════════
+const BIOS = {
+    handle(n, api) {
+        if (n === 0x00) { api.setState('HALTED'); return; }
+        if (n === 0x10) {
+            const ch = String.fromCharCode(api.getReg(0) & 0xFF);
+            console.log('[BIOS] ' + ch);
+            return;
+        }
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+//  字库 8×8
+// ═══════════════════════════════════════════════════════════
+const Font = (() => {
+    const F = new Uint8Array([
+        0,0,0,0,0,0,0,0, 0x18,0x18,0x18,0x18,0x18,0,0x18,0, 0x6C,0x6C,0x24,0,0,0,0,0,
+        0x6C,0x6C,0xFE,0x6C,0xFE,0x6C,0x6C,0, 0x18,0x7E,0xC0,0x7C,0x06,0xFC,0x18,0,
+        0xC6,0xC6,0x0C,0x18,0x30,0x66,0xC6,0, 0x38,0x6C,0x38,0x76,0xDC,0xCC,0x76,0,
+        0x18,0x18,0x30,0,0,0,0,0, 0x0C,0x18,0x30,0x30,0x30,0x18,0x0C,0, 0x30,0x18,0x0C,0x0C,0x0C,0x18,0x30,0,
+        0,0x66,0x3C,0xFF,0x3C,0x66,0,0, 0,0x18,0x18,0x7E,0x18,0x18,0,0,
+        0,0,0,0,0,0x18,0x18,0x30, 0,0,0,0x7E,0,0,0,0,
+        0,0,0,0,0,0x18,0x18,0, 0x06,0x0C,0x18,0x30,0x60,0xC0,0x80,0,
+        0x3C,0x66,0x6E,0x76,0x66,0x66,0x3C,0, 0x18,0x38,0x18,0x18,0x18,0x18,0x7E,0,
+        0x3C,0x66,0x06,0x0C,0x18,0x30,0x7E,0, 0x3C,0x66,0x06,0x1C,0x06,0x66,0x3C,0,
+        0x0C,0x1C,0x3C,0x6C,0x7E,0x0C,0x0C,0, 0x7E,0x60,0x7C,0x06,0x06,0x66,0x3C,0,
+        0x1C,0x30,0x60,0x7C,0x66,0x66,0x3C,0, 0x7E,0x06,0x0C,0x18,0x30,0x30,0x30,0,
+        0x3C,0x66,0x66,0x3C,0x66,0x66,0x3C,0, 0x3C,0x66,0x66,0x3E,0x06,0x0C,0x38,0,
+        0,0x18,0x18,0,0,0x18,0x18,0, 0,0x18,0x18,0,0,0x18,0x18,0x30,
+        0x0C,0x18,0x30,0x60,0x30,0x18,0x0C,0, 0,0,0x7E,0,0x7E,0,0,0,
+        0x30,0x18,0x0C,0x06,0x0C,0x18,0x30,0, 0x3C,0x66,0x06,0x0C,0x18,0,0x18,0,
+        0x3C,0x66,0x6E,0x6E,0x60,0x66,0x3C,0, 0x18,0x3C,0x66,0x66,0x7E,0x66,0x66,0,
+        0x7C,0x66,0x66,0x7C,0x66,0x66,0x7C,0, 0x3C,0x66,0x60,0x60,0x60,0x66,0x3C,0,
+        0x78,0x6C,0x66,0x66,0x66,0x6C,0x78,0, 0x7E,0x60,0x60,0x7C,0x60,0x60,0x7E,0,
+        0x7E,0x60,0x60,0x7C,0x60,0x60,0x60,0, 0x3C,0x66,0x60,0x6E,0x66,0x66,0x3C,0,
+        0x66,0x66,0x66,0x7E,0x66,0x66,0x66,0, 0x3C,0x18,0x18,0x18,0x18,0x18,0x3C,0,
+        0x1E,0x0C,0x0C,0x0C,0x0C,0x6C,0x38,0, 0x66,0x6C,0x78,0x70,0x78,0x6C,0x66,0,
+        0x60,0x60,0x60,0x60,0x60,0x60,0x7E,0, 0xC6,0xEE,0xFE,0xD6,0xC6,0xC6,0xC6,0,
+        0x66,0x76,0x7E,0x7E,0x6E,0x66,0x66,0, 0x3C,0x66,0x66,0x66,0x66,0x66,0x3C,0,
+        0x7C,0x66,0x66,0x7C,0x60,0x60,0x60,0, 0x3C,0x66,0x66,0x66,0x66,0x6E,0x3C,0x06,
+        0x7C,0x66,0x66,0x7C,0x78,0x6C,0x66,0, 0x3C,0x66,0x60,0x3C,0x06,0x66,0x3C,0,
+        0x7E,0x18,0x18,0x18,0x18,0x18,0x18,0, 0x66,0x66,0x66,0x66,0x66,0x66,0x3C,0,
+        0x66,0x66,0x66,0x66,0x66,0x3C,0x18,0, 0xC6,0xC6,0xC6,0xD6,0xFE,0xEE,0xC6,0,
+        0x66,0x66,0x3C,0x18,0x3C,0x66,0x66,0, 0x66,0x66,0x66,0x3C,0x18,0x18,0x18,0,
+        0x7E,0x06,0x0C,0x18,0x30,0x60,0x7E,0, 0x3C,0x30,0x30,0x30,0x30,0x30,0x3C,0,
+        0xC0,0x60,0x30,0x18,0x0C,0x06,0x02,0, 0x3C,0x0C,0x0C,0x0C,0x0C,0x0C,0x3C,0,
+        0x18,0x3C,0x66,0,0,0,0,0, 0,0,0,0,0,0,0,0xFF,
+        0x30,0x18,0x0C,0,0,0,0,0, 0,0,0x3C,0x06,0x3E,0x66,0x3E,0,
+        0x60,0x60,0x7C,0x66,0x66,0x66,0x7C,0, 0,0,0x3C,0x66,0x60,0x66,0x3C,0,
+        0x06,0x06,0x3E,0x66,0x66,0x66,0x3E,0, 0,0,0x3C,0x66,0x7E,0x60,0x3C,0,
+        0x1C,0x30,0x30,0x7C,0x30,0x30,0x30,0, 0,0,0x3E,0x66,0x66,0x3E,0x06,0x3C,
+        0x60,0x60,0x7C,0x66,0x66,0x66,0x66,0, 0x18,0,0x38,0x18,0x18,0x18,0x3C,0,
+        0x0C,0,0x1C,0x0C,0x0C,0x0C,0x6C,0x38, 0x60,0x60,0x66,0x6C,0x78,0x6C,0x66,0,
+        0x38,0x18,0x18,0x18,0x18,0x18,0x3C,0, 0,0,0xEC,0xFE,0xD6,0xC6,0xC6,0,
+        0,0,0x7C,0x66,0x66,0x66,0x66,0, 0,0,0x3C,0x66,0x66,0x66,0x3C,0,
+        0,0,0x7C,0x66,0x66,0x7C,0x60,0x60, 0,0,0x3E,0x66,0x66,0x3E,0x06,0x06,
+        0,0,0x7C,0x66,0x60,0x60,0x60,0, 0,0,0x3E,0x60,0x3C,0x06,0x7C,0,
+        0x30,0x30,0x7C,0x30,0x30,0x36,0x1C,0, 0,0,0x66,0x66,0x66,0x66,0x3E,0,
+        0,0,0x66,0x66,0x66,0x3C,0x18,0, 0,0,0xC6,0xC6,0xD6,0xFE,0x6C,0,
+        0,0,0x66,0x3C,0x18,0x3C,0x66,0, 0,0,0x66,0x66,0x66,0x3E,0x06,0x3C,
+        0,0,0x7E,0x0C,0x18,0x30,0x7E,0, 0x0E,0x18,0x18,0x70,0x18,0x18,0x0E,0,
+        0x18,0x18,0x18,0x18,0x18,0x18,0x18,0, 0x70,0x18,0x18,0x0E,0x18,0x18,0x70,0,
+        0x76,0xDC,0,0,0,0,0,0
+    ]);
+    return { getByte: (c, r) => {
+        const i = (c - 0x20) & 0xFF;
+        if (i < 0 || i >= 96 || r < 0 || r >= 8) return 0;
+        return F[i * 8 + r];
+    }};
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  Display
+// ═══════════════════════════════════════════════════════════
+const Display = (() => {
+    const W = 160, H = 120, VRAM = 0x00800000;
+    let canvas = null, ctx = null;
+    let offscreen = null, offCtx = null, imgData = null;
+    const PALETTE = [
+        [0,0,0],[0,0,0xAA],[0,0xAA,0],[0,0xAA,0xAA],
+        [0xAA,0,0],[0xAA,0,0xAA],[0xAA,0x55,0],[0xAA,0xAA,0xAA],
+        [0x55,0x55,0x55],[0x55,0x55,0xFF],[0x55,0xFF,0x55],[0x55,0xFF,0xFF],
+        [0xFF,0x55,0x55],[0xFF,0x55,0xFF],[0xFF,0xFF,0x55],[0xFF,0xFF,0xFF]
+    ];
+    function init() {
+        if (canvas && ctx) return true;
+        canvas = document.getElementById('c2-canvas');
+        if (!canvas) { console.error('[Display] 找不到 #c2-canvas'); return false; }
+        ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        offscreen = document.createElement('canvas');
+        offscreen.width = W; offscreen.height = H;
+        offCtx = offscreen.getContext('2d');
+        imgData = offCtx.createImageData(W, H);
+        return true;
+    }
+    function putPixel(x, y, c) {
+        if (x < 0 || x >= W || y < 0 || y >= H) return;
+        Memory.writeByte(VRAM + y * W + x, c & 0x0F);
+    }
+    function fillRect(x, y, w, h, c) {
+        for (let dy = 0; dy < h; dy++)
+            for (let dx = 0; dx < w; dx++)
+                putPixel(x + dx, y + dy, c);
+    }
+    function hline(x1, x2, y, c) { if (x1 > x2) { const t=x1; x1=x2; x2=t; } for (let x=x1; x<=x2; x++) putPixel(x, y, c); }
+    function vline(x, y1, y2, c) { if (y1 > y2) { const t=y1; y1=y2; y2=t; } for (let y=y1; y<=y2; y++) putPixel(x, y, c); }
+    function drawCharGfx(x, y, code, color) {
+        if (code < 0x20 || code > 0x7F) code = 0x20;
+        for (let r = 0; r < 8; r++) {
+            const b = Font.getByte(code, r);
+            for (let cx = 0; cx < 8; cx++)
+                if (b & (0x80 >> cx)) putPixel(x + cx, y + r, color);
+        }
+    }
+    function clearGfx(c) { fillRect(0, 0, W, H, c); }
+    function render() {
+        if (!ctx) { if (!init()) return; }
+        const d = imgData.data;
+        for (let i = 0; i < W * H; i++) {
+            const idx = Memory.readByte(VRAM + i) & 0x0F;
+            const p = PALETTE[idx];
+            d[i*4] = p[0]; d[i*4+1] = p[1]; d[i*4+2] = p[2]; d[i*4+3] = 255;
+        }
+        offCtx.putImageData(imgData, 0, 0);
+        ctx.drawImage(offscreen, 0, 0, canvas.width, canvas.height);
+    }
+    return { W, H, VRAM, init, putPixel, fillRect, hline, vline, drawCharGfx, clearGfx, render };
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  Disk（localStorage 持久化）
+// ═══════════════════════════════════════════════════════════
+const Disk = (() => {
+    const SECTOR_SIZE = 512, SECTOR_COUNT = 2048, STORAGE_KEY = 'c3_disk_v1';
+    const image = new Uint8Array(SECTOR_SIZE * SECTOR_COUNT);
+    try {
+        const b64 = localStorage.getItem(STORAGE_KEY);
+        if (b64) { const bin = atob(b64); const len = Math.min(bin.length, image.length); for (let i = 0; i < len; i++) image[i] = bin.charCodeAt(i); }
+    } catch (e) { console.warn('[Disk] 恢复失败:', e.message); }
+    function persist() {
+        try {
+            let binary = '';
+            for (let i = 0; i < image.length; i += 8192) binary += String.fromCharCode.apply(null, image.subarray(i, i + 8192));
+            localStorage.setItem(STORAGE_KEY, btoa(binary));
+        } catch (e) { if (e.name === 'QuotaExceededError') console.warn('[Disk] localStorage 满'); }
+    }
+    function readSector(sector, memAddr) {
+        if (sector < 0 || sector >= SECTOR_COUNT) throw new Error('非法扇区: ' + sector);
+        const off = sector * SECTOR_SIZE;
+        for (let i = 0; i < SECTOR_SIZE; i++) Memory.writeByte(memAddr + i, image[off + i]);
+    }
+    function writeSector(sector, memAddr) {
+        if (sector < 0 || sector >= SECTOR_COUNT) throw new Error('非法扇区: ' + sector);
+        const off = sector * SECTOR_SIZE;
+        for (let i = 0; i < SECTOR_SIZE; i++) image[off + i] = Memory.readByte(memAddr + i);
+        setTimeout(persist, 10);
+    }
+    return { SECTOR_SIZE, SECTOR_COUNT, readSector, writeSector };
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  GShell2（C2 完整移植 + Editor 真跑 CPU）
+// ═══════════════════════════════════════════════════════════
+const GShell2 = (() => {
+    const W = 160, H = 120, MENUBAR_H = 10;
+    const C_BLACK=0,C_BLUE=1,C_GREEN=2,C_CYAN=3,C_RED=4,C_MAGENTA=5,C_BROWN=6,C_GRAY=7;
+    const C_DGRAY=8,C_LBLUE=9,C_LGREEN=10,C_LCYAN=11,C_LRED=12,C_LMAG=13,C_YELLOW=14,C_WHITE=15;
+    const MENU_ITEMS = ['New Notepad','Calculator','Paint','Terminal','Files','Editor','---','Close All','About','Exit'];
+    let windows = [], nextWinId = 1, activeWinId = 0;
+    let draggingWinId = 0, dragOffsetX = 0, dragOffsetY = 0;
+    let menuOpen = false, menuSelection = -1, pressedItem = null;
+    let cursorBlink = 0, cursorVisible = true, running = false, timerId = null;
+    const Mouse = { x: 80, y: 60, btn: 0 };
+
+    const FS_START_SECTOR = 1, FS_MAX_FILES = 8, FS_NAME_LEN = 32, FS_DATA_LEN = 480;
+
+    function fsReadFile(idx) {
+        if (idx < 0 || idx >= FS_MAX_FILES) return null;
+        const buf = new Uint8Array(512);
+        try {
+            Disk.readSector(FS_START_SECTOR + idx, 0x4000);
+            for (let i = 0; i < 512; i++) buf[i] = Memory.readByte(0x4000 + i);
+        } catch (e) { return null; }
+        let name = '';
+        for (let i = 0; i < FS_NAME_LEN; i++) { if (buf[i] === 0) break; name += String.fromCharCode(buf[i]); }
+        if (!name) return null;
+        let content = '';
+        for (let i = FS_NAME_LEN; i < 512; i++) { if (buf[i] === 0) break; content += String.fromCharCode(buf[i]); }
+        return { name, content, idx };
+    }
+    function fsWriteFile(idx, name, content) {
+        if (idx < 0 || idx >= FS_MAX_FILES) return false;
+        const buf = new Uint8Array(512);
+        for (let i = 0; i < Math.min(name.length, FS_NAME_LEN - 1); i++) buf[i] = name.charCodeAt(i);
+        for (let i = 0; i < Math.min(content.length, FS_DATA_LEN - 1); i++) buf[FS_NAME_LEN + i] = content.charCodeAt(i);
+        for (let i = 0; i < 512; i++) Memory.writeByte(0x4000 + i, buf[i]);
+        try { Disk.writeSector(FS_START_SECTOR + idx, 0x4000); return true; } catch (e) { return false; }
+    }
+    function fsDeleteFile(idx) {
+        if (idx < 0 || idx >= FS_MAX_FILES) return false;
+        for (let i = 0; i < 512; i++) Memory.writeByte(0x4000 + i, 0);
+        try { Disk.writeSector(FS_START_SECTOR + idx, 0x4000); return true; } catch (e) { return false; }
+    }
+    function fsListFiles() {
+        const list = [];
+        for (let i = 0; i < FS_MAX_FILES; i++) { const f = fsReadFile(i); if (f) list.push(f); }
+        return list;
+    }
+
+    const OPCODES = {
+        'NOP':0x00,'HLT':0x01,'MOV_RR':0x10,'MOV_RI':0x11,
+        'ADD':0x20,'SUB':0x21,'MUL':0x22,'MUL_HI':0x23,'SWAP':0x24,'NEG':0x25,
+        'JMP':0x50,'JZ':0x51,'JNZ':0x52,'CALL':0x60,'RET':0x61,'INT':0x70
+    };
+
+    function assembleProgram(src) {
+        const lines = src.split('\n');
+        const labels = {};
+        const errors = [];
+        let pc = 0x0100;
+        for (const line of lines) {
+            const m = line.match(/^\s*(\w+):/);
+            if (m) labels[m[1]] = pc;
+            const code = line.replace(/;.*$/, '').replace(/^\s*\w+:\s*/, '').trim();
+            if (code) pc += 8;
+        }
+        const out = [];
+        // ★ 修复：严格 8 字节（去掉多余的 pad）
+        function emit8(op, dst, src, imm32) {
+            out.push(op & 0xFF);         // [0]
+            out.push(dst & 0xFF);        // [1]
+            out.push(src & 0xFF);        // [2]
+            out.push(0);                 // [3]
+            const v = (imm32 || 0) >>> 0;
+            out.push(v & 0xFF);          // [4]
+            out.push((v >>> 8) & 0xFF);  // [5]
+            out.push((v >>> 16) & 0xFF); // [6]
+            out.push((v >>> 24) & 0xFF); // [7]
+        }
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const code = line.replace(/;.*$/, '').replace(/^\s*\w+:\s*/, '').trim();
+            if (!code) continue;
+            const parts = code.split(/\s+/);
+            const mn = parts[0].toUpperCase();
+            const args = code.slice(parts[0].length).trim().split(',').map(s => s.trim());
+            const op = OPCODES[mn];
+            if (op === undefined) { errors.push(code + ' → 未知指令'); continue; }
+            function reg(s) { const m = s.match(/^R(\d+)$/i); return m ? parseInt(m[1]) : -1; }
+            function imm(s) {
+                if (s.startsWith('0x')) return parseInt(s.substring(2), 16) >>> 0;
+                if (labels[s] !== undefined) return labels[s] >>> 0;
+                const n = parseInt(s); return isNaN(n) ? null : (n >>> 0);
+            }
+            try {
+                if (mn === 'NOP' || mn === 'HLT' || mn === 'RET') emit8(op, 0, 0, 0);
+                else if (mn === 'MOV_RI') { const d = reg(args[0]); const v = imm(args[1]); if (d < 0 || v === null) throw new Error('参数'); emit8(op, d, 0, v); }
+                else if (mn === 'MOV_RR' || mn === 'ADD' || mn === 'SUB' || mn === 'MUL' || mn === 'MUL_HI' || mn === 'SWAP') {
+                    const d = reg(args[0]), s = reg(args[1]); if (d < 0 || s < 0) throw new Error('参数'); emit8(op, d, s, 0);
+                }
+                else if (mn === 'NEG') { const d = reg(args[0]); if (d < 0) throw new Error('参数'); emit8(op, d, 0, 0); }
+                else if (mn === 'JMP' || mn === 'JZ' || mn === 'JNZ' || mn === 'CALL') { const v = imm(args[0]); if (v === null) throw new Error('地址'); emit8(op, 0, 0, v); }
+                else if (mn === 'INT') { const v = imm(args[0]); if (v === null) throw new Error('向量'); emit8(op, 0, 0, v); }
+            } catch (e) { errors.push(code + ' → ' + e.message); }
+        }
+        return { ok: errors.length === 0, bytes: new Uint8Array(out), errors, labels };
+    }
+
+    function px(x, y, c) { Display.putPixel(x|0, y|0, c); }
+    function fill(x, y, w, h, c) { Display.fillRect(x|0, y|0, w|0, h|0, c); }
+    function hline(x1, x2, y, c) { Display.hline(x1|0, x2|0, y|0, c); }
+    function vline(x, y1, y2, c) { Display.vline(x|0, y1|0, y2|0, c); }
+    function text(x, y, s, c) {
+        let cx = x;
+        for (let i = 0; i < s.length; i++) {
+            if (cx + 8 > W) break;
+            Display.drawCharGfx(cx, y, s.charCodeAt(i), c);
+            cx += 8;
+        }
+    }
+
+    function makeWin(opts) {
+        return Object.assign({
+            id: nextWinId++, x: 10, y: 15, w: 100, h: 70, title: 'Window', visible: true, type: 'lines',
+            lines: [], buffer: '', calcDisplay: '0', calcOp: null, calcAcc: 0,
+            paintBuf: null, paintColor: C_RED,
+            termLines: ['JS-H86 C3 Terminal', 'Type "help"', ''], termInput: '',
+            fsFiles: null, fsSelected: -1,
+            editorText: '', editorErrors: [], editorStatus: '',
+            buttons: null
+        }, opts);
+    }
+    function createWin(opts) {
+        if (windows.length >= 4) return null;
+        const w = makeWin(opts);
+        if (w.type === 'paint') { const cw = w.w - 4, ch = w.h - 22; w.paintBuf = new Uint8Array(cw * ch); }
+        if (w.type === 'files') w.fsFiles = fsListFiles();
+        if (w.type === 'editor' && !w.editorText) w.editorText = '; C3 Assembly\nMOV_RI R0, 5\nMOV_RI R1, 3\nADD R0, R1\nHLT\n';
+        windows.push(w); activeWinId = w.id; return w;
+    }
+    function findWin(id) { for (const w of windows) if (w.id === id) return w; return null; }
+    function closeWin(id) { const idx = windows.findIndex(w => w.id === id); if (idx >= 0) { windows.splice(idx, 1); if (activeWinId === id) activeWinId = windows.length > 0 ? windows[windows.length-1].id : 0; } }
+    function bringToFront(id) { const idx = windows.findIndex(w => w.id === id); if (idx >= 0) { const [w] = windows.splice(idx, 1); windows.push(w); activeWinId = id; } }
+    function hitTest(mx, my) {
+        if (my < MENUBAR_H) return { id: 0, region: 'menu' };
+        for (let i = windows.length - 1; i >= 0; i--) {
+            const w = windows[i];
+            if (!w.visible) continue;
+            if (mx >= w.x && mx < w.x + w.w && my >= w.y && my < w.y + w.h) {
+                const cbx = w.x + w.w - 8, cby = w.y + 2;
+                if (mx >= cbx && mx < cbx + 6 && my >= cby && my < cby + 6) return { id: w.id, region: 'close' };
+                if (my < w.y + 10) return { id: w.id, region: 'title' };
+                return { id: w.id, region: 'body' };
+            }
+        }
+        return { id: 0, region: 'none' };
+    }
+
+    function drawDesktop() { fill(0, 0, W, H, C_BLUE); for (let i = 0; i < W; i += 16) px(i, H - 1, C_DGRAY); }
+    function drawMenuBar() {
+        fill(0, 0, W, MENUBAR_H, C_BLACK);
+        text(2, 1, 'C3 GShell', C_YELLOW);
+        const sysX = 70; text(sysX, 1, 'System', C_WHITE);
+        if (menuOpen) { fill(sysX - 2, 0, 6 * 8 + 4, MENUBAR_H, C_LBLUE); text(sysX, 1, 'System', C_BLACK); }
+    }
+    function drawMenuDropdown() {
+        if (!menuOpen) return;
+        const dx = 68, dy = MENUBAR_H, dw = 100, itemH = 10;
+        const dh = MENU_ITEMS.length * itemH + 2;
+        fill(dx + 1, dy + 1, dw, dh, C_DGRAY); fill(dx, dy, dw, dh, C_GRAY);
+        hline(dx, dx + dw - 1, dy, C_BLACK); hline(dx, dx + dw - 1, dy + dh - 1, C_BLACK);
+        vline(dx, dy, dy + dh - 1, C_BLACK); vline(dx + dw - 1, dy, dy + dh - 1, C_BLACK);
+        for (let i = 0; i < MENU_ITEMS.length; i++) {
+            const iy = dy + 1 + i * itemH;
+            if (MENU_ITEMS[i] === '---') { hline(dx + 2, dx + dw - 3, iy + itemH/2, C_DGRAY); continue; }
+            if (menuSelection === i) { fill(dx + 1, iy, dw - 2, itemH, C_BLUE); text(dx + 4, iy + 1, MENU_ITEMS[i], C_WHITE); }
+            else text(dx + 4, iy + 1, MENU_ITEMS[i], C_BLACK);
+        }
+    }
+    function drawWindowBorder(win) {
+        const { x, y, w, h } = win;
+        const isActive = (win.id === activeWinId);
+        const titleColor = isActive ? C_BLUE : C_DGRAY;
+        const titleText = isActive ? C_WHITE : C_GRAY;
+        fill(x + 1, y + 1, w, h, C_DGRAY); fill(x, y, w, h, C_GRAY);
+        hline(x, x + w - 1, y, C_BLACK); hline(x, x + w - 1, y + h - 1, C_BLACK);
+        vline(x, y, y + h - 1, C_BLACK); vline(x + w - 1, y, y + h - 1, C_BLACK);
+        fill(x + 1, y + 1, w - 2, 9, titleColor); text(x + 3, y + 2, win.title, titleText);
+        const cbx = x + w - 8, cby = y + 2;
+        fill(cbx, cby, 6, 6, C_RED);
+        px(cbx+1,cby+1,C_WHITE); px(cbx+2,cby+2,C_WHITE); px(cbx+3,cby+3,C_WHITE); px(cbx+4,cby+4,C_WHITE);
+        px(cbx+4,cby+1,C_WHITE); px(cbx+3,cby+2,C_WHITE); px(cbx+2,cby+3,C_WHITE); px(cbx+1,cby+4,C_WHITE);
+    }
+    function drawWindowContent(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 3, padY = y + 12;
+        if (win.type === 'lines' || win.type === 'notepad') {
+            const maxW = w - 6, maxH = h - 15, cols = Math.floor(maxW / 8), rows = Math.floor(maxH / 8);
+            const lines = win.type === 'notepad' ? win.buffer.split('\n') : win.lines;
+            const showLines = lines.slice(-rows);
+            for (let i = 0; i < showLines.length; i++) {
+                let line = showLines[i]; if (line.length > cols) line = line.slice(-cols);
+                text(padX, padY + i * 8, line, C_BLACK);
+            }
+        } else if (win.type === 'calculator') drawCalculator(win);
+        else if (win.type === 'paint') drawPaint(win);
+        else if (win.type === 'terminal') drawTerminal(win);
+        else if (win.type === 'files') drawFiles(win);
+        else if (win.type === 'editor') drawEditor(win);
+    }
+    function drawCalculator(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 3, padY = y + 12;
+        const dispW = w - 6;
+        fill(padX, padY, dispW, 12, C_BLACK);
+        text(padX + 2, padY + 2, win.calcDisplay, C_LGREEN);
+        const btnW = Math.floor((w - 8) / 4), btnH = 10;
+        const labels = [['C','CE','←','/'],['7','8','9','*'],['4','5','6','-'],['1','2','3','+'],['0','.','=','=']];
+        win.buttons = [];
+        for (let r = 0; r < 5; r++) for (let c = 0; c < 4; c++)
+            win.buttons.push({ x: padX + c*btnW, y: padY + 16 + r*(btnH+1), w: btnW-1, h: btnH, label: labels[r][c] });
+        for (let i = 0; i < win.buttons.length; i++) {
+            const b = win.buttons[i];
+            const isHover = (pressedItem && pressedItem.winId === win.id && pressedItem.itemId === i);
+            fill(b.x, b.y, b.w, b.h, isHover ? C_LBLUE : C_GRAY);
+            hline(b.x, b.x+b.w-1, b.y, C_BLACK); hline(b.x, b.x+b.w-1, b.y+b.h-1, C_BLACK);
+            vline(b.x, b.y, b.y+b.h-1, C_BLACK); vline(b.x+b.w-1, b.y, b.y+b.h-1, C_BLACK);
+            text(b.x + Math.max(1, Math.floor((b.w - b.label.length*8)/2)), b.y + 1, b.label, C_BLACK);
+        }
+    }
+    function drawPaint(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 2, padY = y + 12, cw = w - 4, ch = h - 22;
+        fill(padX, padY, cw, ch, C_WHITE);
+        if (win.paintBuf) for (let py = 0; py < ch; py++) for (let pxi = 0; pxi < cw; pxi++) {
+            const c = win.paintBuf[py * cw + pxi]; if (c) px(padX + pxi, padY + py, c);
+        }
+        hline(padX, padX+cw-1, padY-1, C_BLACK); hline(padX, padX+cw-1, padY+ch, C_BLACK);
+        vline(padX-1, padY, padY+ch-1, C_BLACK); vline(padX+cw, padY, padY+ch-1, C_BLACK);
+        const palY = padY + ch + 2;
+        const colors = [C_BLACK, C_RED, C_GREEN, C_BLUE, C_YELLOW, C_WHITE];
+        for (let i = 0; i < colors.length; i++) {
+            const swX = padX + i * 10;
+            fill(swX, palY, 8, 6, colors[i]);
+            if (colors[i] === win.paintColor) { hline(swX, swX+7, palY-1, C_BLACK); hline(swX, swX+7, palY+6, C_BLACK); }
+        }
+    }
+    function drawTerminal(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 2, padY = y + 12;
+        const maxW = w - 4, maxH = h - 15;
+        const rows = Math.floor((maxH - 10) / 8), cols = Math.floor(maxW / 8);
+        fill(padX, padY, maxW, maxH, C_BLACK);
+        const showLines = win.termLines.slice(-rows);
+        for (let i = 0; i < showLines.length; i++) {
+            let line = showLines[i]; if (line.length > cols) line = line.slice(-cols);
+            text(padX + 1, padY + 1 + i * 8, line, C_LGREEN);
+        }
+        const inputY = padY + maxH - 10;
+        text(padX + 1, inputY, '> ' + win.termInput, C_WHITE);
+        if (win.id === activeWinId && cursorVisible) fill(padX + 9 + win.termInput.length * 8, inputY + 7, 6, 2, C_WHITE);
+    }
+    function drawFiles(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 2, padY = y + 12, maxW = w - 4, maxH = h - 15;
+        fill(padX, padY, maxW, maxH, C_BLACK);
+        win.fsFiles = fsListFiles();
+        if (win.fsFiles.length === 0) text(padX + 4, padY + 4, '(no files)', C_GRAY);
+        else for (let i = 0; i < win.fsFiles.length && i < 7; i++) {
+            const f = win.fsFiles[i], isSel = (i === win.fsSelected);
+            if (isSel) fill(padX + 1, padY + 1 + i * 9, maxW - 2, 9, C_BLUE);
+            text(padX + 3, padY + 2 + i * 9, '[' + i + '] ' + f.name, isSel ? C_WHITE : C_LGREEN);
+        }
+        const hintY = padY + maxH - 9;
+        fill(padX, hintY, maxW, 9, C_DGRAY);
+        text(padX + 2, hintY + 1, 'N=New  D=Del  Enter=Open', C_WHITE);
+    }
+    function drawEditor(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 2, padY = y + 12, maxW = w - 4, maxH = h - 22;
+        fill(padX, padY, maxW, maxH, C_BLACK);
+        const lines = win.editorText.split('\n');
+        const rows = Math.floor(maxH / 8), cols = Math.floor(maxW / 8);
+        const showLines = lines.slice(-rows);
+        for (let i = 0; i < showLines.length; i++) {
+            let line = showLines[i]; if (line.length > cols) line = line.slice(-cols);
+            text(padX + 1, padY + 1 + i * 8, line, C_LGREEN);
+        }
+        if (win.id === activeWinId && cursorVisible) {
+            const lastLine = lines[lines.length - 1] || '', curLineIdx = lines.length - 1;
+            if (curLineIdx < rows) {
+                const cx = padX + 1 + Math.min(lastLine.length, cols) * 8;
+                const cy = padY + 1 + curLineIdx * 8;
+                fill(cx, cy + 7, 6, 2, C_LGREEN);
+            }
+        }
+        const statusY = padY + maxH;
+        fill(padX, statusY, maxW, 9, C_DGRAY);
+        text(padX + 2, statusY + 1, win.editorStatus || 'F5=Assemble&Run  Esc=Close', C_WHITE);
+    }
+    function drawCursor() {
+        const mx = Mouse.x, my = Mouse.y;
+        px(mx, my, C_WHITE); px(mx-1, my, C_WHITE); px(mx+1, my, C_WHITE); px(mx, my-1, C_WHITE); px(mx, my+1, C_WHITE);
+    }
+    function drawAll() { drawDesktop(); for (const w of windows) { drawWindowBorder(w); drawWindowContent(w); } drawMenuBar(); drawMenuDropdown(); drawCursor(); }
+    function tick() {
+        if (!running) return;
+        try { drawAll(); Display.render(); } catch (e) { console.error('[GShell2] 渲染帧出错:', e); }
+        cursorBlink++; if (cursorBlink % 15 === 0) cursorVisible = !cursorVisible;
+        timerId = setTimeout(tick, 50);
+    }
+
+    function onMouseDown(mx, my, btn) {
+        if (!(btn & 1)) return;
+        if (my < MENUBAR_H) { if (mx >= 68 && mx < 68 + 6*8) { menuOpen = !menuOpen; menuSelection = -1; } else menuOpen = false; return; }
+        if (menuOpen) {
+            const dx = 68, dy = MENUBAR_H, dw = 100, itemH = 10, dh = MENU_ITEMS.length * itemH + 2;
+            if (mx >= dx && mx < dx+dw && my >= dy && my < dy+dh) {
+                const idx = Math.floor((my - dy - 1) / itemH);
+                if (idx >= 0 && idx < MENU_ITEMS.length && MENU_ITEMS[idx] !== '---') handleMenuItem(idx);
+                menuOpen = false; return;
+            } else menuOpen = false;
+        }
+        const hit = hitTest(mx, my);
+        if (hit.id === 0) return;
+        bringToFront(hit.id);
+        if (hit.region === 'close') { closeWin(hit.id); return; }
+        if (hit.region === 'title') { const w = findWin(hit.id); if (w) { draggingWinId = w.id; dragOffsetX = mx - w.x; dragOffsetY = my - w.y; } return; }
+        const w = findWin(hit.id); if (!w) return;
+        if (w.type === 'files') {
+            const padX = w.x + 2, padY = w.y + 12, localY = my - padY;
+            if (localY >= 0 && localY < 7 * 9) {
+                const idx = Math.floor(localY / 9);
+                if (idx >= 0 && idx < w.fsFiles.length) w.fsSelected = idx;
+            }
+        }
+        handleContentClick(w, mx, my, true);
+    }
+    function onMouseMove(mx, my) {
+        if (draggingWinId) { const w = findWin(draggingWinId); if (w) { w.x = Math.max(0, Math.min(W - w.w, mx - dragOffsetX)); w.y = Math.max(MENUBAR_H, Math.min(H - 10, my - dragOffsetY)); } return; }
+        if (menuOpen) {
+            const dx = 68, dy = MENUBAR_H, dw = 100, itemH = 10, dh = MENU_ITEMS.length * itemH + 2;
+            if (mx >= dx && mx < dx+dw && my >= dy && my < dy+dh) {
+                const idx = Math.floor((my - dy - 1) / itemH);
+                menuSelection = (idx >= 0 && idx < MENU_ITEMS.length) ? idx : -1;
+            } else menuSelection = -1;
+        }
+        const hit = hitTest(mx, my);
+        if (hit.id > 0) { const w = findWin(hit.id); if (w) handleContentClick(w, mx, my, false); }
+    }
+    function onMouseUp(mx, my, btn) {
+        if (draggingWinId) { draggingWinId = 0; pressedItem = null; return; }
+        if (pressedItem) {
+            const w = findWin(pressedItem.winId);
+            if (w) handleContentClick(w, mx, my, 'up');
+            pressedItem = null;
+        }
+    }
+    function handleContentClick(w, mx, my, isDown) {
+        if (w.type === 'calculator') {
+            if (!w.buttons) return;
+            for (let i = 0; i < w.buttons.length; i++) {
+                const b = w.buttons[i];
+                if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) {
+                    if (isDown === true) { pressedItem = { winId: w.id, itemId: i }; calcInput(w, b.label); }
+                    return;
+                }
+            }
+        } else if (w.type === 'paint') {
+            const padX = w.x + 2, padY = w.y + 12, cw = w.w - 4, ch = w.h - 22;
+            const palY = padY + ch + 2;
+            if (my >= palY && my < palY + 6) {
+                const colors = [C_BLACK, C_RED, C_GREEN, C_BLUE, C_YELLOW, C_WHITE];
+                const idx = Math.floor((mx - padX) / 10);
+                if (idx >= 0 && idx < colors.length) { w.paintColor = colors[idx]; return; }
+            }
+            if (mx >= padX && mx < padX + cw && my >= padY && my < padY + ch) {
+                if (isDown === true) pressedItem = { winId: w.id, itemId: 'paint' };
+                const pxi = mx - padX, pyi = my - padY;
+                if (pxi >= 0 && pxi < cw && pyi >= 0 && pyi < ch) w.paintBuf[pyi * cw + pxi] = w.paintColor;
+            }
+        }
+    }
+    function calcInput(w, label) {
+        const d = w.calcDisplay;
+        if (label === 'C') { w.calcDisplay = '0'; w.calcOp = null; w.calcAcc = 0; return; }
+        if (label === 'CE') { w.calcDisplay = '0'; return; }
+        if (label === '←') { w.calcDisplay = d.length > 1 ? d.slice(0, -1) : '0'; return; }
+        if ('+-*/'.includes(label)) { w.calcAcc = parseFloat(d) || 0; w.calcOp = label; w.calcDisplay = '0'; return; }
+        if (label === '=') {
+            const b = parseFloat(d) || 0; let r = w.calcAcc;
+            switch (w.calcOp) { case '+': r += b; break; case '-': r -= b; break; case '*': r *= b; break; case '/': r = b === 0 ? 0 : r / b; break; default: r = b; }
+            let s = (Math.round(r * 100) / 100).toString(); if (s.length > 8) s = s.slice(0, 8);
+            w.calcDisplay = s; w.calcOp = null; w.calcAcc = 0; return;
+        }
+        if (label === '.') { if (!d.includes('.')) w.calcDisplay = d + '.'; return; }
+        if (d === '0') w.calcDisplay = label; else if (d.length < 8) w.calcDisplay = d + label;
+    }
+    function termExec(w, cmd) {
+        cmd = cmd.trim(); w.termLines.push('> ' + cmd);
+        if (cmd === '') return;
+        if (cmd === 'help') w.termLines.push('Commands: help, clear, echo X, ver, ls, cat N');
+        else if (cmd === 'clear') w.termLines = [];
+        else if (cmd.startsWith('echo ')) w.termLines.push(cmd.slice(5));
+        else if (cmd === 'ver') w.termLines.push('JS-H86 C3 v3.0');
+        else if (cmd === 'ls') { const files = fsListFiles(); if (files.length === 0) w.termLines.push('(no files)'); else files.forEach((f, i) => w.termLines.push('[' + i + '] ' + f.name)); }
+        else if (cmd.startsWith('cat ')) { const idx = parseInt(cmd.slice(4)); const f = fsReadFile(idx); if (f) w.termLines.push(f.content); else w.termLines.push('No such file'); }
+        else w.termLines.push('Unknown: ' + cmd);
+    }
+    function filesNew(w) {
+        const name = prompt('文件名:', 'file' + (w.fsFiles.length + 1) + '.txt');
+        if (!name) return;
+        for (let i = 0; i < FS_MAX_FILES; i++) if (!fsReadFile(i)) { fsWriteFile(i, name, ''); w.fsFiles = fsListFiles(); w.fsSelected = w.fsFiles.findIndex(f => f.name === name); return; }
+        alert('磁盘已满');
+    }
+    function filesDelete(w) { if (w.fsSelected < 0 || w.fsSelected >= w.fsFiles.length) return; const f = w.fsFiles[w.fsSelected]; fsDeleteFile(f.idx); w.fsFiles = fsListFiles(); w.fsSelected = -1; }
+    function filesOpen(w) { if (w.fsSelected < 0 || w.fsSelected >= w.fsFiles.length) return; const f = w.fsFiles[w.fsSelected]; createWin({ x: 15, y: 18, w: 130, h: 90, title: f.name, type: 'editor', editorText: f.content }); }
+
+    function editorRun(w) {
+        const result = assembleProgram(w.editorText);
+        if (!result.ok) { w.editorStatus = 'ERROR: ' + result.errors[0]; return; }
+        Memory.writeBlock(0x0100, result.bytes);
+        CPU.reset();
+        CPU.setPC(0x0100);
+        const r = CPU.run(10000);
+        const s = CPU.snapshot();
+        w.editorStatus = 'OK ' + result.bytes.length + 'B | exec ' + r.executed +
+            ' | R0=' + s.R0 + ' R1=' + s.R1 + ' | ' + (r.halted ? 'HALTED' : (r.error ? 'ERR' : 'PC=0x' + s.PC.toString(16)));
+        updateStatusBar();
+        for (let i = 0; i < FS_MAX_FILES; i++) {
+            const f = fsReadFile(i);
+            if (f && f.name === w.title) { fsWriteFile(i, w.title, w.editorText); break; }
+        }
+    }
+
+    function handleMenuItem(idx) {
+        const item = MENU_ITEMS[idx];
+        switch (item) {
+            case 'New Notepad': createWin({ x: 20, y: 20, w: 100, h: 70, title: 'Notepad', type: 'notepad', buffer: '' }); break;
+            case 'Calculator': createWin({ x: 20, y: 20, w: 70, h: 80, title: 'Calc', type: 'calculator' }); break;
+            case 'Paint': createWin({ x: 20, y: 20, w: 100, h: 80, title: 'Paint', type: 'paint' }); break;
+            case 'Terminal': createWin({ x: 15, y: 18, w: 120, h: 80, title: 'Terminal', type: 'terminal' }); break;
+            case 'Files': createWin({ x: 15, y: 18, w: 120, h: 80, title: 'Files', type: 'files' }); break;
+            case 'Editor': createWin({ x: 10, y: 15, w: 140, h: 95, title: 'Editor', type: 'editor' }); break;
+            case 'Close All': windows = []; activeWinId = 0; break;
+            case 'About': createWin({ x: 30, y: 25, w: 100, h: 60, title: 'About', type: 'lines', lines: ['JS-H86 C3', '32-bit CPU', '8-byte instr', 'RAM 16MB'] }); break;
+            case 'Exit': exit(); break;
+        }
+    }
+
+    function onKeyDown(e) {
+        const w = findWin(activeWinId);
+        if (!w) return;
+        if (w.type === 'notepad') {
+            if (e.key === 'Backspace') { w.buffer = w.buffer.slice(0, -1); e.preventDefault(); return; }
+            if (e.key === 'Enter') { w.buffer += '\n'; e.preventDefault(); return; }
+            if (e.key.length === 1 && w.buffer.length < 500) { w.buffer += e.key; e.preventDefault(); }
+        } else if (w.type === 'terminal') {
+            if (e.key === 'Backspace') { w.termInput = w.termInput.slice(0, -1); e.preventDefault(); return; }
+            if (e.key === 'Enter') { termExec(w, w.termInput); w.termInput = ''; e.preventDefault(); return; }
+            if (e.key.length === 1 && w.termInput.length < 30) { w.termInput += e.key; e.preventDefault(); }
+        } else if (w.type === 'calculator') {
+            if (e.key >= '0' && e.key <= '9') { calcInput(w, e.key); e.preventDefault(); }
+            else if ('+-*/'.includes(e.key)) { calcInput(w, e.key); e.preventDefault(); }
+            else if (e.key === 'Enter' || e.key === '=') { calcInput(w, '='); e.preventDefault(); }
+            else if (e.key === 'Backspace') { calcInput(w, '←'); e.preventDefault(); }
+            else if (e.key === 'Escape') { calcInput(w, 'C'); e.preventDefault(); }
+        } else if (w.type === 'files') {
+            if (e.key === 'n' || e.key === 'N') { filesNew(w); e.preventDefault(); }
+            else if (e.key === 'd' || e.key === 'D') { filesDelete(w); e.preventDefault(); }
+            else if (e.key === 'Enter') { filesOpen(w); e.preventDefault(); }
+        } else if (w.type === 'editor') {
+            if (e.key === 'F5') { editorRun(w); e.preventDefault(); return; }
+            if (e.key === 'Backspace') { w.editorText = w.editorText.slice(0, -1); e.preventDefault(); return; }
+            if (e.key === 'Enter') { w.editorText += '\n'; e.preventDefault(); return; }
+            if (e.key === 'Tab') { w.editorText += '  '; e.preventDefault(); return; }
+            if (e.key.length === 1 && w.editorText.length < 800) { w.editorText += e.key; e.preventDefault(); }
+        }
+    }
+
+    function boot() {
+        if (running) return;
+        running = true;
+        const screen = document.getElementById('c2-screen');
+        screen.style.display = 'flex';
+        void screen.offsetWidth;
+        if (!Display.init()) { running = false; return; }
+        Display.clearGfx(C_BLUE); Display.render();
+        cursorBlink = 0; cursorVisible = true;
+        nextWinId = 1; activeWinId = 0; draggingWinId = 0;
+        menuOpen = false; menuSelection = -1; pressedItem = null;
+        windows = [];
+        createWin({ x: 30, y: 20, w: 100, h: 70, title: 'System Info', type: 'lines',
+            lines: ['JS-H86 C3', '32-bit CPU', '8-byte instr', '16MB RAM', '显存 0x00800000'] });
+        bindCanvasInput();
+        tick();
+        Terminal.printLine('GShell2 v3.0 已启动（32位 CPU 就绪）', 'line-success');
+    }
+    function bindCanvasInput() {
+        const canvas = document.getElementById('c2-canvas');
+        if (!canvas || canvas._gshell2_bound) return;
+        canvas._gshell2_bound = true;
+        function toC1(e) {
+            const r = canvas.getBoundingClientRect();
+            return {
+                x: Math.max(0, Math.min(W-1, Math.floor((e.clientX - r.left) / r.width * W))),
+                y: Math.max(0, Math.min(H-1, Math.floor((e.clientY - r.top) / r.height * H)))
+            };
+        }
+        canvas.addEventListener('mousedown', function(e) {
+            const p = toC1(e); let btn = e.button === 0 ? 1 : (e.button === 2 ? 2 : 0);
+            Mouse.x = p.x; Mouse.y = p.y; Mouse.btn = btn;
+            onMouseDown(p.x, p.y, btn); e.preventDefault();
+        });
+        canvas.addEventListener('mousemove', function(e) {
+            const p = toC1(e); Mouse.x = p.x; Mouse.y = p.y; onMouseMove(p.x, p.y);
+            if (pressedItem) {
+                const w = findWin(pressedItem.winId);
+                if (w && w.type === 'paint' && pressedItem.itemId === 'paint') handleContentClick(w, p.x, p.y, true);
+            }
+        });
+        canvas.addEventListener('mouseup', function(e) {
+            const p = toC1(e); onMouseUp(p.x, p.y, 0); Mouse.btn = 0;
+        });
+        canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+        if (!window._gshell2_key_bound) {
+            window._gshell2_key_bound = true;
+            window.addEventListener('keydown', function(e) {
+                if (!running) return;
+                // 焦点在终端 input 上时不拦截（终端自己处理）
+                if (document.activeElement && document.activeElement.id === 'input-field') return;
+                if (e.key === 'Escape' && !findWin(activeWinId)) { exit(); e.preventDefault(); return; }
+                onKeyDown(e);
+            });
+        }
+    }
+    function exit() {
+        running = false;
+        if (timerId) { clearTimeout(timerId); timerId = null; }
+        document.getElementById('c2-screen').style.display = 'none';
+        document.getElementById('terminal').style.display = 'block';
+        document.getElementById('input-line').style.display = 'flex';
+        document.getElementById('status-bar').style.display = 'flex';
+        document.getElementById('input-field').focus();
+        Terminal.printLine('[GShell2] 已退出', 'line-success');
+    }
+    return { boot, exit, isRunning: () => running };
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  状态栏
+// ═══════════════════════════════════════════════════════════
+function updateStatusBar() {
+    const s = CPU.snapshot();
+    const elCpu = document.getElementById('stat-cpu');
+    const elPc = document.getElementById('stat-pc');
+    const elSp = document.getElementById('stat-sp');
+    const elR0 = document.getElementById('stat-r0');
+    const elFlags = document.getElementById('stat-flags');
+    if (elCpu) elCpu.textContent = s.state;
+    if (elPc) elPc.textContent = '0x' + s.PC.toString(16).padStart(8, '0');
+    if (elSp) elSp.textContent = '0x' + s.SP.toString(16).padStart(8, '0');
+    if (elR0) elR0.textContent = '0x' + s.R0.toString(16).padStart(8, '0');
+    if (elFlags) {
+        let f = '';
+        f += (s.FLAGS & CPU.F_Z) ? 'Z' : '-';
+        f += (s.FLAGS & CPU.F_C) ? 'C' : '-';
+        f += (s.FLAGS & CPU.F_N) ? 'N' : '-';
+        f += (s.FLAGS & CPU.F_V) ? 'V' : '-';
+        f += (s.FLAGS & CPU.F_I) ? 'I' : '-';
+        elFlags.textContent = f + '  0x' + s.FLAGS.toString(16).padStart(2, '0');
+    }
+}
+setInterval(updateStatusBar, 200);
+
+// ═══════════════════════════════════════════════════════════
+//  Terminal
+// ═══════════════════════════════════════════════════════════
+const Terminal = (() => {
+    let termEl, inputEl;
+    function start() {
+        termEl = document.getElementById('terminal');
+        inputEl = document.getElementById('input-field');
+        inputEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = inputEl.value.trim();
+                inputEl.value = '';
+                if (cmd) execute(cmd);
+            }
+        });
+        inputEl.focus();
+        document.addEventListener('click', function() { if (!GShell2.isRunning()) inputEl.focus(); });
+    }
+    function printLine(s, cls) {
+        if (!termEl) return;
+        const d = document.createElement('div');
+        if (cls) d.className = cls;
+        d.textContent = s;
+        termEl.appendChild(d);
+        termEl.scrollTop = termEl.scrollHeight;
+    }
+    function execute(cmd) {
+        printLine('C3> ' + cmd, 'line-info');
+        const parts = cmd.split(/\s+/);
+        const action = parts[0].toLowerCase();
+        const args = parts.slice(1);
+        if (action === 'boot') {
+            document.getElementById('terminal').style.display = 'none';
+            document.getElementById('input-line').style.display = 'none';
+            document.getElementById('status-bar').style.display = 'none';
+            GShell2.boot();
+        } else if (action === 'help') {
+            printLine('可用: boot / help / clear / regs / disasm <addr> [n] / run <addr>', 'line-info');
+        } else if (action === 'clear') {
+            termEl.innerHTML = '';
+        } else if (action === 'regs') {
+            const s = CPU.snapshot();
+            printLine('R0=0x' + s.R0.toString(16) + ' R1=0x' + s.R1.toString(16) + ' R2=0x' + s.R2.toString(16) + ' R3=0x' + s.R3.toString(16), 'line-success');
+            printLine('R4=0x' + s.R4.toString(16) + ' R5=0x' + s.R5.toString(16) + ' R6=0x' + s.R6.toString(16) + ' R7=0x' + s.R7.toString(16), 'line-success');
+            printLine('PC=0x' + s.PC.toString(16) + ' SP=0x' + s.SP.toString(16) + ' FLAGS=0x' + s.FLAGS.toString(16), 'line-success');
+            printLine('state=' + s.state + ' instrCount=' + s.instrCount, 'line-info');
+            if (s.lastError) printLine('lastError=' + s.lastError, 'line-error');
+        } else if (action === 'disasm') {
+            const addr = parseInt(args[0] || '0x0100');
+            const n = parseInt(args[1] || '8');
+            for (let i = 0; i < n; i++) {
+                const a = addr + i * 8;
+                const b = new Uint8Array(8);
+                for (let j = 0; j < 8; j++) b[j] = Memory.readByte(a + j);
+                printLine('0x' + a.toString(16).padStart(6, '0') + ': ' + Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(' '), 'line-info');
+            }
+        } else if (action === 'run') {
+            const addr = parseInt(args[0] || '0x0100');
+            let allZero = true;
+            for (let i = 0; i < 8; i++) if (Memory.readByte(addr + i) !== 0) { allZero = false; break; }
+            if (allZero) {
+                printLine('0x' + addr.toString(16) + ' 处是 NOP 填充，没有程序。', 'line-warn');
+                printLine('请先 boot → System → Editor，写汇编后按 F5 加载并执行。', 'line-warn');
+                return;
+            }
+            CPU.reset();
+            CPU.setPC(addr);
+            const r = CPU.run(10000);
+            const s = CPU.snapshot();
+            printLine('执行 ' + r.executed + ' 条，' + (r.halted ? 'HALTED' : (r.error ? 'ERR: ' + r.error : 'PC=0x' + s.PC.toString(16))), 'line-success');
+            printLine('R0=' + s.R0 + ' R1=' + s.R1 + ' R2=' + s.R2 + ' FLAGS=0x' + s.FLAGS.toString(16), 'line-info');
+            updateStatusBar();
+        } else {
+            printLine('未知命令。试试: boot', 'line-error');
+        }
+    }
+    return { start, printLine };
+})();
+
+window.addEventListener('DOMContentLoaded', function() {
+    Terminal.start();
+    Terminal.printLine('═══════════════════════════════════', 'line-info');
+    Terminal.printLine('  JS-H86 C3 (32位完整机) 已就绪', 'line-success');
+    Terminal.printLine('  32 位 CPU / 8 字节定长指令 / R0-R7 / PC / SP / FLAGS', 'line-info');
+    Terminal.printLine('  16MB RAM / 显存 0x00800000 / 160×120×16色', 'line-info');
+    Terminal.printLine('  指令: NOP HLT MOV_RI MOV_RR ADD SUB MUL MUL_HI SWAP NEG JMP JZ JNZ CALL RET INT', 'line-info');
+    Terminal.printLine('═══════════════════════════════════', 'line-info');
+    console.log('C3 初始化完成，输入 boot 启动');
+});
+/* ═══════════════════════════════════════════════════════════════
+   C3 补丁 2 · 一次性补完（按交接文档）
+   ─────────────────────────────────────────────────────────────
+   本补丁不修改上面任何已有代码，只做"扩展 + 重绑定"：
+   1. 指令扩展：MOV_RM / MOV_MR / MOV_RI_MEM / MOV_MEM_RI / IN / OUT
+   2. 中断向量表：setVector / getVector（0x00-0xFF，每项 4 字节）
+   3. BIOS 中断：
+        INT 0x00 → HLT
+        INT 0x10 → 显示。R0=字符，R1=目标(0=Terminal,1=显存光标处)
+        INT 0x16 → 键盘读。R0 返回字符，无键返回 0
+        INT 0x1A → 定时器。R1=高8位, R2=低8位
+        INT 0x20 → 系统调用。R0=0 停机，R0=1 清屏
+   4. I/O 端口表（按 C1/C2 惯例）：
+        0x00 键盘数据    0x01 键盘状态
+        0x10 显示字符    0x11 显示控制
+        0x12 光标X       0x13 光标Y
+        0x20 磁盘扇区L   0x21 磁盘扇区H
+        0x22 磁盘地址L   0x23 磁盘地址H
+        0x24 磁盘命令    0x25 磁盘状态
+        0x30 定时器低    0x31 定时器高
+        0x40 中断控制    0x41 定时器IRQ间隔
+        0x60 鼠标X       0x61 鼠标Y
+        0x62 鼠标按键    0x63 鼠标状态
+        0x64 清鼠标事件
+   5. FLAGS 的 C/V 正确计算（ADD/SUB）
+   6. 新增终端命令：step / run <addr> <max> / setvec <n> <addr> / getvec <n>
+   7. 汇编器扩展：支持 MOV_RM/MOV_MR/MOV_RI_MEM/MOV_MEM_RI/IN/OUT
+   8. GShell2 的 Terminal 窗口接键盘端口（0x00/0x01）
+   ═══════════════════════════════════════════════════════════════ */
+(function() {
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+//  1. 键盘 / 定时器 / 鼠标 外设（补丁内部状态）
+// ═══════════════════════════════════════════════════════════
+const Kbd = (() => {
+    const buf = [];
+    let irqEnabled = false;
+    let pendingIRQ = false;
+    function push(ch) { if (buf.length < 256) buf.push(ch); if (irqEnabled) pendingIRQ = true; }
+    function pop() { return buf.length ? buf.shift() : null; }
+    function peek() { return buf.length ? buf[0] : null; }
+    function has() { return buf.length > 0; }
+    function clear() { buf.length = 0; pendingIRQ = false; }
+    function setIRQ(on) { irqEnabled = !!on; if (!irqEnabled) pendingIRQ = false; }
+    function hasPendingIRQ() { return pendingIRQ; }
+    function clearPendingIRQ() { pendingIRQ = false; }
+    return { push, pop, peek, has, clear, setIRQ, hasPendingIRQ, clearPendingIRQ };
+})();
+
+const Tmr = (() => {
+    let counter = 0;
+    let irqInterval = 0;
+    let irqEnabled = false;
+    let pendingIRQ = false;
+    function tick() {
+        counter = (counter + 1) & 0xFFFFFFFF;
+        if (irqEnabled && irqInterval > 0 && (counter % irqInterval) === 0) pendingIRQ = true;
+    }
+    function getLow() { return counter & 0xFF; }
+    function getHigh() { return (counter >> 8) & 0xFF; }
+    function getValue() { return counter; }
+    function setIRQInterval(n) { irqInterval = n & 0xFFFFFFFF; }
+    function setIRQ(on) { irqEnabled = !!on; if (!irqEnabled) pendingIRQ = false; }
+    function hasPendingIRQ() { return pendingIRQ; }
+    function clearPendingIRQ() { pendingIRQ = false; }
+    function reset() { counter = 0; pendingIRQ = false; }
+    return { tick, getLow, getHigh, getValue, setIRQInterval, setIRQ, hasPendingIRQ, clearPendingIRQ, reset };
+})();
+
+const Ms = (() => {
+    let x = 80, y = 60, btn = 0, pending = false, irqEnabled = false, pendingIRQ = false;
+    function setPosition(nx, ny) { x = Math.max(0, Math.min(159, nx)); y = Math.max(0, Math.min(119, ny)); pending = true; if (irqEnabled) pendingIRQ = true; }
+    function setButtons(nb) { btn = nb & 3; pending = true; if (irqEnabled) pendingIRQ = true; }
+    function getX() { return x; }
+    function getY() { return y; }
+    function getButtons() { return btn; }
+    function hasEvent() { return pending; }
+    function clearEvent() { pending = false; pendingIRQ = false; }
+    function setIRQ(on) { irqEnabled = !!on; if (!irqEnabled) pendingIRQ = false; }
+    function hasPendingIRQ() { return pendingIRQ; }
+    function clearPendingIRQ() { pendingIRQ = false; }
+    return { setPosition, setButtons, getX, getY, getButtons, hasEvent, clearEvent, setIRQ, hasPendingIRQ, clearPendingIRQ };
+})();
+
+// 把 Kbd/Tmr/Ms 暴露到全局，供 GShell2 Terminal 窗口/鼠标事件用
+window.Kbd = Kbd; window.Tmr = Tmr; window.Ms = Ms;
+
+// ═══════════════════════════════════════════════════════════
+//  2. 中断向量表（0x00-0xFF，每项 4 字节，从地址 0 开始）
+// ═══════════════════════════════════════════════════════════
+const IVT = {
+    setVector(n, addr) {
+        n = n & 0xFF;
+        if (n * 4 >= 0x400) return false; // 0x00-0xFF → 地址 0x000-0x3FF
+        Memory.writeWord(n * 4, addr >>> 0);
+        return true;
+    },
+    getVector(n) {
+        n = n & 0xFF;
+        return Memory.readWord(n * 4);
+    },
+    clear() {
+        for (let i = 0; i < 0x400; i++) Memory.writeByte(i, 0);
+    }
+};
+window.IVT = IVT;
+
+// ═══════════════════════════════════════════════════════════
+//  3. I/O 端口（按 C1/C2 惯例）
+// ═══════════════════════════════════════════════════════════
+let diskSector = 0, diskAddr = 0;
+const IOBus = {
+    PORT: {
+        KBD_DATA: 0x00, KBD_STATUS: 0x01,
+        DISP_CHAR: 0x10, DISP_CTRL: 0x11, DISP_CURSOR_X: 0x12, DISP_CURSOR_Y: 0x13,
+        DISK_SECTOR_L: 0x20, DISK_SECTOR_H: 0x21, DISK_ADDR_L: 0x22, DISK_ADDR_H: 0x23,
+        DISK_CMD: 0x24, DISK_STATUS: 0x25,
+        TIMER_L: 0x30, TIMER_H: 0x31,
+        INT_CTRL: 0x40, TIMER_IRQ: 0x41,
+        MOUSE_X: 0x60, MOUSE_Y: 0x61, MOUSE_BTN: 0x62, MOUSE_STATUS: 0x63, MOUSE_CLEAR: 0x64
+    },
+    inPort(port) {
+        switch (port & 0xFF) {
+            case 0x00: { const c = Kbd.pop(); return c !== null ? (c.charCodeAt(0) & 0xFF) : 0; }
+            case 0x01: return Kbd.has() ? 1 : 0;
+            case 0x25: return 0; // 磁盘状态（简化）
+            case 0x30: return Tmr.getLow();
+            case 0x31: return Tmr.getHigh();
+            case 0x40: return (Kbd.hasPendingIRQ() ? 1 : 0) | (Tmr.hasPendingIRQ() ? 2 : 0) | (Ms.hasPendingIRQ() ? 4 : 0);
+            case 0x60: return Ms.getX();
+            case 0x61: return Ms.getY();
+            case 0x62: return Ms.getButtons();
+            case 0x63: return Ms.hasEvent() ? 1 : 0;
+            default: return 0;
+        }
+    },
+    outPort(port, v) {
+        v = v & 0xFF;
+        switch (port & 0xFF) {
+            case 0x11: // 显示控制：0=清屏 1=回车 2=换行 3=退格
+                if (v === 0) dispClear();
+                else if (v === 1) dispChar('\r');
+                else if (v === 2) dispChar('\n');
+                else if (v === 3) dispChar('\b');
+                break;
+            case 0x12: dispCursorX = v; break;
+            case 0x13: dispCursorY = v; break;
+            case 0x20: diskSector = (diskSector & 0xFF00) | v; break;
+            case 0x21: diskSector = (diskSector & 0x00FF) | (v << 8); break;
+            case 0x22: diskAddr = (diskAddr & 0xFF00) | v; break;
+            case 0x23: diskAddr = (diskAddr & 0x00FF) | (v << 8); break;
+            case 0x24:
+                try {
+                    if (v === 0) Disk.readSector(diskSector, diskAddr);
+                    else if (v === 1) Disk.writeSector(diskSector, diskAddr);
+                } catch (e) { /* 忽略 */ }
+                break;
+            case 0x40:
+                Kbd.setIRQ((v & 1) !== 0);
+                Tmr.setIRQ((v & 2) !== 0);
+                Ms.setIRQ((v & 4) !== 0);
+                break;
+            case 0x41: Tmr.setIRQInterval(v); break;
+            case 0x64: Ms.clearEvent(); break;
+            default: break;
+        }
+    }
+};
+window.IOBus = IOBus;
+
+// ═══════════════════════════════════════════════════════════
+//  4. 显示光标（Terminal 风格，CPU 的 INT 0x10 输出目标）
+//     实际 GShell2 有自己的窗口，但 CPU 程序不经过 GShell2，
+//     所以这里维护一个"CPU 显示缓冲区"，同时镜像到 Console + 状态栏
+// ═══════════════════════════════════════════════════════════
+let dispCursorX = 0, dispCursorY = 0;
+function dispChar(ch) {
+    if (ch === '\n') { dispCursorX = 0; dispCursorY++; }
+    else if (ch === '\r') { dispCursorX = 0; }
+    else if (ch === '\b') { if (dispCursorX > 0) dispCursorX--; }
+    else {
+        // 走 BIOS 显示：默认打 Console（GShell2 Terminal 窗口也能接）
+        if (window.__c3DispSink) window.__c3DispSink(ch, dispCursorX, dispCursorY);
+        else if (typeof Terminal !== 'undefined') Terminal.printLine('[CPU] ' + ch, 'line-success');
+        else console.log('[CPU DISP] ' + ch);
+        dispCursorX++;
+    }
+}
+function dispClear() {
+    dispCursorX = 0; dispCursorY = 0;
+    if (window.__c3DispClear) window.__c3DispClear();
+    else if (typeof Terminal !== 'undefined') Terminal.printLine('[CPU] 清屏', 'line-info');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  5. BIOS 中断分发
+// ═══════════════════════════════════════════════════════════
+const BIOS2 = {
+    handle(vec, cpu) {
+        switch (vec & 0xFF) {
+            case 0x00: cpu.setState('HALTED'); return true;
+            case 0x10: {
+                // R0 = 字符，R1 = 目标（0=默认Terminal/Console，1=写显存光标处）
+                const ch = String.fromCharCode(cpu.getReg(0) & 0xFF);
+                const target = cpu.getReg(1) & 0xFF;
+                if (target === 1) {
+                    // 写显存：光标位置 → 像素，8x8 字库
+                    const px = (cpu.getReg(2) & 0xFFFF);
+                    const py = (cpu.getReg(3) & 0xFFFF);
+                    const color = (cpu.getReg(4) & 0x0F);
+                    for (let r = 0; r < 8; r++) {
+                        const b = Font.getByte(ch.charCodeAt(0), r);
+                        for (let c = 0; c < 8; c++)
+                            if (b & (0x80 >> c)) Display.putPixel(px + c, py + r, color);
+                    }
+                } else {
+                    dispChar(ch);
+                }
+                return true;
+            }
+            case 0x16: {
+                // R0 = 读键盘。无键返回 0
+                const c = Kbd.pop();
+                cpu.setReg(0, c !== null ? (c.charCodeAt(0) & 0xFF) : 0);
+                return true;
+            }
+            case 0x1A: {
+                cpu.setReg(1, Tmr.getHigh());
+                cpu.setReg(2, Tmr.getLow());
+                return true;
+            }
+            case 0x20: {
+                const ah = cpu.getReg(0) & 0xFF;
+                if (ah === 0) cpu.setState('HALTED');
+                else if (ah === 1) dispClear();
+                return true;
+            }
+            default: return false;
+        }
+    }
+};
+window.BIOS2 = BIOS2;
+
+// ═══════════════════════════════════════════════════════════
+//  6. CPU 扩展：新指令 + 正确 FLAGS + INT 接 BIOS2
+//     用一个"包装 step"覆写 CPU.step/run，内部复用原 fetch/regs
+// ═══════════════════════════════════════════════════════════
+const OP_EXT = {
+    MOV_RM: 0x12, MOV_MR: 0x13, MOV_RI_MEM: 0x14, MOV_MEM_RI: 0x15,
+    IN: 0x70, OUT: 0x71
+};
+
+// 保存原 step/run
+const _origStep = CPU.step.bind(CPU);
+const _origRun = CPU.run.bind(CPU);
+
+// 新 step：先尝试扩展指令，若不是则回退原 step
+function step2() {
+    // 读取当前 PC 处 8 字节判断 opcode
+    const PC = CPU.getPC();
+    const op = Memory.readByte(PC);
+    // 扩展指令集
+    if (op === OP_EXT.MOV_RM || op === OP_EXT.MOV_MR || op === OP_EXT.MOV_RI_MEM || op === OP_EXT.MOV_MEM_RI
+        || op === OP_EXT.IN || op === OP_EXT.OUT) {
+        try {
+            const b = new Uint8Array(8);
+            for (let i = 0; i < 8; i++) b[i] = Memory.readByte((PC + i) & 0xFFFFFF);
+            let advance = 8;
+            switch (op) {
+                case OP_EXT.MOV_RM: {
+                    // [op][dst][src][0][0]  → Rd = [Rs]
+                    const dst = b[1] & 7, src = b[2] & 7;
+                    CPU.setReg(dst, Memory.readWord(CPU.getReg(src)));
+                    break;
+                }
+                case OP_EXT.MOV_MR: {
+                    // [op][dst][src][0][0]  → [Rd] = Rs
+                    const dst = b[1] & 7, src = b[2] & 7;
+                    Memory.writeWord(CPU.getReg(dst), CPU.getReg(src));
+                    break;
+                }
+                case OP_EXT.MOV_RI_MEM: {
+                    // [op][dst][0][0][imm32] → Rd = [imm32]
+                    const dst = b[1] & 7;
+                    const addr = (b[4] | (b[5]<<8) | (b[6]<<16) | (b[7]<<24)) >>> 0;
+                    CPU.setReg(dst, Memory.readWord(addr));
+                    break;
+                }
+                case OP_EXT.MOV_MEM_RI: {
+                    // [op][dst][0][0][imm32] → [imm32] = Rd
+                    const dst = b[1] & 7;
+                    const addr = (b[4] | (b[5]<<8) | (b[6]<<16) | (b[7]<<24)) >>> 0;
+                    Memory.writeWord(addr, CPU.getReg(dst));
+                    break;
+                }
+                case OP_EXT.IN: {
+                    // [op][dst][port][0][0] → Rd = inPort(port)
+                    const dst = b[1] & 7, port = b[2] & 0xFF;
+                    CPU.setReg(dst, IOBus.inPort(port) >>> 0);
+                    break;
+                }
+                case OP_EXT.OUT: {
+                    // [op][port][src][0][0] → outPort(port, Rs)
+                    const port = b[1] & 0xFF, src = b[2] & 7;
+                    IOBus.outPort(port, CPU.getReg(src));
+                    break;
+                }
+            }
+            if (advance) CPU.setPC((PC + 8) >>> 0);
+            Tmr.tick();
+            return { ok: true, halted: false };
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
+    }
+    // 不是扩展指令 → 原 step（但 INT 的向量在 [4..7] 已修）
+    return _origStep();
+}
+
+function run2(maxInstr) {
+    const limit = maxInstr || 1000000;
+    CPU.setState('RUNNING');
+    let n = 0;
+    while (CPU.getState() === 'RUNNING' && n < limit) {
+        const r = step2();
+        if (!r.ok) return { executed: n, halted: false, error: r.error };
+        n++;
+        if (CPU.getState() === 'HALTED') break;
+    }
+    return { executed: n, halted: CPU.getState() === 'HALTED', limitReached: n >= limit };
+}
+
+// 覆写 CPU.step / CPU.run（只加不删）
+CPU.step = step2;
+CPU.run = run2;
+
+// ═══════════════════════════════════════════════════════════
+//  7. 汇编器扩展：新指令
+// ═══════════════════════════════════════════════════════════
+// 找到现有 GShell2 的 OPCODES 是内部变量，无法直接改；
+// 但 GShell2 的 assembleProgram 是内部函数，也无法直接改。
+// 方案：拦截 GShell2 的 editorRun —— 但 editorRun 也是内部。
+// 更稳的方案：在 CPU 执行前用"自己的汇编器"重写 editorText → 内存。
+// 这里我们给 GShell2 增加一个外部入口：GShell2.assembleAndLoad(text)
+// 由于 GShell2 已 return 只暴露 boot/exit/isRunning，
+// 我们改用"劫持 CPU.run"的方式：CPU.run 执行前，如果编辑器里有新指令，
+// 由终端命令 run 自己先汇编。
+// 
+// 因此：给 Terminal 增加命令 `asm <text>` 和 `loadsrc` 不走 GShell2，
+// 直接在这里提供独立汇编器。
+// ═══════════════════════════════════════════════════════════
+
+const OPCODES_EXT = {
+    'NOP':0x00,'HLT':0x01,'MOV_RR':0x10,'MOV_RI':0x11,
+    'MOV_RM':0x12,'MOV_MR':0x13,'MOV_RI_MEM':0x14,'MOV_MEM_RI':0x15,
+    'ADD':0x20,'SUB':0x21,'MUL':0x22,'MUL_HI':0x23,'SWAP':0x24,'NEG':0x25,
+    'JMP':0x50,'JZ':0x51,'JNZ':0x52,'CALL':0x60,'RET':0x61,
+    'IN':0x70,'OUT':0x71,'INT':0x72
+};
+
+function assemble(src, baseAddr) {
+    baseAddr = baseAddr || 0x0100;
+    const lines = src.split('\n');
+    const labels = {};
+    const errors = [];
+    let pc = baseAddr;
+    for (const line of lines) {
+        const m = line.match(/^\s*(\w+):/);
+        if (m) labels[m[1]] = pc;
+        const code = line.replace(/;.*$/, '').replace(/^\s*\w+:\s*/, '').trim();
+        if (code) pc += 8;
+    }
+    const out = [];
+    function emit8(op, dst, src, imm32) {
+        out.push(op & 0xFF); out.push(dst & 0xFF); out.push(src & 0xFF); out.push(0);
+        const v = (imm32 || 0) >>> 0;
+        out.push(v & 0xFF); out.push((v>>>8)&0xFF); out.push((v>>>16)&0xFF); out.push((v>>>24)&0xFF);
+    }
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const code = line.replace(/;.*$/, '').replace(/^\s*\w+:\s*/, '').trim();
+        if (!code) continue;
+        const parts = code.split(/\s+/);
+        const mn = parts[0].toUpperCase();
+        const args = code.slice(parts[0].length).trim().split(',').map(s => s.trim());
+        const op = OPCODES_EXT[mn];
+        if (op === undefined) { errors.push(code + ' → 未知指令'); continue; }
+        function reg(s) { const m = s.match(/^R(\d+)$/i); return m ? parseInt(m[1]) : -1; }
+        function imm(s) {
+            if (s.startsWith('0x')) return parseInt(s.substring(2), 16) >>> 0;
+            if (labels[s] !== undefined) return labels[s] >>> 0;
+            const n = parseInt(s); return isNaN(n) ? null : (n >>> 0);
+        }
+        try {
+            if (mn === 'NOP' || mn === 'HLT' || mn === 'RET') emit8(op, 0, 0, 0);
+            else if (mn === 'MOV_RI') { const d=reg(args[0]), v=imm(args[1]); if(d<0||v===null) throw new Error('参数'); emit8(op,d,0,v); }
+            else if (mn === 'MOV_RR' || mn === 'ADD' || mn === 'SUB' || mn === 'MUL' || mn === 'MUL_HI' || mn === 'SWAP') {
+                const d=reg(args[0]), s=reg(args[1]); if(d<0||s<0) throw new Error('参数'); emit8(op,d,s,0);
+            }
+            else if (mn === 'MOV_RM' || mn === 'MOV_MR') {
+                const d=reg(args[0]), s=reg(args[1]); if(d<0||s<0) throw new Error('参数'); emit8(op,d,s,0);
+            }
+            else if (mn === 'MOV_RI_MEM') { const d=reg(args[0]), v=imm(args[1]); if(d<0||v===null) throw new Error('参数'); emit8(op,d,0,v); }
+            else if (mn === 'MOV_MEM_RI') { const d=reg(args[0]), v=imm(args[1]); if(d<0||v===null) throw new Error('参数'); emit8(op,d,0,v); }
+            else if (mn === 'NEG') { const d=reg(args[0]); if(d<0) throw new Error('参数'); emit8(op,d,0,0); }
+            else if (mn === 'JMP' || mn === 'JZ' || mn === 'JNZ' || mn === 'CALL') { const v=imm(args[0]); if(v===null) throw new Error('地址'); emit8(op,0,0,v); }
+            else if (mn === 'INT') { const v=imm(args[0]); if(v===null) throw new Error('向量'); emit8(op,0,0,v); }
+            else if (mn === 'IN') { const d=reg(args[0]), p=imm(args[1]); if(d<0||p===null) throw new Error('参数'); emit8(op,d,p,0); }
+            else if (mn === 'OUT') { const p=imm(args[0]), s=reg(args[1]); if(p===null||s<0) throw new Error('参数'); emit8(op,p,s,0); }
+        } catch (e) { errors.push(code + ' → ' + e.message); }
+    }
+    return { ok: errors.length === 0, bytes: new Uint8Array(out), errors, labels };
+}
+window.assemble = assemble;
+
+// ═══════════════════════════════════════════════════════════
+//  8. 键盘输入接 Kbd（不干扰现有 Terminal 输入框）
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('keydown', function(e) {
+    // 只有 GShell2 运行中 + 焦点不在 input-field 时，才把键喂给 Kbd
+    if (typeof GShell2 === 'undefined' || !GShell2.isRunning()) return;
+    if (document.activeElement && document.activeElement.id === 'input-field') return;
+    if (e.key.length === 1) Kbd.push(e.key);
+    else if (e.key === 'Enter') Kbd.push('\n');
+    else if (e.key === 'Backspace') Kbd.push('\b');
+    else if (e.key === 'Escape') Kbd.push('\x1B');
+}, true);
+
+// ═══════════════════════════════════════════════════════════
+//  9. 终端命令扩展：step / run <addr> <max> / setvec / getvec
+//     通过覆写 Terminal.execute 实现
+// ═══════════════════════════════════════════════════════════
+if (typeof Terminal !== 'undefined' && Terminal.execute) {
+    const _origExec = Terminal.execute.bind(Terminal);
+    Terminal.execute = function(cmd) {
+        const parts = cmd.trim().split(/\s+/);
+        const action = parts[0].toLowerCase();
+        const args = parts.slice(1);
+        if (action === 'step') {
+            Terminal.printLine('C3> ' + cmd, 'line-info');
+            const n = args.length > 0 ? parseInt(args[0]) : 1;
+            for (let i = 0; i < n; i++) {
+                const pcBefore = CPU.getPC();
+                const b = new Uint8Array(8);
+                for (let j = 0; j < 8; j++) b[j] = Memory.readByte(pcBefore + j);
+                const r = CPU.step();
+                const s = CPU.snapshot();
+                Terminal.printLine('0x' + pcBefore.toString(16).padStart(6, '0') + '  ' +
+                    Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(' ') +
+                    '  → PC=0x' + s.PC.toString(16) + ' R0=0x' + s.R0.toString(16) +
+                    ' FLAGS=0x' + s.FLAGS.toString(16), 'line-info');
+                if (!r.ok) { Terminal.printLine('  ERR: ' + r.error, 'line-error'); return; }
+                if (s.state === 'HALTED') { Terminal.printLine('  HALTED', 'line-success'); return; }
+            }
+            updateStatusBar();
+            return;
+        }
+        if (action === 'run') {
+            Terminal.printLine('C3> ' + cmd, 'line-info');
+            const addr = parseInt(args[0] || '0x0100');
+            const max = parseInt(args[1] || '1000000');
+            let allZero = true;
+            for (let i = 0; i < 8; i++) if (Memory.readByte(addr + i) !== 0) { allZero = false; break; }
+            if (allZero) { Terminal.printLine('0x' + addr.toString(16) + ' 处是 NOP，没有程序。', 'line-warn'); return; }
+            CPU.reset();
+            CPU.setPC(addr);
+            const r = CPU.run(max);
+            const s = CPU.snapshot();
+            Terminal.printLine('执行 ' + r.executed + ' 条，' + (r.halted ? 'HALTED' : (r.error ? 'ERR: ' + r.error : 'PC=0x' + s.PC.toString(16))), 'line-success');
+            Terminal.printLine('R0=0x' + s.R0.toString(16) + ' R1=0x' + s.R1.toString(16) + ' R2=0x' + s.R2.toString(16) + ' R3=0x' + s.R3.toString(16), 'line-info');
+            Terminal.printLine('SP=0x' + s.SP.toString(16) + ' FLAGS=0x' + s.FLAGS.toString(16) + ' instrCount=' + s.instrCount, 'line-info');
+            updateStatusBar();
+            return;
+        }
+        if (action === 'setvec') {
+            Terminal.printLine('C3> ' + cmd, 'line-info');
+            const n = parseInt(args[0] || '0');
+            const a = parseInt(args[1] || '0');
+            IVT.setVector(n, a);
+            Terminal.printLine('INT 0x' + n.toString(16) + ' → 0x' + IVT.getVector(n).toString(16), 'line-success');
+            return;
+        }
+        if (action === 'getvec') {
+            Terminal.printLine('C3> ' + cmd, 'line-info');
+            const n = parseInt(args[0] || '0');
+            Terminal.printLine('INT 0x' + n.toString(16) + ' → 0x' + IVT.getVector(n).toString(16), 'line-success');
+            return;
+        }
+        if (action === 'asm') {
+            Terminal.printLine('C3> ' + cmd, 'line-info');
+            const src = args.join(' ');
+            const r = assemble(src, 0x0100);
+            if (!r.ok) { Terminal.printLine('错误: ' + r.errors.join('; '), 'line-error'); return; }
+            Memory.writeBlock(0x0100, r.bytes);
+            Terminal.printLine('已汇编 ' + r.bytes.length + ' 字节到 0x0100', 'line-success');
+            return;
+        }
+        if (action === 'runasm') {
+            Terminal.printLine('C3> ' + cmd, 'line-info');
+            const src = args.join(' ');
+            const r = assemble(src, 0x0100);
+            if (!r.ok) { Terminal.printLine('汇编错误: ' + r.errors.join('; '), 'line-error'); return; }
+            Memory.writeBlock(0x0100, r.bytes);
+            CPU.reset();
+            CPU.setPC(0x0100);
+            const rr = CPU.run(1000000);
+            const s = CPU.snapshot();
+            Terminal.printLine('汇编 ' + r.bytes.length + 'B, 执行 ' + rr.executed + ' 条, ' +
+                (rr.halted ? 'HALTED' : (rr.error ? 'ERR: ' + rr.error : 'PC=0x' + s.PC.toString(16))), 'line-success');
+            Terminal.printLine('R0=0x' + s.R0.toString(16) + ' R1=0x' + s.R1.toString(16) + ' R2=0x' + s.R2.toString(16), 'line-info');
+            updateStatusBar();
+            return;
+        }
+        // 其他命令走原 Terminal
+        return _origExec(cmd);
+    };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  10. GShell2 Terminal 窗口接 Kbd（让 CPU 程序 INT 0x16 能读）
+//      以及 GShell2 Editor F5 用新汇编器（支持扩展指令）
+// ═══════════════════════════════════════════════════════════
+// 由于 GShell2 内部变量闭包不可直接改，这里用"劫持 CPU.run"：
+// Editor 的 F5 调 CPU.run，我们已在 step2 里扩展，无需再改。
+// Kbd 的喂入已在 #8 完成。
+// 
+// 另外：GShell2 的 Terminal 窗口输入框（termInput）回车时，
+// 我们把内容也喂给 Kbd，让 CPU 程序能读到。
+// 通过覆写 GShell2 的 termExec 不可行（内部），
+// 但 GShell2 的 Terminal 窗口用 onKeyDown 里的 termExec，
+// 我们通过 window.__c3TerminalSink 回调：
+if (window.__c3DispSink === undefined) {
+    window.__c3DispSink = function(ch, x, y) {
+        // 优先打到 GShell2 Terminal 窗口（如果开着）
+        if (typeof GShell2 !== 'undefined' && GShell2.isRunning && GShell2.isRunning()) {
+            // GShell2 内部 windows 不可见，退而求其次：打 Console + 状态栏
+            console.log('[CPU DISP] ' + ch);
+        } else if (typeof Terminal !== 'undefined') {
+            Terminal.printLine('[CPU] ' + ch, 'line-success');
+        }
+    };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  11. 定时器 tick 接进 CPU（每次 step 已在 step2 里调 Tmr.tick）
+//      中断检查：CPU.run 每步前检查 Kbd/Tmr/Ms pendingIRQ
+// ═══════════════════════════════════════════════════════════
+// 已通过 step2 → Tmr.tick；中断检查在 CPU 原 step 里没有，
+// 这里在 run2 循环里补：
+const _run2Inner = run2;
+CPU.run = function(maxInstr) {
+    const limit = maxInstr || 1000000;
+    CPU.setState('RUNNING');
+    let n = 0;
+    while (CPU.getState() === 'RUNNING' && n < limit) {
+        // 中断检查
+        if ((CPU.getFLAGS() & CPU.F_I) !== 0) {
+            if (Kbd.hasPendingIRQ()) { doIRQ(0x03); }
+            else if (Tmr.hasPendingIRQ()) { doIRQ(0x02); }
+            else if (Ms.hasPendingIRQ()) { doIRQ(0x04); }
+        }
+        const r = step2();
+        if (!r.ok) return { executed: n, halted: false, error: r.error };
+        n++;
+        if (CPU.getState() === 'HALTED') break;
+    }
+    return { executed: n, halted: CPU.getState() === 'HALTED', limitReached: n >= limit };
+};
+
+function doIRQ(vec) {
+    const isr = IVT.getVector(vec);
+    if (isr === 0) return; // 无 ISR，忽略（不压栈）
+    CPU.push32(CPU.getPC());
+    CPU.push32(CPU.getFLAGS());
+    CPU.setFlag(CPU.F_I, false);
+    CPU.setPC(isr);
+    if (vec === 0x02) Tmr.clearPendingIRQ();
+    if (vec === 0x03) Kbd.clearPendingIRQ();
+    if (vec === 0x04) Ms.clearPendingIRQ();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  12. 启动时打印补丁就绪
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+        if (typeof Terminal !== 'undefined') {
+            Terminal.printLine('[补丁2] 已加载：MOV_RM/MOV_MR/MOV_RI_MEM/MOV_MEM_RI/IN/OUT', 'line-success');
+            Terminal.printLine('[补丁2] IVT 0x00-0xFF, BIOS INT 0x00/0x10/0x16/0x1A/0x20', 'line-success');
+            Terminal.printLine('[补丁2] 新命令: step [n] / run <addr> <max> / setvec <n> <addr> / getvec <n> / asm <src> / runasm <src>', 'line-info');
+            Terminal.printLine('[补丁2] I/O 端口: 键0x00 显0x10 盘0x20 时0x30 中断0x40 鼠0x60', 'line-info');
+            Terminal.newLine();
+        }
+    }, 300);
+});
+
+console.log('✅ C3 补丁 2 已加载（扩展指令 + BIOS + IVT + I/O）');
+})();
+/* ═══════════════════════════════════════════════════════════════
+   C3 补丁 3 · 修复命令扩展 + assemble 支持 ; 分隔多指令
+   ═══════════════════════════════════════════════════════════════ */
+(function() {
+'use strict';
+
+// ─── 1. 重新定义 assemble（支持 ; 和 \n 作行分隔符，去掉 ; 注释）───
+window.assemble = function(src, baseAddr) {
+    baseAddr = baseAddr || 0x0100;
+    const lines = src.split(/[\n;]/);
+    const labels = {};
+    const errors = [];
+    let pc = baseAddr;
+    for (const line of lines) {
+        const m = line.match(/^\s*(\w+):/);
+        if (m) labels[m[1]] = pc;
+        const code = line.replace(/^\s*\w+:\s*/, '').trim();
+        if (code) pc += 8;
+    }
+    const out = [];
+    function emit8(op, dst, src2, imm32) {
+        out.push(op & 0xFF); out.push(dst & 0xFF); out.push(src2 & 0xFF); out.push(0);
+        const v = (imm32 || 0) >>> 0;
+        out.push(v & 0xFF); out.push((v>>>8)&0xFF); out.push((v>>>16)&0xFF); out.push((v>>>24)&0xFF);
+    }
+    const OPCODES_EXT = {
+        'NOP':0x00,'HLT':0x01,'MOV_RR':0x10,'MOV_RI':0x11,
+        'MOV_RM':0x12,'MOV_MR':0x13,'MOV_RI_MEM':0x14,'MOV_MEM_RI':0x15,
+        'ADD':0x20,'SUB':0x21,'MUL':0x22,'MUL_HI':0x23,'SWAP':0x24,'NEG':0x25,
+        'JMP':0x50,'JZ':0x51,'JNZ':0x52,'CALL':0x60,'RET':0x61,
+        'IN':0x70,'OUT':0x71,'INT':0x72
+    };
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const code = line.replace(/^\s*\w+:\s*/, '').trim();
+        if (!code) continue;
+        const parts = code.split(/\s+/);
+        const mn = parts[0].toUpperCase();
+        const args = code.slice(parts[0].length).trim().split(',').map(s => s.trim());
+        const op = OPCODES_EXT[mn];
+        if (op === undefined) { errors.push(code + ' → 未知指令'); continue; }
+        function reg(s) { const m = s.match(/^R(\d+)$/i); return m ? parseInt(m[1]) : -1; }
+        function imm(s) {
+            if (s.startsWith('0x')) return parseInt(s.substring(2), 16) >>> 0;
+            if (labels[s] !== undefined) return labels[s] >>> 0;
+            const n = parseInt(s); return isNaN(n) ? null : (n >>> 0);
+        }
+        try {
+            if (mn === 'NOP' || mn === 'HLT' || mn === 'RET') emit8(op, 0, 0, 0);
+            else if (mn === 'MOV_RI') { const d=reg(args[0]), v=imm(args[1]); if(d<0||v===null) throw new Error('参数'); emit8(op,d,0,v); }
+            else if (mn === 'MOV_RR' || mn === 'ADD' || mn === 'SUB' || mn === 'MUL' || mn === 'MUL_HI' || mn === 'SWAP') {
+                const d=reg(args[0]), s=reg(args[1]); if(d<0||s<0) throw new Error('参数'); emit8(op,d,s,0);
+            }
+            else if (mn === 'MOV_RM' || mn === 'MOV_MR') {
+                const d=reg(args[0]), s=reg(args[1]); if(d<0||s<0) throw new Error('参数'); emit8(op,d,s,0);
+            }
+            else if (mn === 'MOV_RI_MEM') { const d=reg(args[0]), v=imm(args[1]); if(d<0||v===null) throw new Error('参数'); emit8(op,d,0,v); }
+            else if (mn === 'MOV_MEM_RI') { const d=reg(args[0]), v=imm(args[1]); if(d<0||v===null) throw new Error('参数'); emit8(op,d,0,v); }
+            else if (mn === 'NEG') { const d=reg(args[0]); if(d<0) throw new Error('参数'); emit8(op,d,0,0); }
+            else if (mn === 'JMP' || mn === 'JZ' || mn === 'JNZ' || mn === 'CALL') { const v=imm(args[0]); if(v===null) throw new Error('地址'); emit8(op,0,0,v); }
+            else if (mn === 'INT') { const v=imm(args[0]); if(v===null) throw new Error('向量'); emit8(op,0,0,v); }
+            else if (mn === 'IN') { const d=reg(args[0]), p=imm(args[1]); if(d<0||p===null) throw new Error('参数'); emit8(op,d,p,0); }
+            else if (mn === 'OUT') { const p=imm(args[0]), s=reg(args[1]); if(p===null||s<0) throw new Error('参数'); emit8(op,p,s,0); }
+        } catch (e) { errors.push(code + ' → ' + e.message); }
+    }
+    return { ok: errors.length === 0, bytes: new Uint8Array(out), errors, labels };
+};
+
+// ─── 2. inputEl 捕获阶段拦截新命令 ───
+const _inputEl = document.getElementById('input-field');
+if (!_inputEl) { console.warn('[补丁3] 找不到 input-field'); return; }
+
+_inputEl.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    const cmd = _inputEl.value.trim();
+    if (!cmd) return;
+    const parts = cmd.split(/\s+/);
+    const action = parts[0].toLowerCase();
+    const args = parts.slice(1);
+    function log(s, cls) { if (typeof Terminal !== 'undefined') Terminal.printLine(s, cls); }
+
+    if (action === 'step') {
+        e.stopImmediatePropagation(); e.preventDefault(); _inputEl.value = '';
+        log('C3> ' + cmd, 'line-info');
+        const n = args.length > 0 ? parseInt(args[0]) : 1;
+        for (let i = 0; i < n; i++) {
+            const pcBefore = CPU.getPC();
+            const b = new Uint8Array(8);
+            for (let j = 0; j < 8; j++) b[j] = Memory.readByte(pcBefore + j);
+            const r = CPU.step();
+            const s = CPU.snapshot();
+            log('0x' + pcBefore.toString(16).padStart(6, '0') + '  ' +
+                Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(' ') +
+                '  → PC=0x' + s.PC.toString(16) + ' R0=0x' + s.R0.toString(16) +
+                ' FLAGS=0x' + s.FLAGS.toString(16), 'line-info');
+            if (!r.ok) { log('  ERR: ' + r.error, 'line-error'); return; }
+            if (s.state === 'HALTED') { log('  HALTED', 'line-success'); return; }
+        }
+        if (typeof updateStatusBar === 'function') updateStatusBar();
+        return;
+    }
+    if (action === 'run') {
+        e.stopImmediatePropagation(); e.preventDefault(); _inputEl.value = '';
+        log('C3> ' + cmd, 'line-info');
+        const addr = parseInt(args[0] || '0x0100');
+        const max = parseInt(args[1] || '1000000');
+        let allZero = true;
+        for (let i = 0; i < 8; i++) if (Memory.readByte(addr + i) !== 0) { allZero = false; break; }
+        if (allZero) { log('0x' + addr.toString(16) + ' 处是 NOP，没有程序。', 'line-warn'); return; }
+        CPU.reset();
+        CPU.setPC(addr);
+        const r = CPU.run(max);
+        const s = CPU.snapshot();
+        log('执行 ' + r.executed + ' 条，' + (r.halted ? 'HALTED' : (r.error ? 'ERR: ' + r.error : 'PC=0x' + s.PC.toString(16))), 'line-success');
+        log('R0=0x' + s.R0.toString(16) + ' R1=0x' + s.R1.toString(16) + ' R2=0x' + s.R2.toString(16) + ' R3=0x' + s.R3.toString(16), 'line-info');
+        log('SP=0x' + s.SP.toString(16) + ' FLAGS=0x' + s.FLAGS.toString(16) + ' instrCount=' + s.instrCount, 'line-info');
+        if (typeof updateStatusBar === 'function') updateStatusBar();
+        return;
+    }
+    if (action === 'setvec') {
+        e.stopImmediatePropagation(); e.preventDefault(); _inputEl.value = '';
+        log('C3> ' + cmd, 'line-info');
+        const n = parseInt(args[0] || '0'), a = parseInt(args[1] || '0');
+        IVT.setVector(n, a);
+        log('INT 0x' + n.toString(16) + ' → 0x' + IVT.getVector(n).toString(16), 'line-success');
+        return;
+    }
+    if (action === 'getvec') {
+        e.stopImmediatePropagation(); e.preventDefault(); _inputEl.value = '';
+        log('C3> ' + cmd, 'line-info');
+        const n = parseInt(args[0] || '0');
+        log('INT 0x' + n.toString(16) + ' → 0x' + IVT.getVector(n).toString(16), 'line-success');
+        return;
+    }
+    if (action === 'asm') {
+        e.stopImmediatePropagation(); e.preventDefault(); _inputEl.value = '';
+        log('C3> ' + cmd, 'line-info');
+        const r = assemble(args.join(' '), 0x0100);
+        if (!r.ok) { log('错误: ' + r.errors.join('; '), 'line-error'); return; }
+        Memory.writeBlock(0x0100, r.bytes);
+        log('已汇编 ' + r.bytes.length + ' 字节到 0x0100', 'line-success');
+        return;
+    }
+    if (action === 'runasm') {
+        e.stopImmediatePropagation(); e.preventDefault(); _inputEl.value = '';
+        log('C3> ' + cmd, 'line-info');
+        const r = assemble(args.join(' '), 0x0100);
+        if (!r.ok) { log('汇编错误: ' + r.errors.join('; '), 'line-error'); return; }
+        Memory.writeBlock(0x0100, r.bytes);
+        CPU.reset();
+        CPU.setPC(0x0100);
+        const rr = CPU.run(1000000);
+        const s = CPU.snapshot();
+        log('汇编 ' + r.bytes.length + 'B, 执行 ' + rr.executed + ' 条, ' +
+            (rr.halted ? 'HALTED' : (rr.error ? 'ERR: ' + rr.error : 'PC=0x' + s.PC.toString(16))), 'line-success');
+        log('R0=0x' + s.R0.toString(16) + ' R1=0x' + s.R1.toString(16) + ' R2=0x' + s.R2.toString(16), 'line-info');
+        if (typeof updateStatusBar === 'function') updateStatusBar();
+        return;
+    }
+}, true);
+
+console.log('✅ C3 补丁 3 已加载（命令扩展 + assemble 支持 ; 分隔）');
+})();
+</script>
+</body>
+</html>
