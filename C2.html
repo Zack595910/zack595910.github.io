@@ -1,0 +1,4483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JS-H86 C2</title>
+<!--
+  ═══════════════════════════════════════════════════════════
+  JS-H86 C2 架构 · 第二代实现（图形化）
+  版本：v2.0.0
+  宿主：浏览器 JS 引擎
+  ═══════════════════════════════════════════════════════════
+  C2 相比 C1 新增：
+    - 图形模式（160×120，每像素 1 字节，16 色）
+    - 图形 BIOS（INT 0x15，8 个功能）
+    - 8×8 内置字库（96 个 ASCII 字符）
+    - 鼠标控制器（端口 0x60-0x64，INT 0x04）
+    - 索引寻址指令（MOV_RMO / MOV_MRO）
+    - GShell（图形外壳，用 C1 汇编写）
+    - 系统信息面板（第一个窗口）
+    - 38 条指令
+  ═══════════════════════════════════════════════════════════
+-->
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: 'Consolas', 'Cascadia Code', 'Courier New', monospace;
+    color: #cccccc;
+}
+
+#screen {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #0a0a0a;
+}
+
+#status-bar {
+    height: 28px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 12px;
+    color: #888;
+    flex-shrink: 0;
+}
+
+#status-bar .brand { color: #4ec9b0; font-weight: bold; margin-right: 16px; }
+#status-bar .item { margin-right: 16px; }
+#status-bar .item .val { color: #cccccc; margin-left: 4px; }
+#status-bar .spacer { flex: 1; }
+#status-bar .led {
+    width: 8px; height: 8px; border-radius: 50%; background: #333;
+    margin-right: 6px; display: inline-block; transition: background 0.1s;
+}
+#status-bar .led.on { background: #4ec9b0; box-shadow: 0 0 6px #4ec9b0; }
+#status-bar .led.running { background: #dcdcaa; box-shadow: 0 0 6px #dcdcaa; }
+
+#terminal {
+    flex: 1; overflow-y: auto; padding: 12px 16px;
+    font-size: 14px; line-height: 1.5; color: #cccccc;
+    white-space: pre-wrap; word-break: break-all;
+}
+#terminal::-webkit-scrollbar { width: 8px; }
+#terminal::-webkit-scrollbar-track { background: #0a0a0a; }
+#terminal::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+
+.line-info    { color: #6a9955; }
+.line-error   { color: #f44747; }
+.line-success { color: #4ec9b0; }
+.line-warn    { color: #dcdcaa; }
+.line-prompt  { color: #569cd6; }
+.line-input   { color: #ce9178; }
+.line-dim     { color: #666; }
+.line-bright  { color: #ffffff; }
+
+#input-line {
+    height: 32px; background: #141414; border-top: 1px solid #333;
+    display: flex; align-items: center; padding: 0 16px; flex-shrink: 0;
+}
+
+#input-line .prompt { color: #569cd6; font-size: 14px; margin-right: 8px; white-space: nowrap; }
+
+#input-line input {
+    flex: 1; background: transparent; border: none; color: #ffffff;
+    font-family: inherit; font-size: 14px; outline: none; caret-color: #4ec9b0;
+}
+
+#bottom-bar {
+    height: 22px; background: #1a1a1a; border-top: 1px solid #333;
+    display: flex; align-items: center; padding: 0 12px;
+    font-size: 11px; color: #666; flex-shrink: 0; gap: 16px;
+}
+
+#c1-display-canvas { display: block; background: #000; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+
+<div id="screen">
+    <div id="status-bar">
+        <span class="brand">JS-H86 C2</span>
+        <span class="item">CPU <span class="val" id="stat-cpu">IDLE</span></span>
+        <span class="item">PC <span class="val" id="stat-pc">0x0000</span></span>
+        <span class="item">SP <span class="val" id="stat-sp">0x7FFF</span></span>
+        <span class="item">FLAGS <span class="val" id="stat-flags">0x0000</span></span>
+        <span class="item">MODE <span class="val" id="stat-mode">TEXT</span></span>
+        <span class="item">INT <span class="val" id="stat-int">--</span></span>
+        <span class="spacer"></span>
+        <span class="led" id="led-power"></span>
+        <span class="item" style="margin-right:0;">POWER</span>
+    </div>
+
+    <div id="terminal"></div>
+
+    <div id="input-line">
+        <span class="prompt" id="input-prompt">C2&gt;</span>
+        <input type="text" id="input-field" autocomplete="off" spellcheck="false" autofocus>
+    </div>
+
+    <div id="bottom-bar">
+        <span>v2.0.0 · 图形化</span>
+        <span>64 KB RAM · 1 MB Disk</span>
+        <span>38 条指令</span>
+        <span><b style="color:#569cd6;">boot</b> 启动图形 · <b style="color:#569cd6;">test</b> 测试</span>
+    </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   JS-H86 C2 · 核心代码
+   ═══════════════════════════════════════════════════════════════ */
+
+'use strict';
+
+/* ─────────────────────────────────────────────────────────────
+   模块 1：Memory Bus
+   ───────────────────────────────────────────────────────────── */
+const Memory = (() => {
+    const SIZE = 65536;
+    const data = new Uint8Array(SIZE);
+    let readCount = 0, writeCount = 0;
+
+    function readByte(addr) {
+        if (addr < 0 || addr >= SIZE) throw new Error('内存越界读: 0x' + addr.toString(16));
+        readCount++;
+        return data[addr];
+    }
+    function writeByte(addr, value) {
+        if (addr < 0 || addr >= SIZE) throw new Error('内存越界写: 0x' + addr.toString(16));
+        writeCount++;
+        data[addr] = value & 0xFF;
+    }
+    function readWord(addr) {
+        return (readByte((addr + 1) & 0xFFFF) << 8) | readByte(addr & 0xFFFF);
+    }
+    function writeWord(addr, value) {
+        writeByte(addr & 0xFFFF, value & 0xFF);
+        writeByte((addr + 1) & 0xFFFF, (value >> 8) & 0xFF);
+    }
+    function readBlock(addr, length) { return data.slice(addr, addr + length); }
+    function writeBlock(addr, bytes) {
+        for (let i = 0; i < bytes.length; i++) writeByte(addr + i, bytes[i]);
+    }
+    function clear() { data.fill(0); readCount = 0; writeCount = 0; }
+    function getStats() {
+        return { size: SIZE, readCount, writeCount, nonZeroBytes: data.filter(b => b !== 0).length };
+    }
+
+    return { SIZE, readByte, writeByte, readWord, writeWord, readBlock, writeBlock, clear, getStats };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 2：Font 8×8 字库
+   内置 ASCII 0x20-0x7F（96 字符 × 8 字节 = 768 字节）
+   每个字符 8×8 位图，每行 8 bit，bit7 在最左
+   ───────────────────────────────────────────────────────────── */
+const Font = (() => {
+    // 8x8 字库（0x20 - 0x7F）
+    // 每字符 8 字节，每字节一行
+    const FONT_8X8 = new Uint8Array([
+        // 0x20 空格
+        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+        // 0x21 !
+        0x18,0x18,0x18,0x18,0x18,0x00,0x18,0x00,
+        // 0x22 "
+        0x6C,0x6C,0x24,0x00,0x00,0x00,0x00,0x00,
+        // 0x23 #
+        0x6C,0x6C,0xFE,0x6C,0xFE,0x6C,0x6C,0x00,
+        // 0x24 $
+        0x18,0x7E,0xC0,0x7C,0x06,0xFC,0x18,0x00,
+        // 0x25 %
+        0xC6,0xC6,0x0C,0x18,0x30,0x66,0xC6,0x00,
+        // 0x26 &
+        0x38,0x6C,0x38,0x76,0xDC,0xCC,0x76,0x00,
+        // 0x27 '
+        0x18,0x18,0x30,0x00,0x00,0x00,0x00,0x00,
+        // 0x28 (
+        0x0C,0x18,0x30,0x30,0x30,0x18,0x0C,0x00,
+        // 0x29 )
+        0x30,0x18,0x0C,0x0C,0x0C,0x18,0x30,0x00,
+        // 0x2A *
+        0x00,0x66,0x3C,0xFF,0x3C,0x66,0x00,0x00,
+        // 0x2B +
+        0x00,0x18,0x18,0x7E,0x18,0x18,0x00,0x00,
+        // 0x2C ,
+        0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x30,
+        // 0x2D -
+        0x00,0x00,0x00,0x7E,0x00,0x00,0x00,0x00,
+        // 0x2E .
+        0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x00,
+        // 0x2F /
+        0x06,0x0C,0x18,0x30,0x60,0xC0,0x80,0x00,
+        // 0x30 0
+        0x3C,0x66,0x6E,0x76,0x66,0x66,0x3C,0x00,
+        // 0x31 1
+        0x18,0x38,0x18,0x18,0x18,0x18,0x7E,0x00,
+        // 0x32 2
+        0x3C,0x66,0x06,0x0C,0x18,0x30,0x7E,0x00,
+        // 0x33 3
+        0x3C,0x66,0x06,0x1C,0x06,0x66,0x3C,0x00,
+        // 0x34 4
+        0x0C,0x1C,0x3C,0x6C,0x7E,0x0C,0x0C,0x00,
+        // 0x35 5
+        0x7E,0x60,0x7C,0x06,0x06,0x66,0x3C,0x00,
+        // 0x36 6
+        0x1C,0x30,0x60,0x7C,0x66,0x66,0x3C,0x00,
+        // 0x37 7
+        0x7E,0x06,0x0C,0x18,0x30,0x30,0x30,0x00,
+        // 0x38 8
+        0x3C,0x66,0x66,0x3C,0x66,0x66,0x3C,0x00,
+        // 0x39 9
+        0x3C,0x66,0x66,0x3E,0x06,0x0C,0x38,0x00,
+        // 0x3A :
+        0x00,0x18,0x18,0x00,0x00,0x18,0x18,0x00,
+        // 0x3B ;
+        0x00,0x18,0x18,0x00,0x00,0x18,0x18,0x30,
+        // 0x3C <
+        0x0C,0x18,0x30,0x60,0x30,0x18,0x0C,0x00,
+        // 0x3D =
+        0x00,0x00,0x7E,0x00,0x7E,0x00,0x00,0x00,
+        // 0x3E >
+        0x30,0x18,0x0C,0x06,0x0C,0x18,0x30,0x00,
+        // 0x3F ?
+        0x3C,0x66,0x06,0x0C,0x18,0x00,0x18,0x00,
+        // 0x40 @
+        0x3C,0x66,0x6E,0x6E,0x60,0x66,0x3C,0x00,
+        // 0x41 A
+        0x18,0x3C,0x66,0x66,0x7E,0x66,0x66,0x00,
+        // 0x42 B
+        0x7C,0x66,0x66,0x7C,0x66,0x66,0x7C,0x00,
+        // 0x43 C
+        0x3C,0x66,0x60,0x60,0x60,0x66,0x3C,0x00,
+        // 0x44 D
+        0x78,0x6C,0x66,0x66,0x66,0x6C,0x78,0x00,
+        // 0x45 E
+        0x7E,0x60,0x60,0x7C,0x60,0x60,0x7E,0x00,
+        // 0x46 F
+        0x7E,0x60,0x60,0x7C,0x60,0x60,0x60,0x00,
+        // 0x47 G
+        0x3C,0x66,0x60,0x6E,0x66,0x66,0x3C,0x00,
+        // 0x48 H
+        0x66,0x66,0x66,0x7E,0x66,0x66,0x66,0x00,
+        // 0x49 I
+        0x3C,0x18,0x18,0x18,0x18,0x18,0x3C,0x00,
+        // 0x4A J
+        0x1E,0x0C,0x0C,0x0C,0x0C,0x6C,0x38,0x00,
+        // 0x4B K
+        0x66,0x6C,0x78,0x70,0x78,0x6C,0x66,0x00,
+        // 0x4C L
+        0x60,0x60,0x60,0x60,0x60,0x60,0x7E,0x00,
+        // 0x4D M
+        0xC6,0xEE,0xFE,0xD6,0xC6,0xC6,0xC6,0x00,
+        // 0x4E N
+        0x66,0x76,0x7E,0x7E,0x6E,0x66,0x66,0x00,
+        // 0x4F O
+        0x3C,0x66,0x66,0x66,0x66,0x66,0x3C,0x00,
+        // 0x50 P
+        0x7C,0x66,0x66,0x7C,0x60,0x60,0x60,0x00,
+        // 0x51 Q
+        0x3C,0x66,0x66,0x66,0x66,0x6E,0x3C,0x06,
+        // 0x52 R
+        0x7C,0x66,0x66,0x7C,0x78,0x6C,0x66,0x00,
+        // 0x53 S
+        0x3C,0x66,0x60,0x3C,0x06,0x66,0x3C,0x00,
+        // 0x54 T
+        0x7E,0x18,0x18,0x18,0x18,0x18,0x18,0x00,
+        // 0x55 U
+        0x66,0x66,0x66,0x66,0x66,0x66,0x3C,0x00,
+        // 0x56 V
+        0x66,0x66,0x66,0x66,0x66,0x3C,0x18,0x00,
+        // 0x57 W
+        0xC6,0xC6,0xC6,0xD6,0xFE,0xEE,0xC6,0x00,
+        // 0x58 X
+        0x66,0x66,0x3C,0x18,0x3C,0x66,0x66,0x00,
+        // 0x59 Y
+        0x66,0x66,0x66,0x3C,0x18,0x18,0x18,0x00,
+        // 0x5A Z
+        0x7E,0x06,0x0C,0x18,0x30,0x60,0x7E,0x00,
+        // 0x5B [
+        0x3C,0x30,0x30,0x30,0x30,0x30,0x3C,0x00,
+        // 0x5C \
+        0xC0,0x60,0x30,0x18,0x0C,0x06,0x02,0x00,
+        // 0x5D ]
+        0x3C,0x0C,0x0C,0x0C,0x0C,0x0C,0x3C,0x00,
+        // 0x5E ^
+        0x18,0x3C,0x66,0x00,0x00,0x00,0x00,0x00,
+        // 0x5F _
+        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF,
+        // 0x60 `
+        0x30,0x18,0x0C,0x00,0x00,0x00,0x00,0x00,
+        // 0x61 a
+        0x00,0x00,0x3C,0x06,0x3E,0x66,0x3E,0x00,
+        // 0x62 b
+        0x60,0x60,0x7C,0x66,0x66,0x66,0x7C,0x00,
+        // 0x63 c
+        0x00,0x00,0x3C,0x66,0x60,0x66,0x3C,0x00,
+        // 0x64 d
+        0x06,0x06,0x3E,0x66,0x66,0x66,0x3E,0x00,
+        // 0x65 e
+        0x00,0x00,0x3C,0x66,0x7E,0x60,0x3C,0x00,
+        // 0x66 f
+        0x1C,0x30,0x30,0x7C,0x30,0x30,0x30,0x00,
+        // 0x67 g
+        0x00,0x00,0x3E,0x66,0x66,0x3E,0x06,0x3C,
+        // 0x68 h
+        0x60,0x60,0x7C,0x66,0x66,0x66,0x66,0x00,
+        // 0x69 i
+        0x18,0x00,0x38,0x18,0x18,0x18,0x3C,0x00,
+        // 0x6A j
+        0x0C,0x00,0x1C,0x0C,0x0C,0x0C,0x6C,0x38,
+        // 0x6B k
+        0x60,0x60,0x66,0x6C,0x78,0x6C,0x66,0x00,
+        // 0x6C l
+        0x38,0x18,0x18,0x18,0x18,0x18,0x3C,0x00,
+        // 0x6D m
+        0x00,0x00,0xEC,0xFE,0xD6,0xC6,0xC6,0x00,
+        // 0x6E n
+        0x00,0x00,0x7C,0x66,0x66,0x66,0x66,0x00,
+        // 0x6F o
+        0x00,0x00,0x3C,0x66,0x66,0x66,0x3C,0x00,
+        // 0x70 p
+        0x00,0x00,0x7C,0x66,0x66,0x7C,0x60,0x60,
+        // 0x71 q
+        0x00,0x00,0x3E,0x66,0x66,0x3E,0x06,0x06,
+        // 0x72 r
+        0x00,0x00,0x7C,0x66,0x60,0x60,0x60,0x00,
+        // 0x73 s
+        0x00,0x00,0x3E,0x60,0x3C,0x06,0x7C,0x00,
+        // 0x74 t
+        0x30,0x30,0x7C,0x30,0x30,0x36,0x1C,0x00,
+        // 0x75 u
+        0x00,0x00,0x66,0x66,0x66,0x66,0x3E,0x00,
+        // 0x76 v
+        0x00,0x00,0x66,0x66,0x66,0x3C,0x18,0x00,
+        // 0x77 w
+        0x00,0x00,0xC6,0xC6,0xD6,0xFE,0x6C,0x00,
+        // 0x78 x
+        0x00,0x00,0x66,0x3C,0x18,0x3C,0x66,0x00,
+        // 0x79 y
+        0x00,0x00,0x66,0x66,0x66,0x3E,0x06,0x3C,
+        // 0x7A z
+        0x00,0x00,0x7E,0x0C,0x18,0x30,0x7E,0x00,
+        // 0x7B {
+        0x0E,0x18,0x18,0x70,0x18,0x18,0x0E,0x00,
+        // 0x7C |
+        0x18,0x18,0x18,0x18,0x18,0x18,0x18,0x00,
+        // 0x7D }
+        0x70,0x18,0x18,0x0E,0x18,0x18,0x70,0x00,
+        // 0x7E ~
+        0x76,0xDC,0x00,0x00,0x00,0x00,0x00,0x00,
+        // 0x7F DEL
+        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    ]);
+
+    /**
+     * 获取字符的 8 字节位图
+     * @param {number} code - ASCII 码
+     * @returns {Uint8Array} 8 字节
+     */
+    function getGlyph(code) {
+        const idx = (code - 0x20) & 0xFF;
+        if (idx < 0 || idx >= 96) {
+            return FONT_8X8.slice(0, 8);  // 空格
+        }
+        return FONT_8X8.slice(idx * 8, idx * 8 + 8);
+    }
+
+    function getByte(code, row) {
+        const idx = (code - 0x20) & 0xFF;
+        if (idx < 0 || idx >= 96 || row < 0 || row >= 8) return 0;
+        return FONT_8X8[idx * 8 + row];
+    }
+
+    return { getGlyph, getByte, FONT_8X8 };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 3：Display Controller
+   支持两种模式：文本模式（80×25）、图形模式（160×120）
+   ───────────────────────────────────────────────────────────── */
+const Display = (() => {
+    // 文本模式
+    const TEXT_COLS = 80;
+    const TEXT_ROWS = 25;
+    const TEXT_VRAM_BASE = 0x8000;
+    const TEXT_VRAM_SIZE = TEXT_COLS * TEXT_ROWS * 2;  // 4000 字节
+    const CHAR_W = 8;
+    const CHAR_H = 8;  // 8×8 字库
+
+    // 图形模式
+    const GFX_W = 160;
+    const GFX_H = 120;
+    const GFX_VRAM_BASE = 0x8000;
+    const GFX_VRAM_SIZE = GFX_W * GFX_H;  // 19200 字节
+
+    // 模式
+    const MODE_TEXT = 0;
+    const MODE_GFX = 1;
+    let mode = MODE_TEXT;
+
+    // 光标（文本模式）
+    let cursorX = 0;
+    let cursorY = 0;
+
+    // 调色板（16 色 EGA）
+    const PALETTE = [
+        '#000000', '#0000AA', '#00AA00', '#00AAAA',
+        '#AA0000', '#AA00AA', '#AA5500', '#AAAAAA',
+        '#555555', '#5555FF', '#55FF55', '#55FFFF',
+        '#FF5555', '#FF55FF', '#FFFF55', '#FFFFFF'
+    ];
+
+    // Canvas
+    let canvas = null;
+    let ctx = null;
+
+    function initCanvas(canvasEl) {
+        canvas = canvasEl;
+        ctx = canvas.getContext('2d');
+        updateCanvasSize();
+        render();
+    }
+
+    function updateCanvasSize() {
+        if (!canvas) return;
+        if (mode === MODE_TEXT) {
+            canvas.width = TEXT_COLS * CHAR_W;
+            canvas.height = TEXT_ROWS * CHAR_H;
+        } else {
+            canvas.width = GFX_W;
+            canvas.height = GFX_H;
+        }
+    }
+
+    function getMode() { return mode; }
+
+    function setMode(newMode) {
+        mode = newMode & 0x01;
+        updateCanvasSize();
+        if (mode === MODE_TEXT) {
+            // 切回文本模式时清屏
+            clearText();
+        } else {
+            clearGfx(0);
+        }
+        render();
+    }
+
+    function getModeName() {
+        return mode === MODE_TEXT ? 'TEXT' : 'GFX';
+    }
+
+    // ─── 文本模式 ───
+    function clearText(attr) {
+        for (let y = 0; y < TEXT_ROWS; y++)
+            for (let x = 0; x < TEXT_COLS; x++)
+                putTextChar(x, y, ' ', attr !== undefined ? attr : 0x07);
+        cursorX = 0;
+        cursorY = 0;
+        render();
+    }
+
+    function putTextChar(x, y, char, attr) {
+        if (x < 0 || x >= TEXT_COLS || y < 0 || y >= TEXT_ROWS) return;
+        const offset = TEXT_VRAM_BASE + (y * TEXT_COLS + x) * 2;
+        Memory.writeByte(offset, char.charCodeAt(0) & 0xFF);
+        Memory.writeByte(offset + 1, (attr !== undefined ? attr : 0x07) & 0xFF);
+    }
+
+    function getTextChar(x, y) {
+        if (x < 0 || x >= TEXT_COLS || y < 0 || y >= TEXT_ROWS) return null;
+        const offset = TEXT_VRAM_BASE + (y * TEXT_COLS + x) * 2;
+        const code = Memory.readByte(offset);
+        const attr = Memory.readByte(offset + 1);
+        return { char: String.fromCharCode(code), attr };
+    }
+
+    function setCursor(x, y) {
+        if (mode === MODE_TEXT) {
+            cursorX = Math.max(0, Math.min(TEXT_COLS - 1, x));
+            cursorY = Math.max(0, Math.min(TEXT_ROWS - 1, y));
+        }
+        render();
+    }
+
+    function getCursor() { return { x: cursorX, y: cursorY }; }
+
+    function putCharAtCursor(ch) {
+        if (mode !== MODE_TEXT) return;
+        if (ch === '\n') { cursorX = 0; cursorY++; if (cursorY >= TEXT_ROWS) { scrollTextUp(); cursorY = TEXT_ROWS - 1; } render(); return; }
+        if (ch === '\r') { cursorX = 0; render(); return; }
+        if (ch === '\b') { if (cursorX > 0) cursorX--; else if (cursorY > 0) { cursorY--; cursorX = TEXT_COLS - 1; } putTextChar(cursorX, cursorY, ' ', 0x07); render(); return; }
+
+        putTextChar(cursorX, cursorY, ch, 0x07);
+        cursorX++;
+        if (cursorX >= TEXT_COLS) {
+            cursorX = 0;
+            cursorY++;
+            if (cursorY >= TEXT_ROWS) { scrollTextUp(); cursorY = TEXT_ROWS - 1; }
+        }
+        render();
+    }
+
+    function scrollTextUp() {
+        for (let y = 0; y < TEXT_ROWS - 1; y++) {
+            for (let x = 0; x < TEXT_COLS; x++) {
+                const srcOff = TEXT_VRAM_BASE + ((y + 1) * TEXT_COLS + x) * 2;
+                const dstOff = TEXT_VRAM_BASE + (y * TEXT_COLS + x) * 2;
+                Memory.writeByte(dstOff, Memory.readByte(srcOff));
+                Memory.writeByte(dstOff + 1, Memory.readByte(srcOff + 1));
+            }
+        }
+        for (let x = 0; x < TEXT_COLS; x++) putTextChar(x, TEXT_ROWS - 1, ' ', 0x07);
+    }
+
+    function clearGfx(color) {
+        const c = (color !== undefined ? color : 0) & 0x0F;
+        for (let i = 0; i < GFX_VRAM_SIZE; i++) {
+            Memory.writeByte(GFX_VRAM_BASE + i, c);
+        }
+        // 不 render，等 GShell 主循环统一刷新
+    }
+
+    function putPixel(x, y, color) {
+        if (x < 0 || x >= GFX_W || y < 0 || y >= GFX_H) return;
+        const offset = GFX_VRAM_BASE + y * GFX_W + x;
+        Memory.writeByte(offset, color & 0x0F);
+    }
+
+    function getPixel(x, y) {
+        if (x < 0 || x >= GFX_W || y < 0 || y >= GFX_H) return 0;
+        const offset = GFX_VRAM_BASE + y * GFX_W + x;
+        return Memory.readByte(offset) & 0x0F;
+    }
+
+    function drawHLine(x1, x2, y, color) {
+        if (x1 > x2) { const t = x1; x1 = x2; x2 = t; }
+        if (y < 0 || y >= GFX_H) return;
+        if (x1 < 0) x1 = 0;
+        if (x2 >= GFX_W) x2 = GFX_W - 1;
+        for (let x = x1; x <= x2; x++) putPixel(x, y, color);
+    }
+
+    function drawVLine(x, y1, y2, color) {
+        if (y1 > y2) { const t = y1; y1 = y2; y2 = t; }
+        if (x < 0 || x >= GFX_W) return;
+        if (y1 < 0) y1 = 0;
+        if (y2 >= GFX_H) y2 = GFX_H - 1;
+        for (let y = y1; y <= y2; y++) putPixel(x, y, color);
+    }
+
+    function fillRect(x, y, w, h, color) {
+        for (let dy = 0; dy < h; dy++) {
+            for (let dx = 0; dx < w; dx++) {
+                putPixel(x + dx, y + dy, color);
+            }
+        }
+    }
+
+    function drawCharGfx(x, y, code, color) {
+        if (code < 0x20 || code > 0x7F) code = 0x20;
+        for (let row = 0; row < 8; row++) {
+            const byte = Font.getByte(code, row);
+            for (let col = 0; col < 8; col++) {
+                if (byte & (0x80 >> col)) {
+                    putPixel(x + col, y + row, color);
+                }
+            }
+        }
+    }
+
+    function drawStringGfx(x, y, strAddr, color) {
+        let cx = x;
+        let addr = strAddr;
+        while (true) {
+            const code = Memory.readByte(addr);
+            if (code === 0) break;
+            drawCharGfx(cx, y, code, color);
+            cx += 8;
+            addr++;
+            if (cx + 8 > GFX_W) break;
+        }
+    }
+
+    // ─── 渲染 ───
+    function render() {
+        if (!ctx) return;
+
+        if (mode === MODE_TEXT) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.font = CHAR_H + 'px monospace';
+            ctx.textBaseline = 'top';
+
+            for (let y = 0; y < TEXT_ROWS; y++) {
+                for (let x = 0; x < TEXT_COLS; x++) {
+                    const offset = TEXT_VRAM_BASE + (y * TEXT_COLS + x) * 2;
+                    const code = Memory.readByte(offset);
+                    const attr = Memory.readByte(offset + 1);
+                    if (code === 0 || code === 32) continue;
+
+                    const fg = attr & 0x0F;
+                    const bg = (attr >> 4) & 0x0F;
+                    if (bg !== 0) {
+                        ctx.fillStyle = PALETTE[bg];
+                        ctx.fillRect(x * CHAR_W, y * CHAR_H, CHAR_W, CHAR_H);
+                    }
+                    ctx.fillStyle = PALETTE[fg];
+                    ctx.fillText(String.fromCharCode(code), x * CHAR_W, y * CHAR_H);
+                }
+            }
+
+            // 光标
+            if (cursorX >= 0 && cursorX < TEXT_COLS && cursorY >= 0 && cursorY < TEXT_ROWS) {
+                ctx.fillStyle = 'rgba(78, 201, 176, 0.7)';
+                ctx.fillRect(cursorX * CHAR_W, cursorY * CHAR_H + CHAR_H - 2, CHAR_W, 2);
+            }
+        } else {
+            // 图形模式：把每个像素作为一个 1×1 的矩形（用 ImageData 更快）
+            const imgData = ctx.createImageData(GFX_W, GFX_H);
+            for (let i = 0; i < GFX_VRAM_SIZE; i++) {
+                const colorIdx = Memory.readByte(GFX_VRAM_BASE + i) & 0x0F;
+                const hex = PALETTE[colorIdx];
+                const r = parseInt(hex.substring(1, 3), 16);
+                const g = parseInt(hex.substring(3, 5), 16);
+                const b = parseInt(hex.substring(5, 7), 16);
+                const dst = i * 4;
+                imgData.data[dst] = r;
+                imgData.data[dst + 1] = g;
+                imgData.data[dst + 2] = b;
+                imgData.data[dst + 3] = 255;
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        // 更新光标状态
+        const cursorInfo = document.getElementById('c1-display-cursor');
+        if (cursorInfo) {
+            if (mode === MODE_TEXT) cursorInfo.textContent = '光标: (' + cursorX + ', ' + cursorY + ')';
+            else cursorInfo.textContent = '图形 ' + GFX_W + '×' + GFX_H;
+        }
+    }
+
+    function getInfo() {
+        return {
+            mode,
+            textCols: TEXT_COLS, textRows: TEXT_ROWS,
+            gfxW: GFX_W, gfxH: GFX_H,
+            vramBase: TEXT_VRAM_BASE,
+            cursorX, cursorY
+        };
+    }
+
+    function getTextScreen() {
+        let result = '';
+        for (let y = 0; y < TEXT_ROWS; y++) {
+            let line = '';
+            for (let x = 0; x < TEXT_COLS; x++) line += getTextChar(x, y).char;
+            result += line.replace(/\s+$/, '') + '\n';
+        }
+        return result.replace(/\n+$/, '');
+    }
+
+    return {
+        MODE_TEXT, MODE_GFX,
+        TEXT_COLS, TEXT_ROWS, TEXT_VRAM_BASE,
+        GFX_W, GFX_H, GFX_VRAM_BASE, GFX_VRAM_SIZE,
+        PALETTE, Font,
+        initCanvas, render,
+        getMode, setMode, getModeName,
+        clearText, clearGfx, clear: clearText,
+        putTextChar, getTextChar, putCharAtCursor,
+        setCursor, getCursor,
+        putPixel, getPixel,
+        drawHLine, drawVLine, fillRect,
+        drawCharGfx, drawStringGfx,
+        getInfo, getTextScreen
+    };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 4：Keyboard Controller
+   ───────────────────────────────────────────────────────────── */
+const Keyboard = (() => {
+    const buffer = [];
+    const MAX_BUFFER = 256;
+    let irqEnabled = false;
+    let pendingIRQ = false;
+
+    function pushKey(key) {
+        if (buffer.length >= MAX_BUFFER) buffer.shift();
+        buffer.push(key);
+        if (irqEnabled) pendingIRQ = true;
+    }
+    function popKey() { return buffer.length > 0 ? buffer.shift() : null; }
+    function peekKey() { return buffer.length > 0 ? buffer[0] : null; }
+    function hasKey() { return buffer.length > 0; }
+    function clear() { buffer.length = 0; pendingIRQ = false; }
+    function setIRQEnabled(enabled) {
+        irqEnabled = !!enabled;
+        if (!irqEnabled) pendingIRQ = false;
+    }
+    function hasPendingIRQ() { return pendingIRQ; }
+    function clearPendingIRQ() { pendingIRQ = false; }
+
+    return {
+        pushKey, popKey, peekKey, hasKey, clear,
+        setIRQEnabled, hasPendingIRQ, clearPendingIRQ
+    };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 5：Mouse Controller
+   端口 0x60-0x64
+   中断 INT 0x04
+   ───────────────────────────────────────────────────────────── */
+const Mouse = (() => {
+    let x = 80;   // 初始居中
+    let y = 60;
+    let buttons = 0;  // bit0=左, bit1=右
+    let pendingEvent = false;
+    let irqEnabled = false;
+    let pendingIRQ = false;
+
+    function setPosition(newX, newY) {
+        x = Math.max(0, Math.min(Display.GFX_W - 1, newX));
+        y = Math.max(0, Math.min(Display.GFX_H - 1, newY));
+        pendingEvent = true;
+        if (irqEnabled) pendingIRQ = true;
+    }
+
+    function setButtons(newButtons) {
+        buttons = newButtons & 0x03;
+        pendingEvent = true;
+        if (irqEnabled) pendingIRQ = true;
+    }
+
+    function getX() { return x; }
+    function getY() { return y; }
+    function getButtons() { return buttons; }
+    function hasEvent() { return pendingEvent; }
+    function clearEvent() { pendingEvent = false; }
+
+    function setIRQEnabled(enabled) {
+        irqEnabled = !!enabled;
+        if (!irqEnabled) pendingIRQ = false;
+    }
+    function hasPendingIRQ() { return pendingIRQ; }
+    function clearPendingIRQ() { pendingIRQ = false; }
+
+    function reset() {
+        x = 80; y = 60; buttons = 0;
+        pendingEvent = false;
+        pendingIRQ = false;
+    }
+
+    return {
+        setPosition, setButtons,
+        getX, getY, getButtons,
+        hasEvent, clearEvent,
+        setIRQEnabled, hasPendingIRQ, clearPendingIRQ,
+        reset
+    };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 6：Disk Controller
+   ───────────────────────────────────────────────────────────── */
+const Disk = (() => {
+    const SECTOR_SIZE = 512;
+    const SECTOR_COUNT = 2048;
+    const DISK_SIZE = SECTOR_SIZE * SECTOR_COUNT;
+
+    const image = new Uint8Array(DISK_SIZE);
+    let status = 'IDLE';
+    let sectorReg = 0;
+    let addrReg = 0;
+
+    function readSector(sector, memAddr) {
+        if (sector < 0 || sector >= SECTOR_COUNT) throw new Error('非法扇区号: ' + sector);
+        status = 'BUSY';
+        const offset = sector * SECTOR_SIZE;
+        for (let i = 0; i < SECTOR_SIZE; i++) Memory.writeByte(memAddr + i, image[offset + i]);
+        status = 'DONE';
+    }
+    function writeSector(sector, memAddr) {
+        if (sector < 0 || sector >= SECTOR_COUNT) throw new Error('非法扇区号: ' + sector);
+        status = 'BUSY';
+        const offset = sector * SECTOR_SIZE;
+        for (let i = 0; i < SECTOR_SIZE; i++) image[offset + i] = Memory.readByte(memAddr + i);
+        status = 'DONE';
+    }
+    function setSectorReg(value) { sectorReg = value & 0xFFFF; }
+    function setAddrReg(value) { addrReg = value & 0xFFFF; }
+    function getSectorReg() { return sectorReg; }
+    function getAddrReg() { return addrReg; }
+    function executeCmd(cmd) {
+        try {
+            if (cmd === 0) readSector(sectorReg, addrReg);
+            else if (cmd === 1) writeSector(sectorReg, addrReg);
+        } catch (e) { status = 'ERROR'; }
+    }
+    function getStatus() {
+        return status === 'IDLE' ? 0 : (status === 'BUSY' ? 1 : (status === 'DONE' ? 2 : 3));
+    }
+    function getInfo() {
+        return {
+            sectorSize: SECTOR_SIZE, sectorCount: SECTOR_COUNT,
+            diskSize: DISK_SIZE, status,
+            nonZeroBytes: image.filter(b => b !== 0).length
+        };
+    }
+    function clear() { image.fill(0); status = 'IDLE'; }
+    function getImage() { return image; }
+
+    return {
+        SECTOR_SIZE, SECTOR_COUNT, DISK_SIZE,
+        readSector, writeSector,
+        setSectorReg, setAddrReg, getSectorReg, getAddrReg,
+        executeCmd, getStatus,
+        getInfo, clear, getImage
+    };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 7：Timer
+   ───────────────────────────────────────────────────────────── */
+const Timer = (() => {
+    let counter = 0;
+    let irqInterval = 0;
+    let irqEnabled = false;
+    let pendingIRQ = false;
+
+    function tick() {
+        counter = (counter + 1) & 0xFFFF;
+        if (irqEnabled && irqInterval > 0 && counter % irqInterval === 0) {
+            pendingIRQ = true;
+        }
+    }
+    function getLow() { return counter & 0xFF; }
+    function getHigh() { return (counter >> 8) & 0xFF; }
+    function getValue() { return counter; }
+    function reset() { counter = 0; pendingIRQ = false; }
+    function setIRQInterval(n) { irqInterval = n & 0xFFFF; }
+    function setIRQEnabled(enabled) {
+        irqEnabled = !!enabled;
+        if (!irqEnabled) pendingIRQ = false;
+    }
+    function hasPendingIRQ() { return pendingIRQ; }
+    function clearPendingIRQ() { pendingIRQ = false; }
+
+    return {
+        tick, getLow, getHigh, getValue, reset,
+        setIRQInterval, setIRQEnabled, hasPendingIRQ, clearPendingIRQ
+    };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 8：I/O Bus
+   ───────────────────────────────────────────────────────────── */
+const IOBus = (() => {
+    const PORT = {
+        KBD_DATA:       0x00,
+        KBD_STATUS:     0x01,
+        DISP_CHAR:      0x10,
+        DISP_CTRL:      0x11,
+        DISP_CURSOR_X:  0x12,
+        DISP_CURSOR_Y:  0x13,
+        DISP_MODE:      0x14,
+        DISK_SECTOR_L:  0x20,
+        DISK_SECTOR_H:  0x21,
+        DISK_ADDR_L:    0x22,
+        DISK_ADDR_H:    0x23,
+        DISK_CMD:       0x24,
+        DISK_STATUS:    0x25,
+        TIMER_L:        0x30,
+        TIMER_H:        0x31,
+        INT_CTRL:       0x40,
+        TIMER_IRQ:      0x41,
+        // 鼠标端口
+        MOUSE_X:        0x60,
+        MOUSE_Y:        0x61,
+        MOUSE_BTN:      0x62,
+        MOUSE_STATUS:   0x63,
+        MOUSE_CLEAR:    0x64
+    };
+
+    let diskSector = 0;
+    let diskAddr = 0;
+
+    function inPort(port) {
+        switch (port & 0xFF) {
+            case PORT.KBD_DATA: {
+                const ch = Keyboard.popKey();
+                return ch !== null ? ch.charCodeAt(0) : 0;
+            }
+            case PORT.KBD_STATUS:
+                return Keyboard.hasKey() ? 1 : 0;
+            case PORT.DISK_STATUS:
+                return Disk.getStatus();
+            case PORT.TIMER_L:
+                return Timer.getLow();
+            case PORT.TIMER_H:
+                return Timer.getHigh();
+            case PORT.INT_CTRL:
+                return (Keyboard.hasPendingIRQ() ? 1 : 0)
+                    | (Timer.hasPendingIRQ() ? 2 : 0)
+                    | (Mouse.hasPendingIRQ() ? 4 : 0);
+            case PORT.MOUSE_X:
+                return Mouse.getX();
+            case PORT.MOUSE_Y:
+                return Mouse.getY();
+            case PORT.MOUSE_BTN:
+                return Mouse.getButtons();
+            case PORT.MOUSE_STATUS:
+                return Mouse.hasEvent() ? 1 : 0;
+            default:
+                return 0;
+        }
+    }
+
+    function outPort(port, value) {
+        const v = value & 0xFF;
+        switch (port & 0xFF) {
+            case PORT.DISP_CHAR:
+                Display.putCharAtCursor(String.fromCharCode(v));
+                break;
+            case PORT.DISP_CTRL:
+                if (v === 0) Display.clear();
+                else if (v === 1) Display.putCharAtCursor('\r');
+                else if (v === 2) Display.putCharAtCursor('\n');
+                else if (v === 3) Display.putCharAtCursor('\b');
+                break;
+            case PORT.DISP_CURSOR_X: {
+                const c = Display.getCursor();
+                Display.setCursor(v, c.y);
+                break;
+            }
+            case PORT.DISP_CURSOR_Y: {
+                const c = Display.getCursor();
+                Display.setCursor(c.x, v);
+                break;
+            }
+            case PORT.DISP_MODE:
+                Display.setMode(v & 0x01);
+                break;
+            case PORT.DISK_SECTOR_L:
+                diskSector = (diskSector & 0xFF00) | v;
+                Disk.setSectorReg(diskSector);
+                break;
+            case PORT.DISK_SECTOR_H:
+                diskSector = (diskSector & 0x00FF) | (v << 8);
+                Disk.setSectorReg(diskSector);
+                break;
+            case PORT.DISK_ADDR_L:
+                diskAddr = (diskAddr & 0xFF00) | v;
+                Disk.setAddrReg(diskAddr);
+                break;
+            case PORT.DISK_ADDR_H:
+                diskAddr = (diskAddr & 0x00FF) | (v << 8);
+                Disk.setAddrReg(diskAddr);
+                break;
+            case PORT.DISK_CMD:
+                Disk.executeCmd(v);
+                break;
+            case PORT.INT_CTRL:
+                Keyboard.setIRQEnabled((v & 1) !== 0);
+                Timer.setIRQEnabled((v & 2) !== 0);
+                Mouse.setIRQEnabled((v & 4) !== 0);
+                break;
+            case PORT.TIMER_IRQ:
+                Timer.setIRQInterval(v);
+                break;
+            case PORT.MOUSE_CLEAR:
+                Mouse.clearEvent();
+                Mouse.clearPendingIRQ();
+                break;
+            default:
+                break;
+        }
+    }
+
+    return { PORT, inPort, outPort };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 9：Interrupt Controller
+   ───────────────────────────────────────────────────────────── */
+const InterruptController = (() => {
+    const IVT_BASE = 0x0000;
+    const USER_PROGRAM_BASE = 0x0100;
+
+    let intCount = 0;
+    let lastInt = -1;
+    let inInterrupt = 0;
+    let maxNesting = 0;
+    let rejectedVectors = 0;
+
+    function setVector(n, addr) {
+        n = n & 0xFF;
+        if (n * 2 >= USER_PROGRAM_BASE) {
+            rejectedVectors++;
+            console.warn('[IC] 拒绝设置向量 0x' + n.toString(16));
+            return false;
+        }
+        Memory.writeWord(IVT_BASE + n * 2, addr & 0xFFFF);
+        return true;
+    }
+
+    function getVector(n) {
+        n = n & 0xFF;
+        return Memory.readWord(IVT_BASE + n * 2);
+    }
+
+    function getCount() { return intCount; }
+    function getLastInt() { return lastInt; }
+    function getNesting() { return inInterrupt; }
+    function getMaxNesting() { return maxNesting; }
+    function getRejectedCount() { return rejectedVectors; }
+    function reset() {
+        intCount = 0; lastInt = -1; inInterrupt = 0; maxNesting = 0; rejectedVectors = 0;
+    }
+    function beginInterrupt(n) {
+        intCount++; lastInt = n; inInterrupt++;
+        if (inInterrupt > maxNesting) maxNesting = inInterrupt;
+    }
+    function endInterrupt() { if (inInterrupt > 0) inInterrupt--; }
+
+    return {
+        IVT_BASE, USER_PROGRAM_BASE,
+        setVector, getVector,
+        getCount, getLastInt, getNesting, getMaxNesting, getRejectedCount, reset,
+        beginInterrupt, endInterrupt
+    };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 10：BIOS
+   INT 0x10 显示（文本）
+   INT 0x11 设备检测
+   INT 0x12 内存检测
+   INT 0x13 磁盘
+   INT 0x15 图形（C2 新增）
+   INT 0x16 键盘
+   INT 0x1A 定时器
+   INT 0x20 系统调用
+   ───────────────────────────────────────────────────────────── */
+const BIOS = (() => {
+    let callCount = 0;
+    const callLog = [];
+
+    function handle(n, cpuAPI) {
+        callCount++;
+        if (callLog.length < 100) callLog.push(n);
+
+        switch (n) {
+            case 0x10: {  // 显示服务（文本）
+                const ah = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                const al = cpuAPI.getReg(0) & 0xFF;
+                if (ah === 0x00) { Display.clearText(); cpuAPI.setReg(0, 0); }
+                else if (ah === 0x01) { Display.putCharAtCursor(String.fromCharCode(al)); cpuAPI.setReg(0, 0); }
+                else if (ah === 0x02) {
+                    const col = cpuAPI.getReg(1) & 0xFF;
+                    const row = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                    Display.setCursor(col, row);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x03) {
+                    const c = Display.getCursor();
+                    cpuAPI.setReg(2, (c.y << 8) | c.x);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x0E) {
+                    Display.putCharAtCursor(String.fromCharCode(al));
+                    cpuAPI.setReg(0, 0);
+                }
+                return true;
+            }
+
+            case 0x11: {
+                cpuAPI.setReg(0, 0x001F);  // 键盘/显示/磁盘/定时器/鼠标
+                return true;
+            }
+
+            case 0x12: {
+                cpuAPI.setReg(0, 64);
+                return true;
+            }
+
+            case 0x13: {
+                const ah = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                if (ah === 0x00) {
+                    Disk.executeCmd(-1);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x02) {
+                    try {
+                        Disk.readSector(cpuAPI.getReg(2) & 0xFFFF, cpuAPI.getReg(3));
+                        cpuAPI.setReg(0, 0);
+                    } catch (e) { cpuAPI.setReg(0, 0x0C00); }
+                } else if (ah === 0x03) {
+                    try {
+                        Disk.writeSector(cpuAPI.getReg(2) & 0xFFFF, cpuAPI.getReg(3));
+                        cpuAPI.setReg(0, 0);
+                    } catch (e) { cpuAPI.setReg(0, 0x0C00); }
+                }
+                return true;
+            }
+
+            // ═══════════ 图形 BIOS（C2 新增）═══════════
+            case 0x15: {
+                const ah = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                const al = cpuAPI.getReg(0) & 0xFF;
+
+                if (ah === 0x00) {
+                    // 切换模式
+                    Display.setMode(al);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x01) {
+                    // 画点：CX=X, DX=Y, AL=颜色
+                    const x = cpuAPI.getReg(1) & 0xFF;
+                    const y = cpuAPI.getReg(2) & 0xFF;
+                    Display.putPixel(x, y, al);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x02) {
+                    // 读点：CX=X, DX=Y → AL=颜色
+                    const x = cpuAPI.getReg(1) & 0xFF;
+                    const y = cpuAPI.getReg(2) & 0xFF;
+                    const c = Display.getPixel(x, y);
+                    cpuAPI.setReg(0, c);
+                } else if (ah === 0x03) {
+                    // 横线：CX=X1, DX=X2, SI=Y, AL=颜色
+                    const x1 = cpuAPI.getReg(1) & 0xFF;
+                    const x2 = cpuAPI.getReg(2) & 0xFF;
+                    const y = cpuAPI.getReg(4) & 0xFF;
+                    Display.drawHLine(x1, x2, y, al);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x04) {
+                    // 竖线：CX=X, DX=Y1, SI=Y2, AL=颜色
+                    const x = cpuAPI.getReg(1) & 0xFF;
+                    const y1 = cpuAPI.getReg(2) & 0xFF;
+                    const y2 = cpuAPI.getReg(4) & 0xFF;
+                    Display.drawVLine(x, y1, y2, al);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x05) {
+                    // 填矩形：CX=X, DX=Y, SI=W, DI=H, AL=颜色
+                    const x = cpuAPI.getReg(1) & 0xFF;
+                    const y = cpuAPI.getReg(2) & 0xFF;
+                    const w = cpuAPI.getReg(4) & 0xFF;
+                    const h = cpuAPI.getReg(5) & 0xFF;
+                    Display.fillRect(x, y, w, h, al);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x06) {
+                    // 画字符：CX=X, DX=Y, AL=字符, BL=颜色
+                    const x = cpuAPI.getReg(1) & 0xFF;
+                    const y = cpuAPI.getReg(2) & 0xFF;
+                    const code = al;
+                    const color = cpuAPI.getReg(3) & 0xFF;
+                    Display.drawCharGfx(x, y, code, color);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x07) {
+                    // 清屏：AL=颜色
+                    Display.clearGfx(al);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x08) {
+                    // 画字符串：CX=X, DX=Y, SI=字符串地址, BL=颜色
+                    const x = cpuAPI.getReg(1) & 0xFF;
+                    const y = cpuAPI.getReg(2) & 0xFF;
+                    const strAddr = cpuAPI.getReg(4);
+                    const color = cpuAPI.getReg(3) & 0xFF;
+                    Display.drawStringGfx(x, y, strAddr, color);
+                    cpuAPI.setReg(0, 0);
+                
+               } else if (ah === 0x09) {
+                  // 刷新屏幕（C2 新增）
+                   Display.render();
+                   cpuAPI.setReg(0, 0);
+                }
+                return true;
+            }
+
+            case 0x16: {
+                const ah = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                if (ah === 0x00) {
+                    const ch = Keyboard.popKey();
+                    cpuAPI.setReg(0, ch !== null ? (ch.charCodeAt(0) & 0xFF) : 0);
+                } else if (ah === 0x01) {
+                    if (Keyboard.hasKey()) {
+                        const ch = Keyboard.peekKey();
+                        cpuAPI.setReg(0, ch.charCodeAt(0) & 0xFF);
+                        cpuAPI.clearFlag(0x0001);
+                    } else {
+                        cpuAPI.setReg(0, 0);
+                        cpuAPI.setFlag(0x0001);
+                    }
+                }
+                return true;
+            }
+
+            case 0x1A: {
+                cpuAPI.setReg(1, Timer.getHigh());
+                cpuAPI.setReg(2, Timer.getLow());
+                return true;
+            }
+
+            case 0x20: {
+                const ah = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                if (ah === 0x00) {
+                    cpuAPI.setReg(0, 0);
+                    cpuAPI.setState('HALTED');
+                } else if (ah === 0x01) {
+                    cpuAPI.setReg(0, 0);
+                    Display.clearText();
+                } else {
+                    cpuAPI.setReg(0, 0);
+                }
+                return true;
+            }
+
+            default:
+                return false;
+        }
+    }
+
+    function getCallCount() { return callCount; }
+    function getCallLog() { return callLog.slice(); }
+    function reset() { callCount = 0; callLog.length = 0; }
+
+    return { handle, getCallCount, getCallLog, reset };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 11：CPU Core（38 条指令）
+   ───────────────────────────────────────────────────────────── */
+const CPU = (() => {
+    const regs = new Uint16Array(8);
+    let PC = 0x0000;
+    let SP = 0x7FFF;
+    let FLAGS = 0x0000;
+
+    const FLAG_Z = 0x0001;
+    const FLAG_C = 0x0002;
+    const FLAG_N = 0x0004;
+    const FLAG_V = 0x0008;
+    const FLAG_I = 0x0010;
+
+    const STACK_TOP = 0x7FFF;
+    const STACK_BOTTOM = 0x7000;
+
+    let state = 'IDLE';
+    let lastError = null;
+    let instructionCount = 0;
+    let intInProgress = false;
+    let unhandledInterrupts = 0;
+
+    const MAX_INSTRUCTIONS_PER_RUN = 100000;
+
+    function getReg(index) {
+        if (index < 0 || index > 7) throw new Error('非法寄存器索引: ' + index);
+        return regs[index];
+    }
+    function setReg(index, value) {
+        if (index < 0 || index > 7) throw new Error('非法寄存器索引: ' + index);
+        regs[index] = value & 0xFFFF;
+    }
+
+    function getPC() { return PC; }
+    function setPC(value) { PC = value & 0xFFFF; }
+    function getSP() { return SP; }
+    function setSP(value) { SP = value & 0xFFFF; }
+    function getFLAGS() { return FLAGS; }
+    function setFLAGS(value) { FLAGS = value & 0xFFFF; }
+
+    function testFlag(mask) { return (FLAGS & mask) !== 0; }
+    function setFlag(mask, on) {
+        if (on) FLAGS |= mask;
+        else FLAGS &= ~mask;
+        FLAGS &= 0xFFFF;
+    }
+
+    function getState() { return state; }
+    function setState(s) { state = s; }
+    function getLastError() { return lastError; }
+    function getInstructionCount() { return instructionCount; }
+    function getUnhandledInterrupts() { return unhandledInterrupts; }
+
+    function reset() {
+        regs.fill(0);
+        PC = 0x0000; SP = 0x7FFF; FLAGS = 0;
+        state = 'IDLE'; lastError = null; instructionCount = 0;
+        intInProgress = false; unhandledInterrupts = 0;
+        Timer.reset();
+        InterruptController.reset();
+    }
+
+    function updateFlags(result, a, b, isAdd) {
+        const r16 = result & 0xFFFF;
+        setFlag(FLAG_Z, r16 === 0);
+        setFlag(FLAG_N, (r16 & 0x8000) !== 0);
+        if (isAdd) setFlag(FLAG_C, result > 0xFFFF);
+        else setFlag(FLAG_C, (a & 0xFFFF) < (b & 0xFFFF));
+        const aSign = (a & 0x8000) !== 0 ? 1 : 0;
+        const bSign = (b & 0x8000) !== 0 ? 1 : 0;
+        const rSign = (r16 & 0x8000) !== 0 ? 1 : 0;
+        if (isAdd) setFlag(FLAG_V, aSign === bSign && aSign !== rSign);
+        else setFlag(FLAG_V, aSign !== bSign && aSign !== rSign);
+    }
+
+    function updateFlagsLogic(result) {
+        const r16 = result & 0xFFFF;
+        setFlag(FLAG_Z, r16 === 0);
+        setFlag(FLAG_N, (r16 & 0x8000) !== 0);
+        setFlag(FLAG_C, false);
+        setFlag(FLAG_V, false);
+    }
+
+    function fetch() {
+        const bytes = new Uint8Array(4);
+        for (let i = 0; i < 4; i++) bytes[i] = Memory.readByte((PC + i) & 0xFFFF);
+        return bytes;
+    }
+
+    function decode(bytes) {
+        return {
+            opcode: bytes[0],
+            dst: bytes[1],
+            src: bytes[2],
+            immLow: bytes[3],
+            imm16: (bytes[2] << 8) | bytes[3]
+        };
+    }
+
+    function stackPush(value) {
+        if (SP - 2 < STACK_BOTTOM) {
+            throw new Error('栈溢出: SP=0x' + SP.toString(16) + '（下界=0x7000）');
+        }
+        SP -= 2;
+        Memory.writeWord(SP, value & 0xFFFF);
+    }
+
+    function stackPop() {
+        if (SP > STACK_TOP) throw new Error('栈下溢: SP=0x' + SP.toString(16));
+        if (SP === STACK_TOP) throw new Error('栈为空');
+        const value = Memory.readWord(SP);
+        SP += 2;
+        return value;
+    }
+
+    function doInterrupt(n, returnAddr) {
+        stackPush(FLAGS);
+        stackPush(returnAddr & 0xFFFF);
+        for (let i = 0; i < 8; i++) stackPush(regs[i]);
+
+        setFlag(FLAG_I, false);
+        InterruptController.beginInterrupt(n);
+
+        if (n === 0x02) Timer.clearPendingIRQ();
+        if (n === 0x03) Keyboard.clearPendingIRQ();
+        if (n === 0x04) Mouse.clearPendingIRQ();
+
+        intInProgress = true;
+
+        const isrAddr = InterruptController.getVector(n);
+        if (isrAddr !== 0) {
+            PC = isrAddr;
+            return true;
+        }
+        return false;
+    }
+
+    function checkInterrupts() {
+        if (!testFlag(FLAG_I)) return false;
+
+        // 优先级：鼠标 > 键盘 > 定时器
+        if (Mouse.hasPendingIRQ()) { doInterrupt(0x04, PC); return true; }
+        if (Keyboard.hasPendingIRQ()) { doInterrupt(0x03, PC); return true; }
+        if (Timer.hasPendingIRQ()) { doInterrupt(0x02, PC); return true; }
+
+        return false;
+    }
+
+    function executeInstruction(decoded) {
+        const op = decoded.opcode;
+
+        switch (op) {
+            case 0x00: return true;
+            case 0x01: state = 'HALTED'; return false;
+
+            case 0x10: regs[decoded.dst & 7] = regs[decoded.src & 7]; return true;
+            case 0x11: regs[decoded.dst & 7] = decoded.imm16; return true;
+            case 0x12: regs[decoded.dst & 7] = Memory.readWord(regs[decoded.src & 7]); return true;
+            case 0x13: Memory.writeWord(regs[decoded.dst & 7], regs[decoded.src & 7]); return true;
+
+            // ═══ C2 新增：索引寻址 ═══
+            // MOV_RMO: MOV Rd, [Rs + #imm8]
+            // 编码：op, dst, src, imm8
+            case 0x14: {
+                const base = regs[decoded.src & 7];
+                const offset = decoded.immLow & 0xFF;
+                regs[decoded.dst & 7] = Memory.readWord((base + offset) & 0xFFFF);
+                return true;
+            }
+
+            // MOV_MRO: MOV [Rd + #imm8], Rs
+            // 编码：op, dst, src, imm8
+            case 0x15: {
+                const base = regs[decoded.dst & 7];
+                const offset = decoded.immLow & 0xFF;
+                Memory.writeWord((base + offset) & 0xFFFF, regs[decoded.src & 7]);
+                return true;
+            }
+
+            case 0x20: { const a = regs[decoded.dst & 7], b = regs[decoded.src & 7]; const r = a + b; regs[decoded.dst & 7] = r & 0xFFFF; updateFlags(r, a, b, true); return true; }
+            case 0x21: { const a = regs[decoded.dst & 7], b = decoded.imm16; const r = a + b; regs[decoded.dst & 7] = r & 0xFFFF; updateFlags(r, a, b, true); return true; }
+            case 0x22: { const a = regs[decoded.dst & 7], b = regs[decoded.src & 7]; const r = a - b; regs[decoded.dst & 7] = r & 0xFFFF; updateFlags(r, a, b, false); return true; }
+            case 0x23: { const a = regs[decoded.dst & 7], b = decoded.imm16; const r = a - b; regs[decoded.dst & 7] = r & 0xFFFF; updateFlags(r, a, b, false); return true; }
+            case 0x24: {
+                const a = regs[decoded.dst & 7], b = regs[decoded.src & 7];
+                const r = a * b;
+                regs[decoded.dst & 7] = r & 0xFFFF;
+                setFlag(FLAG_Z, (r & 0xFFFF) === 0);
+                setFlag(FLAG_N, (r & 0x8000) !== 0);
+                setFlag(FLAG_C, r > 0xFFFF);
+                setFlag(FLAG_V, r > 0xFFFF);
+                return true;
+            }
+            case 0x25: {
+                const a = regs[decoded.dst & 7], b = regs[decoded.src & 7];
+                if (b === 0) throw new Error('除零');
+                const q = Math.floor(a / b), rem = a % b;
+                regs[decoded.dst & 7] = q & 0xFFFF;
+                regs[7] = rem & 0xFFFF;
+                setFlag(FLAG_Z, (q & 0xFFFF) === 0);
+                setFlag(FLAG_N, (q & 0x8000) !== 0);
+                return true;
+            }
+
+            case 0x30: regs[decoded.dst & 7] = regs[decoded.dst & 7] & regs[decoded.src & 7]; updateFlagsLogic(regs[decoded.dst & 7]); return true;
+            case 0x31: regs[decoded.dst & 7] = regs[decoded.dst & 7] | regs[decoded.src & 7]; updateFlagsLogic(regs[decoded.dst & 7]); return true;
+            case 0x32: regs[decoded.dst & 7] = regs[decoded.dst & 7] ^ regs[decoded.src & 7]; updateFlagsLogic(regs[decoded.dst & 7]); return true;
+            case 0x33: regs[decoded.dst & 7] = (~regs[decoded.dst & 7]) & 0xFFFF; updateFlagsLogic(regs[decoded.dst & 7]); return true;
+            case 0x34: {
+                const a = regs[decoded.dst & 7];
+                const sh = decoded.imm16 & 0x0F;
+                const r = (a << sh) & 0xFFFF;
+                regs[decoded.dst & 7] = r;
+                updateFlagsLogic(r);
+                if (sh > 0) setFlag(FLAG_C, ((a >> (16 - sh)) & 1) !== 0);
+                else setFlag(FLAG_C, false);
+                return true;
+            }
+            case 0x35: {
+                const a = regs[decoded.dst & 7];
+                const sh = decoded.imm16 & 0x0F;
+                const r = (a >> sh) & 0xFFFF;
+                regs[decoded.dst & 7] = r;
+                updateFlagsLogic(r);
+                if (sh > 0) setFlag(FLAG_C, ((a >> (sh - 1)) & 1) !== 0);
+                else setFlag(FLAG_C, false);
+                return true;
+            }
+
+            case 0x40: updateFlags(regs[decoded.dst & 7] - regs[decoded.src & 7], regs[decoded.dst & 7], regs[decoded.src & 7], false); return true;
+            case 0x41: updateFlags(regs[decoded.dst & 7] - decoded.imm16, regs[decoded.dst & 7], decoded.imm16, false); return true;
+
+            case 0x50: PC = decoded.imm16; return false;
+            case 0x51: if (testFlag(FLAG_Z)) { PC = decoded.imm16; return false; } return true;
+            case 0x52: if (!testFlag(FLAG_Z)) { PC = decoded.imm16; return false; } return true;
+            case 0x53: if (testFlag(FLAG_C)) { PC = decoded.imm16; return false; } return true;
+            case 0x54: if (!testFlag(FLAG_C)) { PC = decoded.imm16; return false; } return true;
+            case 0x55: if (testFlag(FLAG_N)) { PC = decoded.imm16; return false; } return true;
+
+            case 0x60: stackPush(regs[decoded.dst & 7]); return true;
+            case 0x61: regs[decoded.dst & 7] = stackPop(); return true;
+            case 0x62: stackPush((PC + 4) & 0xFFFF); PC = decoded.imm16; return false;
+            case 0x63: PC = stackPop(); return false;
+
+            case 0x70: regs[decoded.dst & 7] = IOBus.inPort(decoded.src & 0xFF); return true;
+            case 0x71: IOBus.outPort(decoded.dst & 0xFF, regs[decoded.src & 7]); return true;
+
+            case 0x72: {
+                const n = decoded.dst & 0xFF;
+                const isrAddr = InterruptController.getVector(n);
+                if (isrAddr !== 0) {
+                    doInterrupt(n, (PC + 4) & 0xFFFF);
+                    return false;
+                }
+                if (BIOS.handle(n, {
+                    getReg, setReg,
+                    setState: function(s) { state = s; },
+                    setFlag, clearFlag: function(m) { setFlag(m, false); }
+                })) {
+                    return true;
+                }
+                unhandledInterrupts++;
+                console.warn('[CPU] 未处理中断: INT 0x' + n.toString(16));
+                return true;
+            }
+
+            case 0x73: {  // IRET
+                for (let i = 7; i >= 0; i--) regs[i] = stackPop();
+                PC = stackPop();
+                FLAGS = stackPop();
+                InterruptController.endInterrupt();
+                intInProgress = false;
+                return false;
+            }
+
+            case 0x74: setFlag(FLAG_I, true); return true;
+            case 0x75: setFlag(FLAG_I, false); return true;
+
+            default:
+                throw new Error('未知指令: 0x' + op.toString(16).padStart(2, '0'));
+        }
+    }
+
+    function step() {
+        try {
+            checkInterrupts();
+            const bytes = fetch();
+            const decoded = decode(bytes);
+            const advancePC = executeInstruction(decoded);
+            if (advancePC) PC = (PC + 4) & 0xFFFF;
+            instructionCount++;
+            Timer.tick();
+            return { ok: true, decoded: decoded };
+        } catch (e) {
+            state = 'ERROR';
+            lastError = e.message;
+            return { ok: false, error: e.message };
+        }
+    }
+
+    function run(maxInstructions) {
+        const limit = maxInstructions || MAX_INSTRUCTIONS_PER_RUN;
+        let executed = 0;
+        state = 'RUNNING';
+        while (state === 'RUNNING' && executed < limit) {
+            const r = step();
+            if (!r.ok) return { executed, halted: false, error: r.error, limitReached: false };
+            executed++;
+            if (state === 'HALTED') break;
+        }
+        const limitReached = (executed >= limit && state === 'RUNNING');
+        if (limitReached) state = 'IDLE';
+        return { executed, halted: (state === 'HALTED'), error: null, limitReached };
+    }
+
+    function snapshot() {
+        return {
+            R0: regs[0], R1: regs[1], R2: regs[2], R3: regs[3],
+            R4: regs[4], R5: regs[5], R6: regs[6], R7: regs[7],
+            PC, SP, FLAGS, state,
+            instructionCount, lastError, unhandledInterrupts
+        };
+    }
+
+    function flagsToString() {
+        let s = '';
+        s += testFlag(FLAG_Z) ? 'Z' : '-';
+        s += testFlag(FLAG_C) ? 'C' : '-';
+        s += testFlag(FLAG_N) ? 'N' : '-';
+        s += testFlag(FLAG_V) ? 'V' : '-';
+        s += testFlag(FLAG_I) ? 'I' : '-';
+        return s;
+    }
+
+    return {
+        FLAG_Z, FLAG_C, FLAG_N, FLAG_V, FLAG_I,
+        STACK_TOP, STACK_BOTTOM,
+        getReg, setReg, getPC, setPC, getSP, setSP, getFLAGS, setFLAGS,
+        testFlag, setFlag, getState, setState,
+        getLastError, getInstructionCount, getUnhandledInterrupts,
+        reset, snapshot, flagsToString,
+        step, run, updateFlags, updateFlagsLogic,
+        stackPush, stackPop, checkInterrupts, doInterrupt
+    };
+})();
+
+/* ─────────────────────────────────────────────────────────────
+   模块 12：Assembler（38 条指令）
+   ───────────────────────────────────────────────────────────── */
+const Assembler = (() => {
+    const OPCODES = {
+        'NOP':    0x00, 'HLT':    0x01,
+        'MOV_RR': 0x10, 'MOV_RI': 0x11, 'MOV_RM': 0x12, 'MOV_MR': 0x13,
+        'MOV_RMO':0x14, 'MOV_MRO':0x15,
+        'ADD_RR': 0x20, 'ADD_RI': 0x21, 'SUB_RR': 0x22, 'SUB_RI': 0x23,
+        'MUL_RR': 0x24, 'DIV_RR': 0x25,
+        'AND_RR': 0x30, 'OR_RR':  0x31, 'XOR_RR': 0x32,
+        'NOT_R':  0x33, 'SHL_RI': 0x34, 'SHR_RI': 0x35,
+        'CMP_RR': 0x40, 'CMP_RI': 0x41,
+        'JMP':    0x50, 'JZ':     0x51, 'JNZ':    0x52,
+        'JC':     0x53, 'JNC':    0x54, 'JN':     0x55,
+        'PUSH':   0x60, 'POP':    0x61, 'CALL':   0x62, 'RET':    0x63,
+        'IN':     0x70, 'OUT':    0x71, 'INT':    0x72, 'IRET':   0x73,
+        'STI':    0x74, 'CLI':    0x75
+    };
+
+    const IMPLEMENTED = [
+        0x00, 0x01,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+        0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
+        0x40, 0x41,
+        0x50, 0x51, 0x52, 0x53, 0x54, 0x55,
+        0x60, 0x61, 0x62, 0x63,
+        0x70, 0x71, 0x72, 0x73, 0x74, 0x75
+    ];
+
+    function getOpcode(m) { return OPCODES[m] !== undefined ? OPCODES[m] : null; }
+
+    function listOpcodes() {
+        return Object.keys(OPCODES).map(k => ({
+            mnemonic: k, opcode: OPCODES[k],
+            implemented: IMPLEMENTED.indexOf(OPCODES[k]) !== -1
+        }));
+    }
+
+    function count() { return Object.keys(OPCODES).length; }
+
+    function encode(mnemonic, op1, op2) {
+        const bytes = new Uint8Array(4);
+        const op = OPCODES[mnemonic];
+        if (op === undefined) throw new Error('未知指令: ' + mnemonic);
+        bytes[0] = op;
+
+        switch (mnemonic) {
+            case 'NOP': case 'HLT': case 'RET': case 'IRET':
+            case 'STI': case 'CLI':
+                break;
+            case 'MOV_RR': case 'MOV_RM': case 'MOV_MR':
+            case 'ADD_RR': case 'SUB_RR': case 'MUL_RR': case 'DIV_RR':
+            case 'AND_RR': case 'OR_RR': case 'XOR_RR': case 'CMP_RR':
+                bytes[1] = op1 & 0x07;
+                bytes[2] = op2 & 0x07;
+                break;
+            case 'MOV_RI': case 'ADD_RI': case 'SUB_RI': case 'CMP_RI':
+            case 'SHL_RI': case 'SHR_RI':
+                bytes[1] = op1 & 0x07;
+                bytes[2] = (op2 >> 8) & 0xFF;
+                bytes[3] = op2 & 0xFF;
+                break;
+            // 索引寻址：MOV_RMO Rd, [Rs + #imm8]
+            case 'MOV_RMO':
+                bytes[1] = op1 & 0x07;
+                bytes[2] = op2 & 0x07;
+                bytes[3] = (arguments[2] !== undefined && arguments.length > 3) ? (arguments[3] & 0xFF) : 0;
+                break;
+            // MOV_MRO [Rd + #imm8], Rs
+            case 'MOV_MRO':
+                bytes[1] = op1 & 0x07;
+                bytes[2] = op2 & 0x07;
+                bytes[3] = (arguments[2] !== undefined && arguments.length > 3) ? (arguments[3] & 0xFF) : 0;
+                break;
+            case 'JMP': case 'JZ': case 'JNZ': case 'JC': case 'JNC': case 'JN':
+            case 'CALL':
+                bytes[2] = (op1 >> 8) & 0xFF;
+                bytes[3] = op1 & 0xFF;
+                break;
+            case 'NOT_R': case 'PUSH': case 'POP':
+                bytes[1] = op1 & 0x07;
+                break;
+            case 'INT':
+                bytes[1] = op1 & 0xFF;
+                break;
+            case 'IN':
+                bytes[1] = op1 & 0x07;
+                bytes[2] = op2 & 0xFF;
+                break;
+            case 'OUT':
+                bytes[1] = op1 & 0xFF;
+                bytes[2] = op2 & 0x07;
+                break;
+            default:
+                break;
+        }
+        return bytes;
+    }
+
+    function disassemble(bytes) {
+        const op = bytes[0], dst = bytes[1], src = bytes[2], imm8 = bytes[3];
+        const imm16 = (bytes[2] << 8) | bytes[3];
+        switch (op) {
+            case 0x00: return 'NOP';
+            case 0x01: return 'HLT';
+            case 0x10: return 'MOV R' + dst + ', R' + src;
+            case 0x11: return 'MOV R' + dst + ', #0x' + imm16.toString(16).padStart(4, '0');
+            case 0x12: return 'MOV R' + dst + ', [R' + src + ']';
+            case 0x13: return 'MOV [R' + dst + '], R' + src;
+            case 0x14: return 'MOV R' + dst + ', [R' + src + ' + ' + imm8 + ']';
+            case 0x15: return 'MOV [R' + dst + ' + ' + imm8 + '], R' + src;
+            case 0x20: return 'ADD R' + dst + ', R' + src;
+            case 0x21: return 'ADD R' + dst + ', #0x' + imm16.toString(16).padStart(4, '0');
+            case 0x22: return 'SUB R' + dst + ', R' + src;
+            case 0x23: return 'SUB R' + dst + ', #0x' + imm16.toString(16).padStart(4, '0');
+            case 0x24: return 'MUL R' + dst + ', R' + src;
+            case 0x25: return 'DIV R' + dst + ', R' + src;
+            case 0x30: return 'AND R' + dst + ', R' + src;
+            case 0x31: return 'OR R' + dst + ', R' + src;
+            case 0x32: return 'XOR R' + dst + ', R' + src;
+            case 0x33: return 'NOT R' + dst;
+            case 0x34: return 'SHL R' + dst + ', #' + imm16;
+            case 0x35: return 'SHR R' + dst + ', #' + imm16;
+            case 0x40: return 'CMP R' + dst + ', R' + src;
+            case 0x41: return 'CMP R' + dst + ', #0x' + imm16.toString(16).padStart(4, '0');
+            case 0x50: return 'JMP 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x51: return 'JZ 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x52: return 'JNZ 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x53: return 'JC 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x54: return 'JNC 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x55: return 'JN 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x60: return 'PUSH R' + dst;
+            case 0x61: return 'POP R' + dst;
+            case 0x62: return 'CALL 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x63: return 'RET';
+            case 0x70: return 'IN R' + dst + ', 0x' + src.toString(16).padStart(2, '0');
+            case 0x71: return 'OUT 0x' + dst.toString(16).padStart(2, '0') + ', R' + src;
+            case 0x72: return 'INT 0x' + dst.toString(16).padStart(2, '0');
+            case 0x73: return 'IRET';
+            case 0x74: return 'STI';
+            case 0x75: return 'CLI';
+            default:   return 'DB 0x' + op.toString(16).padStart(2, '0');
+        }
+    }
+
+    return { getOpcode, listOpcodes, count, encode, disassemble, IMPLEMENTED };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 13：ProgramLoader
+   ───────────────────────────────────────────────────────────── */
+const ProgramLoader = (() => {
+    function loadHex(addr, hexStr) {
+        const tokens = hexStr.trim().split(/\s+/).filter(t => t.length > 0);
+        const bytes = new Uint8Array(tokens.length);
+        for (let i = 0; i < tokens.length; i++) bytes[i] = parseInt(tokens[i], 16) & 0xFF;
+        Memory.writeBlock(addr, bytes);
+        return bytes.length;
+    }
+
+    function loadInstructions(addr, instrs) {
+        let offset = 0;
+        for (const instr of instrs) {
+            const bytes = Assembler.encode(instr.mnemonic, instr.op1, instr.op2, instr.op3);
+            Memory.writeBlock(addr + offset, bytes);
+            offset += 4;
+        }
+        return offset;
+    }
+
+    function disassembleRange(addr, count) {
+        const result = [];
+        for (let i = 0; i < count; i++) {
+            const instrAddr = addr + i * 4;
+            const bytes = new Uint8Array(4);
+            for (let j = 0; j < 4; j++) bytes[j] = Memory.readByte((instrAddr + j) & 0xFFFF);
+            result.push({ addr: instrAddr, bytes, text: Assembler.disassemble(bytes) });
+        }
+        return result;
+    }
+
+    return { loadHex, loadInstructions, disassembleRange };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 14：GShell（图形外壳）
+   用 C1 汇编生成代码，写到内存，从 0x1000 开始执行
+   提供：
+     - 桌面背景
+     - 顶部菜单栏（文字）
+     - 一个"系统信息"窗口
+     - 鼠标指针
+     - 关闭按钮（点击关闭窗口）
+     - Esc 返回命令行
+   ───────────────────────────────────────────────────────────── */
+const GShell = (() => {
+
+    // 固定地址
+    const CODE_ADDR = 0x2000;        // GShell 代码起始（避开用户程序区）
+    const WIN_STRUCT = 0x4000;       // 窗口结构体
+    const STRING_ADDR = 0x4200;      // 字符串池
+    const MOUSE_PREV_X = 0x4100;     // 上一帧鼠标 X
+    const MOUSE_PREV_Y = 0x4101;     // 上一帧鼠标 Y
+    const MOUSE_PREV_BTN = 0x4102;   // 上一帧鼠标按键
+    const DRAG_STATE = 0x4103;       // 拖动状态：0=无, 1=拖动中
+    const DRAG_OFFSET_X = 0x4104;    // 拖动偏移 X
+    const DRAG_OFFSET_Y = 0x4105;    // 拖动偏移 Y
+    const FRAME_COUNTER = 0x4106;    // 帧计数器
+
+    /**
+     * 生成 GShell 的汇编代码
+     * @returns {Array} 指令数组
+     */
+    function generate() {
+        const instrs = [];
+        const labels = {};
+        const fixups = [];  // { idx, label } 需要回填的跳转
+
+        function label(name) { labels[name] = CODE_ADDR + instrs.length * 4; }
+        function emit(mnemonic, op1, op2, op3) {
+            instrs.push({ mnemonic, op1, op2, op3 });
+        }
+        function emitJmp(mnemonic, labelName) {
+            fixups.push({ idx: instrs.length, label: labelName });
+            instrs.push({ mnemonic, op1: 0, op2: 0 });
+        }
+        function emitCall(labelName) {
+            fixups.push({ idx: instrs.length, label: labelName });
+            instrs.push({ mnemonic: 'CALL', op1: 0, op2: 0 });
+        }
+
+        // ─── 初始化 ───
+        emit('INT', 0x15, 0);        // 先切图形模式前，先初始化
+        // 实际：切模式 + 清屏
+        emit('MOV_RI', 0, 0x0001);   // AH=0x00, AL=1 (图形模式)
+        emit('INT', 0x15, 0);
+        emit('MOV_RI', 0, 0x0701);   // AH=0x07 (清屏), AL=1 (深蓝)
+        emit('INT', 0x15, 0);
+
+        // 初始化状态
+        emit('MOV_RI', 0, MOUSE_PREV_X); emit('MOV_RI', 1, 0xFFFF); emit('MOV_MR', 0, 1);
+        emit('MOV_RI', 0, MOUSE_PREV_Y); emit('MOV_RI', 1, 0xFFFF); emit('MOV_MR', 0, 1);
+        emit('MOV_RI', 0, MOUSE_PREV_BTN); emit('MOV_RI', 1, 0); emit('MOV_MR', 0, 1);
+        emit('MOV_RI', 0, DRAG_STATE); emit('MOV_RI', 1, 0); emit('MOV_MR', 0, 1);
+        // 刷新屏幕
+        emit('MOV_RI', 0, 0x0900);   // AH=0x09 (刷新)
+        emit('INT', 0x15, 0);
+        emit('MOV_RI', 0, FRAME_COUNTER); 
+        emit('MOV_RI', 1, 0); 
+        emit('MOV_MR', 0, 1);
+
+        // ─── 主循环 ───
+        label('MAIN_LOOP');
+
+        // 1. 清屏（深蓝背景）
+        emit('MOV_RI', 0, 0x0701);
+        emit('INT', 0x15, 0);
+
+        // 2. 画菜单栏（顶部 12 行黑色 + 文字）
+        emitCall('DRAW_MENUBAR');
+
+        // 3. 画窗口
+        emitCall('DRAW_WINDOW');
+
+        // 4. 画鼠标指针
+        emitCall('DRAW_MOUSE');
+
+        // 5. 处理鼠标事件
+        emitCall('HANDLE_MOUSE');
+
+        // 6. 处理键盘（Esc 退出）
+        emitCall('HANDLE_KEYBOARD');
+
+        // 7. 刷新屏幕（关键！否则画的内容不上 Canvas）
+        emit('MOV_RI', 0, 0x0900);   // AH=0x09 = 刷新屏幕
+        emit('INT', 0x15, 0);
+
+        // 8. 帧计数
+        emit('MOV_RI', 0, FRAME_COUNTER);
+        emit('MOV_RM', 1, 0);
+        emit('ADD_RI', 1, 1);
+        emit('MOV_MR', 0, 1);
+
+        emitJmp('JMP', 'MAIN_LOOP');
+
+        // ─── 菜单栏 ───
+        label('DRAW_MENUBAR');
+        // 填黑色矩形：x=0, y=0, w=160, h=10
+        emit('MOV_RI', 0, 0x0500);   // AH=0x05 (填矩形), AL=0 (黑)
+        emit('MOV_RI', 1, 0);         // X=0
+        emit('MOV_RI', 2, 0);         // Y=0
+        emit('MOV_RI', 4, 160);       // W=160
+        emit('MOV_RI', 5, 10);        // H=10
+        emit('INT', 0x15, 0);
+
+        // 写菜单文字 "C2 GShell"
+        emit('MOV_RI', 0, 0x0802);    // AH=0x08 (画字符串), AL 不用
+        emit('MOV_RI', 1, 2);          // X=2
+        emit('MOV_RI', 2, 1);          // Y=1
+        emit('MOV_RI', 4, STRING_ADDR + 0);  // "C2 GShell"
+        emit('MOV_RI', 3, 14);         // BL=14 (黄)
+        emit('INT', 0x15, 0);
+
+        // 写 "System" 菜单
+        emit('MOV_RI', 0, 0x0802);
+        emit('MOV_RI', 1, 70);
+        emit('MOV_RI', 2, 1);
+        emit('MOV_RI', 4, STRING_ADDR + 16);  // "System"
+        emit('MOV_RI', 3, 15);          // 白
+        emit('INT', 0x15, 0);
+
+        emit('RET', 0, 0);
+
+        // ─── 窗口绘制 ───
+        label('DRAW_WINDOW');
+        // 窗口结构：X=30, Y=20, W=100, H=70
+        // 1. 窗口阴影
+        emit('MOV_RI', 0, 0x0508);   // 填矩形，AL=8 (深灰)
+        emit('MOV_RI', 1, 32);
+        emit('MOV_RI', 2, 22);
+        emit('MOV_RI', 4, 100);
+        emit('MOV_RI', 5, 70);
+        emit('INT', 0x15, 0);
+
+        // 2. 窗口主体（浅灰）
+        emit('MOV_RI', 0, 0x0507);   // AL=7 (浅灰)
+        emit('MOV_RI', 1, 30);
+        emit('MOV_RI', 2, 20);
+        emit('MOV_RI', 4, 100);
+        emit('MOV_RI', 5, 70);
+        emit('INT', 0x15, 0);
+
+        // 3. 标题栏（深蓝）
+        emit('MOV_RI', 0, 0x0501);   // AL=1 (深蓝)
+        emit('MOV_RI', 1, 30);
+        emit('MOV_RI', 2, 20);
+        emit('MOV_RI', 4, 100);
+        emit('MOV_RI', 5, 10);
+        emit('INT', 0x15, 0);
+
+        // 4. 标题文字 "System Info"
+        emit('MOV_RI', 0, 0x0802);
+        emit('MOV_RI', 1, 33);
+        emit('MOV_RI', 2, 21);
+        emit('MOV_RI', 4, STRING_ADDR + 32);   // "System Info"
+        emit('MOV_RI', 3, 15);   // 白
+        emit('INT', 0x15, 0);
+
+        // 5. 关闭按钮（红方块）
+        emit('MOV_RI', 0, 0x0504);   // AL=4 (红)
+        emit('MOV_RI', 1, 122);
+        emit('MOV_RI', 2, 21);
+        emit('MOV_RI', 4, 6);
+        emit('MOV_RI', 5, 7);
+        emit('INT', 0x15, 0);
+
+        // 6. 窗口内容：CPU 状态
+        emit('MOV_RI', 0, 0x0802);
+        emit('MOV_RI', 1, 34);
+        emit('MOV_RI', 2, 34);
+        emit('MOV_RI', 4, STRING_ADDR + 48);   // "JS-H86 C2"
+        emit('MOV_RI', 3, 0);   // 黑
+        emit('INT', 0x15, 0);
+
+        emit('MOV_RI', 0, 0x0802);
+        emit('MOV_RI', 1, 34);
+        emit('MOV_RI', 2, 46);
+        emit('MOV_RI', 4, STRING_ADDR + 64);   // "CPU: IDLE"
+        emit('MOV_RI', 3, 0);
+        emit('INT', 0x15, 0);
+
+        emit('MOV_RI', 0, 0x0802);
+        emit('MOV_RI', 1, 34);
+        emit('MOV_RI', 2, 58);
+        emit('MOV_RI', 4, STRING_ADDR + 80);   // "RAM: 64 KB"
+        emit('MOV_RI', 3, 0);
+        emit('INT', 0x15, 0);
+
+        emit('MOV_RI', 0, 0x0802);
+        emit('MOV_RI', 1, 34);
+        emit('MOV_RI', 2, 70);
+        emit('MOV_RI', 4, STRING_ADDR + 96);   // "Disk: 1 MB"
+        emit('MOV_RI', 3, 0);
+        emit('INT', 0x15, 0);
+
+        emit('RET', 0, 0);
+
+        // ─── 鼠标绘制 ───
+        label('DRAW_MOUSE');
+        // 读鼠标位置到 R6/R7（避免污染 R0，R0 是 BIOS 功能号）
+        emit('IN', 6, 0x60);  // R6 = X
+        emit('IN', 7, 0x61);  // R7 = Y
+
+        // 中心点
+        emit('MOV_RI', 0, 0x010F);  // AH=0x01 (画点), AL=15 (白)
+        emit('MOV_RR', 1, 6);        // CX = X
+        emit('MOV_RR', 2, 7);        // DX = Y
+        emit('INT', 0x15, 0);
+
+        // 上
+        emit('MOV_RI', 0, 0x010F);
+        emit('MOV_RR', 1, 6);
+        emit('MOV_RR', 2, 7);
+        emit('CMP_RI', 2, 0);
+        emitJmp('JZ', 'MOUSE_SKIP_UP');
+        emit('SUB_RI', 2, 1);
+        emit('INT', 0x15, 0);
+        label('MOUSE_SKIP_UP');
+
+        // 下
+        emit('MOV_RI', 0, 0x010F);
+        emit('MOV_RR', 1, 6);
+        emit('MOV_RR', 2, 7);
+        emit('ADD_RI', 2, 1);
+        emit('INT', 0x15, 0);
+
+        // 左
+        emit('MOV_RI', 0, 0x010F);
+        emit('MOV_RR', 1, 6);
+        emit('CMP_RI', 1, 0);
+        emitJmp('JZ', 'MOUSE_SKIP_LEFT');
+        emit('SUB_RI', 1, 1);
+        emit('MOV_RR', 2, 7);
+        emit('INT', 0x15, 0);
+        label('MOUSE_SKIP_LEFT');
+
+        // 右
+        emit('MOV_RI', 0, 0x010F);
+        emit('MOV_RR', 1, 6);
+        emit('ADD_RI', 1, 1);
+        emit('MOV_RR', 2, 7);
+        emit('INT', 0x15, 0);
+
+        emit('RET', 0, 0);
+
+        // ─── 鼠标事件处理 ───
+        label('HANDLE_MOUSE');
+        // 读当前鼠标按键
+        emit('IN', 0, 0x62);   // R0 = 按键
+
+        // 读上一次按键
+        emit('MOV_RI', 1, MOUSE_PREV_BTN);
+        emit('MOV_RM', 2, 1);  // R2 = prev_btn
+
+        // 保存当前按键
+        emit('MOV_MR', 1, 0);  // [prev_btn] = R0
+
+        // 判断：如果左键按下（bit0=1），且上一次没按下（上升沿）
+        emit('MOV_RI', 3, 1);
+        emit('AND_RR', 0, 3);  // R0 = R0 & 1
+        emit('CMP_RI', 0, 0);
+        emitJmp('JZ', 'MOUSE_NO_CLICK');  // 当前没按
+
+        emit('MOV_RI', 3, 1);
+        emit('AND_RR', 2, 3);  // R2 = R2 & 1
+        emit('CMP_RI', 2, 0);
+        emitJmp('JNZ', 'MOUSE_NO_CLICK'); // 上一次也按着
+
+        // 点击发生：检查是否点关闭按钮 (122-128, 21-28)
+        emit('IN', 0, 0x60);   // mouse X
+        emit('IN', 1, 0x61);   // mouse Y
+        emit('CMP_RI', 0, 122);
+        emitJmp('JC', 'MOUSE_CHECK_ALT');  // X < 122, 跳
+        emit('CMP_RI', 0, 128);
+        emitJmp('JNC', 'MOUSE_CHECK_ALT'); // X >= 128, 跳
+        emit('CMP_RI', 1, 21);
+        emitJmp('JC', 'MOUSE_CHECK_ALT');
+        emit('CMP_RI', 1, 28);
+        emitJmp('JNC', 'MOUSE_CHECK_ALT');
+        // 命中关闭按钮 → 什么都不做（保持窗口存在，仅作演示）
+        // 也可以切换 DRAG_STATE 或退出
+
+        label('MOUSE_CHECK_ALT');
+        label('MOUSE_NO_CLICK');
+        emit('RET', 0, 0);
+
+        // ─── 键盘处理 ───
+        label('HANDLE_KEYBOARD');
+        // 检查键盘是否有数据
+        emit('IN', 0, 0x01);   // 键盘状态
+        emit('CMP_RI', 0, 0);
+        emitJmp('JZ', 'KB_NO_KEY');
+
+        emit('IN', 0, 0x00);   // 读键
+        // Esc = 0x1B
+        emit('CMP_RI', 0, 0x1B);
+        emitJmp('JNZ', 'KB_NOT_ESC');
+
+        // Esc → 切回文本模式 + 停机
+        emit('MOV_RI', 0, 0x0000);   // AH=0x00, AL=0 (文本模式)
+        emit('INT', 0x15, 0);
+        emit('MOV_RI', 0, 0x0000);   // AH=0x00 (系统调用：停机)
+        emit('INT', 0x20, 0);
+        emit('HLT', 0, 0);
+
+        label('KB_NOT_ESC');
+        label('KB_NO_KEY');
+        emit('RET', 0, 0);
+
+        // ─── 回填 fixup ───
+        for (const f of fixups) {
+            const target = labels[f.label];
+            if (target === undefined) {
+                console.warn('未定义的标签: ' + f.label);
+                continue;
+            }
+            instrs[f.idx].op1 = target;
+        }
+
+        return instrs;
+    }
+
+    /**
+     * 准备字符串池到内存
+     */
+    function prepareStrings() {
+        const strings = {
+            'C2 GShell': STRING_ADDR + 0,
+            'System': STRING_ADDR + 16,
+            'System Info': STRING_ADDR + 32,
+            'JS-H86 C2': STRING_ADDR + 48,
+            'CPU: IDLE': STRING_ADDR + 64,
+            'RAM: 64 KB': STRING_ADDR + 80,
+            'Disk: 1 MB': STRING_ADDR + 96
+        };
+
+        // 写字符串（以 0 结尾）
+        function writeString(addr, str) {
+            for (let i = 0; i < str.length; i++) {
+                Memory.writeByte(addr + i, str.charCodeAt(i) & 0xFF);
+            }
+            Memory.writeByte(addr + str.length, 0);
+        }
+
+        writeString(STRING_ADDR + 0,  'C2 GShell');
+        writeString(STRING_ADDR + 16, 'System');
+        writeString(STRING_ADDR + 32, 'System Info');
+        writeString(STRING_ADDR + 48, 'JS-H86 C2');
+        writeString(STRING_ADDR + 64, 'CPU: IDLE');
+        writeString(STRING_ADDR + 80, 'RAM: 64 KB');
+        writeString(STRING_ADDR + 96, 'Disk: 1 MB');
+
+        return strings;
+    }
+
+    /**
+     * 加载 GShell 到内存
+     * @returns {object} { codeAddr, instructionCount }
+     */
+    function loadToMemory() {
+        const instrs = generate();
+        // 先把代码编好（因为跳转回填需要地址）
+        // generate() 里已经用了 labels 和 fixups，回填过了
+        // 现在写入内存
+        ProgramLoader.loadInstructions(CODE_ADDR, instrs);
+        prepareStrings();
+        return {
+            codeAddr: CODE_ADDR,
+            instructionCount: instrs.length
+        };
+    }
+
+    return {
+        CODE_ADDR, STRING_ADDR,
+        generate, prepareStrings, loadToMemory
+    };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 15：OS（保留 C1 的命令行 OS，用于"模式 0"）
+   ───────────────────────────────────────────────────────────── */
+const OS = (() => {
+    const BOOT_ADDR = 0x7C00;
+    const OS_ADDR = 0x1000;
+
+    function generateBootSector() {
+        const instrs = [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0100 | 66 },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 3, op2: OS_ADDR },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 1 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0200 },
+            { mnemonic: 'INT',    op1: 0x13, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 3, op2: OS_ADDR + 512 },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 2 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0200 },
+            { mnemonic: 'INT',    op1: 0x13, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 3, op2: OS_ADDR + 1024 },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 3 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0200 },
+            { mnemonic: 'INT',    op1: 0x13, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 3, op2: OS_ADDR + 1536 },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 4 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0200 },
+            { mnemonic: 'INT',    op1: 0x13, op2: 0 },
+            { mnemonic: 'JMP',    op1: OS_ADDR, op2: 0 }
+        ];
+        return instrs;
+    }
+
+    function generateCLICode() {
+        const instrs = [];
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0000 });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+
+        const banner = 'JS-H86 C1 Command Line';
+        for (let i = 0; i < banner.length; i++) {
+            instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 | banner.charCodeAt(i) });
+            instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        }
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+
+        const promptAddr = OS_ADDR + instrs.length * 4;
+        const prompt = 'C1> ';
+        for (let i = 0; i < prompt.length; i++) {
+            instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 | prompt.charCodeAt(i) });
+            instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        }
+
+        const readAddr = OS_ADDR + instrs.length * 4;
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0000 });
+        instrs.push({ mnemonic: 'INT',    op1: 0x16, op2: 0 });
+        instrs.push({ mnemonic: 'CMP_RI', op1: 0, op2: 0 });
+        instrs.push({ mnemonic: 'JZ',     op1: readAddr, op2: 0 });
+
+        // 回显
+        instrs.push({ mnemonic: 'MOV_RR', op1: 2, op2: 0 });
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 });
+        instrs.push({ mnemonic: 'OR_RR',  op1: 0, op2: 2 });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+
+        // x 退出
+        instrs.push({ mnemonic: 'CMP_RI', op1: 2, op2: 120 });
+        instrs.push({ mnemonic: 'JZ',     op1: 0, op2: 0 });
+
+        // 换行 + 回提示符
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        instrs.push({ mnemonic: 'JMP',    op1: promptAddr, op2: 0 });
+
+        // x 处理
+        const haltAddr = OS_ADDR + instrs.length * 4;
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        const msg = 'System halted.';
+        for (let i = 0; i < msg.length; i++) {
+            instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 | msg.charCodeAt(i) });
+            instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        }
+        instrs.push({ mnemonic: 'HLT',    op1: 0, op2: 0 });
+
+        // 修正 JZ
+        for (let i = 0; i < instrs.length; i++) {
+            if (instrs[i].mnemonic === 'JZ' && instrs[i].op1 === 0 && instrs[i].op2 === 0) {
+                instrs[i].op1 = haltAddr;
+                break;
+            }
+        }
+
+        return instrs;
+    }
+
+    function installToDisk() {
+        const bootInstrs = generateBootSector();
+        const bootImage = new Uint8Array(512);
+        let bootOffset = 0;
+        for (const instr of bootInstrs) {
+            const bytes = Assembler.encode(instr.mnemonic, instr.op1, instr.op2);
+            for (let i = 0; i < 4; i++) bootImage[bootOffset++] = bytes[i];
+        }
+
+        const osInstrs = generateCLICode();
+        const osImage = new Uint8Array(4 * 512);
+        let osOffset = 0;
+        for (const instr of osInstrs) {
+            if (osOffset + 4 > osImage.length) break;
+            const bytes = Assembler.encode(instr.mnemonic, instr.op1, instr.op2);
+            for (let i = 0; i < 4; i++) osImage[osOffset++] = bytes[i];
+        }
+
+        const disk = Disk.getImage();
+        for (let i = 0; i < 512; i++) disk[i] = bootImage[i];
+        for (let i = 0; i < osImage.length; i++) disk[512 + i] = osImage[i];
+
+        return {
+            bootBytes: bootInstrs.length * 4,
+            osBytes: osInstrs.length * 4,
+            totalSectors: 5
+        };
+    }
+
+    return { installToDisk, BOOT_ADDR, OS_ADDR, generateBootSector, generateCLICode };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 16：Machine
+   ───────────────────────────────────────────────────────────── */
+const Machine = (() => {
+    let booted = false;
+
+    function post() {
+        const checks = [];
+
+        try {
+            Memory.writeByte(0xFFFE, 0xAA);
+            const v = Memory.readByte(0xFFFE);
+            Memory.writeByte(0xFFFE, 0x00);
+            checks.push({ name: '内存总线', ok: v === 0xAA, info: Memory.SIZE + ' 字节' });
+        } catch (e) {
+            checks.push({ name: '内存总线', ok: false, info: e.message });
+        }
+
+        try {
+            CPU.setReg(7, 0xBEEF);
+            const v = CPU.getReg(7);
+            CPU.setReg(7, 0);
+            checks.push({ name: 'CPU 寄存器', ok: v === 0xBEEF, info: '8 × 16 位' });
+        } catch (e) {
+            checks.push({ name: 'CPU 寄存器', ok: false, info: e.message });
+        }
+
+        try {
+            Display.setMode(Display.MODE_TEXT);
+            Display.putTextChar(0, 0, 'X', 0x07);
+            const c = Display.getTextChar(0, 0);
+            Display.putTextChar(0, 0, ' ', 0x07);
+            checks.push({ name: '显示控制器', ok: c.char === 'X', info: '文本+图形' });
+        } catch (e) {
+            checks.push({ name: '显示控制器', ok: false, info: e.message });
+        }
+
+        try {
+            const info = Disk.getInfo();
+            checks.push({ name: '磁盘控制器', ok: info.sectorCount === 2048, info: (info.diskSize / 1024 / 1024) + ' MB' });
+        } catch (e) {
+            checks.push({ name: '磁盘控制器', ok: false, info: e.message });
+        }
+
+        try {
+            Keyboard.pushKey('A');
+            const k = Keyboard.popKey();
+            Keyboard.clear();
+            checks.push({ name: '键盘控制器', ok: k === 'A', info: '缓冲区 256' });
+        } catch (e) {
+            checks.push({ name: '键盘控制器', ok: false, info: e.message });
+        }
+
+        try {
+            Mouse.setPosition(50, 60);
+            const ok = (Mouse.getX() === 50 && Mouse.getY() === 60);
+            Mouse.reset();
+            checks.push({ name: '鼠标控制器', ok: ok, info: '端口 0x60-0x64' });
+        } catch (e) {
+            checks.push({ name: '鼠标控制器', ok: false, info: e.message });
+        }
+
+        try {
+            const c = Assembler.count();
+            checks.push({ name: '指令表', ok: c === 38, info: c + ' 条指令' });
+        } catch (e) {
+            checks.push({ name: '指令表', ok: false, info: e.message });
+        }
+
+        try {
+            const v = IOBus.inPort(0x00);
+            checks.push({ name: 'I/O 总线', ok: v === 0, info: '端口 0x00 - 0xFF' });
+        } catch (e) {
+            checks.push({ name: 'I/O 总线', ok: false, info: e.message });
+        }
+
+        try {
+            InterruptController.setVector(0x70, 0x1234);
+            const addr = InterruptController.getVector(0x70);
+            InterruptController.setVector(0x70, 0);
+            checks.push({ name: '中断控制器', ok: addr === 0x1234, info: '256 向量' });
+        } catch (e) {
+            checks.push({ name: '中断控制器', ok: false, info: e.message });
+        }
+
+        return checks;
+    }
+
+    function boot() {
+        if (booted) return;
+        booted = true;
+
+        Memory.clear();
+        CPU.reset();
+        Display.setMode(Display.MODE_TEXT);
+        Display.clearText();
+        Disk.clear();
+        Keyboard.clear();
+        Mouse.reset();
+        Timer.reset();
+        InterruptController.reset();
+        BIOS.reset();
+
+        const led = document.getElementById('led-power');
+        if (led) led.classList.add('on');
+
+        Terminal.start();
+        Terminal.printBanner();
+        StatusBar.start();
+
+        // 全局键盘监听
+        document.addEventListener('keydown', (e) => {
+            const inputFocused = document.activeElement && document.activeElement.id === 'input-field';
+            if (inputFocused) return;
+
+            if (e.key.length === 1) Keyboard.pushKey(e.key);
+            else if (e.key === 'Enter') Keyboard.pushKey('\n');
+            else if (e.key === 'Backspace') Keyboard.pushKey('\b');
+            else if (e.key === 'Escape') Keyboard.pushKey('\x1B');
+        });
+    }
+
+    function reset() { booted = false; boot(); }
+
+    return { boot, reset, post };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 17：StatusBar
+   ───────────────────────────────────────────────────────────── */
+const StatusBar = (() => {
+    let timer = null;
+
+    function update() {
+        const s = CPU.snapshot();
+        const elCpu = document.getElementById('stat-cpu');
+        const elPc = document.getElementById('stat-pc');
+        const elSp = document.getElementById('stat-sp');
+        const elFlags = document.getElementById('stat-flags');
+        const elMode = document.getElementById('stat-mode');
+        const elInt = document.getElementById('stat-int');
+        const led = document.getElementById('led-power');
+
+        if (elCpu) elCpu.textContent = s.state;
+        if (elPc) elPc.textContent = '0x' + s.PC.toString(16).padStart(4, '0').toUpperCase();
+        if (elSp) elSp.textContent = '0x' + s.SP.toString(16).padStart(4, '0').toUpperCase();
+        if (elFlags) elFlags.textContent = CPU.flagsToString() + ' 0x' + s.FLAGS.toString(16).padStart(4, '0').toUpperCase();
+        if (elMode) elMode.textContent = Display.getModeName();
+        if (elInt) {
+            const nesting = InterruptController.getNesting();
+            const lastInt = InterruptController.getLastInt();
+            elInt.textContent = nesting > 0 ? ('0x' + lastInt.toString(16) + ' (' + nesting + ')') : '--';
+        }
+
+        if (led) {
+            led.classList.remove('on', 'running');
+            if (s.state === 'RUNNING') led.classList.add('running');
+            else led.classList.add('on');
+        }
+    }
+
+    function start() {
+        if (timer) clearInterval(timer);
+        timer = setInterval(update, 100);
+        update();
+    }
+
+    return { start, update };
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 18：Terminal
+   ───────────────────────────────────────────────────────────── */
+const Terminal = (() => {
+    let termEl = null;
+    let inputEl = null;
+    let promptEl = null;
+    let history = [];
+    let historyIdx = -1;
+
+    const commands = {};
+
+    function registerCommand(name, desc, handler) {
+        commands[name] = { desc, handler };
+    }
+
+    function start() {
+        termEl = document.getElementById('terminal');
+        inputEl = document.getElementById('input-field');
+        promptEl = document.getElementById('input-prompt');
+        if (!termEl || !inputEl) return;
+
+        inputEl.addEventListener('keydown', onKeyDown);
+        inputEl.focus();
+        document.addEventListener('click', () => inputEl.focus());
+        registerBuiltinCommands();
+    }
+
+    function onKeyDown(e) {
+        if (e.key === 'Enter') {
+            const cmd = inputEl.value.trim();
+            inputEl.value = '';
+            if (cmd) { history.push(cmd); historyIdx = history.length; execute(cmd); }
+            else newLine();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (historyIdx > 0) { historyIdx--; inputEl.value = history[historyIdx]; }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (historyIdx < history.length - 1) { historyIdx++; inputEl.value = history[historyIdx]; }
+            else { historyIdx = history.length; inputEl.value = ''; }
+        } else if (e.key === 'l' && e.ctrlKey) {
+            e.preventDefault();
+            clearScreen();
+        }
+    }
+
+    function execute(input) {
+        printLine(promptEl.textContent + ' ' + input, 'line-input');
+        const parts = input.split(/\s+/);
+        const cmd = parts[0].toLowerCase();
+        const args = parts.slice(1);
+        const fullCmd = parts.length >= 2 ? parts[0].toLowerCase() + ' ' + parts[1].toLowerCase() : null;
+
+        if (fullCmd && commands[fullCmd]) {
+            try { commands[fullCmd].handler(parts.slice(2)); }
+            catch (e) { printLine('错误: ' + e.message, 'line-error'); }
+        } else if (commands[cmd]) {
+            try { commands[cmd].handler(args); }
+            catch (e) { printLine('错误: ' + e.message, 'line-error'); }
+        } else {
+            printLine('未识别的命令: ' + cmd, 'line-error');
+            printLine('输入 help 查看可用命令', 'line-dim');
+        }
+    }
+
+    function printLine(text, className) {
+        const div = document.createElement('div');
+        if (className) div.className = className;
+        div.textContent = text;
+        termEl.appendChild(div);
+        termEl.scrollTop = termEl.scrollHeight;
+    }
+
+    function newLine() { printLine('', ''); }
+    function clearScreen() { termEl.innerHTML = ''; }
+
+    function printBanner() {
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        printLine('  JS-H86 C2 架构 · 第二代实现（图形化）', 'line-bright');
+        printLine('  版本：v2.0.0', 'line-info');
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        newLine();
+        printLine('内存: 64 KB  磁盘: 1 MB  显示: 160×120 图形', 'line-dim');
+        printLine('指令: 38 条（新增 MOV_RMO / MOV_MRO）', 'line-success');
+        printLine('BIOS: INT 0x10/0x11/0x12/0x13/0x15/0x16/0x1A/0x20', 'line-success');
+        printLine('鼠标: 端口 0x60-0x64, 中断 INT 0x04', 'line-success');
+        printLine('GShell: 图形外壳（系统信息面板）', 'line-success');
+        newLine();
+        printLine('输入 boot 启动图形界面，test 跑测试', 'line-warn');
+        newLine();
+    }
+
+    function registerBuiltinCommands() {
+
+        registerCommand('help', '显示所有命令', () => {
+            printLine('可用命令：', 'line-bright');
+            Object.keys(commands).sort().forEach(name => {
+                const pad = name.padEnd(22, ' ');
+                printLine('  ' + pad + commands[name].desc, 'line-info');
+            });
+        });
+
+        registerCommand('test', '运行全套测试', () => { runFullTest(); });
+        registerCommand('clear', '清屏', () => { clearScreen(); });
+
+        registerCommand('version', '显示版本信息', () => {
+            printLine('JS-H86 C2 v2.0.0（图形化）', 'line-bright');
+            printLine('已实现: 38 条指令', 'line-success');
+            printLine('BIOS: INT 0x10/0x13/0x15/0x16/0x20', 'line-success');
+            printLine('GShell: 系统信息面板 + 鼠标 + 关闭按钮', 'line-success');
+        });
+
+        registerCommand('regs', '显示 CPU 寄存器', () => {
+            const s = CPU.snapshot();
+            printLine('CPU 寄存器：', 'line-bright');
+            printLine('  R0 = 0x' + hex4(s.R0) + '  R1 = 0x' + hex4(s.R1) + '  R2 = 0x' + hex4(s.R2) + '  R3 = 0x' + hex4(s.R3), 'line-info');
+            printLine('  R4 = 0x' + hex4(s.R4) + '  R5 = 0x' + hex4(s.R5) + '  R6 = 0x' + hex4(s.R6) + '  R7 = 0x' + hex4(s.R7), 'line-info');
+            printLine('  PC = 0x' + hex4(s.PC) + '   SP = 0x' + hex4(s.SP), 'line-info');
+            printLine('  FLAGS = ' + CPU.flagsToString() + '  MODE = ' + Display.getModeName(), 'line-info');
+            printLine('  状态: ' + s.state + '   已执行: ' + s.instructionCount, 'line-info');
+            printLine('  中断: 次数=' + InterruptController.getCount() + ' 最后=0x' + InterruptController.getLastInt().toString(16), 'line-info');
+            if (s.lastError) printLine('  最后错误: ' + s.lastError, 'line-error');
+        });
+
+        registerCommand('mouse', '显示鼠标状态', () => {
+            printLine('鼠标：', 'line-bright');
+            printLine('  X = ' + Mouse.getX() + '   Y = ' + Mouse.getY(), 'line-info');
+            printLine('  按键 = ' + Mouse.getButtons() + ' (bit0=左, bit1=右)', 'line-info');
+            printLine('  有新事件 = ' + (Mouse.hasEvent() ? '是' : '否'), 'line-info');
+        });
+
+        registerCommand('mem', '查看内存（mem <地址> [长度]）', (args) => {
+            if (args.length === 0) { printLine('用法: mem <地址> [长度]', 'line-warn'); return; }
+            dumpMemory(parseHex(args[0]), args[1] ? parseInt(args[1]) : 64);
+        });
+
+        registerCommand('screen', '查看屏幕（文本）', () => {
+            if (Display.getMode() !== Display.MODE_TEXT) {
+                printLine('当前是图形模式，先用 text 切换回文本', 'line-warn');
+                return;
+            }
+            const text = Display.getTextScreen();
+            printLine('屏幕内容：', 'line-bright');
+            text.split('\n').forEach((line, i) => {
+                printLine(String(i).padStart(2, ' ') + ' │' + line, 'line-info');
+            });
+        });
+
+        registerCommand('display', '打开显示器窗口', () => { openDisplayWindow(); });
+
+        registerCommand('mode', '切换显示模式（mode text / mode gfx）', (args) => {
+            if (args.length === 0) {
+                printLine('当前模式: ' + Display.getModeName(), 'line-info');
+                printLine('用法: mode text | mode gfx', 'line-dim');
+                return;
+            }
+            const m = args[0].toLowerCase();
+            if (m === 'text') { Display.setMode(Display.MODE_TEXT); printLine('已切到文本模式', 'line-success'); }
+            else if (m === 'gfx' || m === 'graphics') { Display.setMode(Display.MODE_GFX); printLine('已切到图形模式', 'line-success'); }
+            else printLine('未知模式: ' + m, 'line-error');
+            if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+        });
+
+        registerCommand('gtest', '测试图形 BIOS', () => { runGfxTest(); });
+
+        registerCommand('asm', '列出所有指令', () => {
+            const list = Assembler.listOpcodes();
+            printLine('指令表（共 ' + list.length + ' 条）：', 'line-bright');
+            list.forEach(item => {
+                const mark = item.implemented ? '★' : ' ';
+                const cls = item.implemented ? 'line-success' : 'line-dim';
+                printLine('  ' + mark + ' 0x' + hex2(item.opcode) + '  ' + item.mnemonic, cls);
+            });
+        });
+
+        registerCommand('post', '上电自检', () => {
+            const checks = Machine.post();
+            printLine('上电自检（POST）：', 'line-bright');
+            checks.forEach(c => {
+                const status = c.ok ? '[OK]  ' : '[FAIL]';
+                const cls = c.ok ? 'line-success' : 'line-error';
+                printLine('  ' + status + ' ' + c.name.padEnd(14) + ' ' + c.info, cls);
+            });
+        });
+
+        registerCommand('reset', '复位机器', () => {
+            printLine('正在复位...', 'line-warn');
+            setTimeout(() => Machine.reset(), 300);
+        });
+
+        registerCommand('run', '从 PC 开始执行', (args) => {
+            let addr = CPU.getPC();
+            if (args.length > 0) { addr = parseHex(args[0]); CPU.setPC(addr); }
+            if (addr === 0) { printLine('PC = 0，先用 load 或 demo 加载程序', 'line-warn'); return; }
+            if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+            printLine('从 0x' + hex4(addr) + ' 执行...', 'line-info');
+            const t0 = performance.now();
+            const result = CPU.run();
+            const t1 = performance.now();
+
+            printLine('执行 ' + result.executed + ' 条，耗时 ' + (t1 - t0).toFixed(2) + ' ms', 'line-info');
+            if (result.error) printLine('错误: ' + result.error, 'line-error');
+            else if (result.halted) printLine('CPU 停机', 'line-success');
+            else if (result.limitReached) printLine('达到指令上限', 'line-warn');
+        });
+
+        registerCommand('boot', '启动图形界面（GShell）', () => { runBoot(); });
+        registerCommand('boot-cli', '启动命令行 OS（C1 风格）', () => { runBootCLI(); });
+
+        registerCommand('demo', '默认示例（hello）', () => { runDemoHello(); });
+        registerCommand('demo hello', 'Hello World', () => { runDemoHello(); });
+        registerCommand('demo isr', '自定义 ISR', () => { runDemoISR(); });
+        registerCommand('demo index', '索引寻址演示', () => { runDemoIndex(); });
+        registerCommand('demo gfx', '图形模式演示', () => { runDemoGfx(); });
+
+        registerCommand('demos', '列出所有示例', () => {
+            printLine('示例程序：', 'line-bright');
+            printLine('  demo hello     → Hello World', 'line-info');
+            printLine('  demo isr       → 自定义中断处理', 'line-info');
+            printLine('  demo index     → MOV_RMO / MOV_MRO 索引寻址', 'line-info');
+            printLine('  demo gfx       → 图形模式画图', 'line-info');
+        });
+    }
+
+    function openDisplayWindow() {
+        if (document.getElementById('c1-display-canvas')) return;
+
+        const win = document.createElement('div');
+        win.id = 'c1-display-window';
+        win.style.cssText = 'position:fixed;top:80px;right:40px;width:660px;height:500px;background:#1a1a1a;border:2px solid #4ec9b0;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.6);z-index:9999;display:flex;flex-direction:column;overflow:hidden;';
+
+        const titlebar = document.createElement('div');
+        titlebar.style.cssText = 'height:30px;background:#252525;display:flex;align-items:center;padding:0 10px;color:#ccc;font-size:12px;border-bottom:1px solid #333;cursor:move;user-select:none;';
+        titlebar.innerHTML = '<span style="color:#4ec9b0;font-weight:bold;">🖥 JS-H86 C2 显示器</span><span id="c1-display-cursor" style="margin-left:20px;color:#888;font-size:11px;">光标: (0, 0)</span><span style="margin-left:auto;cursor:pointer;padding:0 8px;" id="c1-display-close">✕</span>';
+
+        const content = document.createElement('div');
+        content.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;padding:10px;background:#000;overflow:hidden;';
+        content.innerHTML = '<canvas id="c1-display-canvas" style="width:100%;height:100%;object-fit:contain;image-rendering:pixelated;"></canvas>';
+        win.appendChild(titlebar);
+        win.appendChild(content);
+        document.body.appendChild(win);
+
+        document.getElementById('c1-display-close').onclick = function() { win.remove(); };
+
+        let dragInfo = null;
+        titlebar.addEventListener('pointerdown', function(e) {
+            if (e.target.id === 'c1-display-close') return;
+            dragInfo = { startX: e.clientX, startY: e.clientY, origLeft: win.offsetLeft, origTop: win.offsetTop };
+            e.preventDefault();
+        });
+        document.addEventListener('pointermove', function(e) {
+            if (!dragInfo) return;
+            win.style.left = (dragInfo.origLeft + e.clientX - dragInfo.startX) + 'px';
+            win.style.top = (dragInfo.origTop + e.clientY - dragInfo.startY) + 'px';
+            win.style.right = 'auto';
+        });
+        document.addEventListener('pointerup', function() { dragInfo = null; });
+
+        setTimeout(() => {
+            const canvas = document.getElementById('c1-display-canvas');
+            if (canvas) {
+                Display.initCanvas(canvas);
+                attachMouseEvents(canvas);
+            }
+        }, 50);
+    }
+
+    /**
+     * 绑定鼠标事件到 Canvas
+     * 把浏览器的鼠标位置映射到 C1 的 160×120 坐标
+     */
+    function attachMouseEvents(canvas) {
+        if (!canvas || canvas._mouseAttached) return;
+        canvas._mouseAttached = true;
+
+        function updateMouse(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) / rect.width * Display.GFX_W);
+            const y = Math.floor((e.clientY - rect.top) / rect.height * Display.GFX_H);
+            Mouse.setPosition(x, y);
+        }
+
+        canvas.addEventListener('mousemove', updateMouse);
+        canvas.addEventListener('mousedown', function(e) {
+            updateMouse(e);
+            let btn = Mouse.getButtons();
+            if (e.button === 0) btn |= 0x01;
+            if (e.button === 2) btn |= 0x02;
+            Mouse.setButtons(btn);
+        });
+        canvas.addEventListener('mouseup', function(e) {
+            updateMouse(e);
+            let btn = Mouse.getButtons();
+            if (e.button === 0) btn &= ~0x01;
+            if (e.button === 2) btn &= ~0x02;
+            Mouse.setButtons(btn);
+        });
+        canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+    }
+
+    // ─── 启动图形 GShell ───
+    function runBoot() {
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        printLine('  JS-H86 C2 图形界面启动（GShell）', 'line-bright');
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        newLine();
+
+        printLine('[POST] 上电自检...', 'line-warn');
+        const checks = Machine.post();
+        checks.forEach(c => {
+            printLine('  ' + (c.ok ? '[OK]  ' : '[FAIL]') + ' ' + c.name.padEnd(14) + ' ' + c.info,
+                      c.ok ? 'line-success' : 'line-error');
+        });
+        newLine();
+
+        printLine('[GFX] 准备 GShell 代码...', 'line-warn');
+        Memory.clear();
+        CPU.reset();
+        Mouse.reset();
+        Keyboard.clear();
+        Timer.reset();
+        InterruptController.reset();
+
+        const shellInfo = GShell.loadToMemory();
+        printLine('  GShell 代码: ' + shellInfo.instructionCount + ' 条指令，加载到 0x' + hex4(shellInfo.codeAddr), 'line-info');
+        printLine('  字符串池: 0x' + hex4(GShell.STRING_ADDR), 'line-info');
+        newLine();
+
+        // 打开显示器窗口
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+        printLine('[GFX] 切换到图形模式（GShell2 混合模式）...', 'line-warn');
+        newLine();
+
+        setTimeout(function() {
+            GShell2.boot();
+        }, 100);
+    }
+    // ─── 启动命令行 OS ───
+    function runBootCLI() {
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        printLine('  JS-H86 C2 命令行模式启动', 'line-bright');
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        newLine();
+
+        printLine('[DISK] 写入 CLI OS 到磁盘...', 'line-warn');
+        const installResult = OS.installToDisk();
+        printLine('  引导扇区: ' + installResult.bootBytes + ' 字节', 'line-info');
+        printLine('  CLI OS: ' + installResult.osBytes + ' 字节', 'line-info');
+        newLine();
+
+        Memory.clear();
+        CPU.reset();
+        Display.setMode(Display.MODE_TEXT);
+        Display.clearText();
+        Keyboard.clear();
+        Timer.reset();
+        InterruptController.reset();
+
+        printLine('[BIOS] 读引导扇区到 0x7C00...', 'line-warn');
+        Disk.readSector(0, 0x7C00);
+
+        CPU.setPC(0x7C00);
+        CPU.setState('RUNNING');
+
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+        setTimeout(function() {
+            const result = CPU.run(5000);
+            printLine('执行 ' + result.executed + ' 条', 'line-info');
+            if (result.error) printLine('错误: ' + result.error, 'line-error');
+            else if (result.halted) printLine('CPU 停机', 'line-success');
+            else printLine('CPU 暂停', 'line-warn');
+        }, 100);
+    }
+
+    // ─── 示例 ───
+    function runDemoHello() {
+        Memory.clear(); CPU.reset();
+        Display.setMode(Display.MODE_TEXT);
+        Display.clearText();
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+        const text = 'Hello, C2!';
+        const prog = [];
+        for (let i = 0; i < text.length; i++) {
+            prog.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 | text.charCodeAt(i) });
+            prog.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        }
+        prog.push({ mnemonic: 'HLT', op1: 0, op2: 0 });
+
+        ProgramLoader.loadInstructions(0x0100, prog);
+        CPU.setPC(0x0100);
+        printLine('── Hello World ──', 'line-bright');
+        const r = CPU.run();
+        printLine('执行 ' + r.executed + ' 条', 'line-info');
+        printLine('✅ 完成', 'line-success');
+    }
+
+    function runDemoISR() {
+        Memory.clear(); CPU.reset();
+        Display.setMode(Display.MODE_TEXT);
+        Display.clearText();
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+        ProgramLoader.loadInstructions(0x0100, [
+            { mnemonic: 'INT',  op1: 0x70, op2: 0 },
+            { mnemonic: 'HLT',  op1: 0, op2: 0 }
+        ]);
+        InterruptController.setVector(0x70, 0x0300);
+        ProgramLoader.loadInstructions(0x0300, [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E2A },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'IRET',   op1: 0, op2: 0 }
+        ]);
+
+        CPU.setPC(0x0100);
+        printLine('── 自定义 ISR ──', 'line-bright');
+        const r = CPU.run();
+        const c = Display.getTextChar(0, 0).char;
+        printLine('屏幕首字符: "' + c + '" (期望 "*")', c === '*' ? 'line-success' : 'line-error');
+    }
+
+    function runDemoIndex() {
+        Memory.clear(); CPU.reset();
+        Display.setMode(Display.MODE_TEXT);
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+        // 写入数组到 0x2000: [100, 200, 300, 400]
+        Memory.writeWord(0x2000, 100);
+        Memory.writeWord(0x2002, 200);
+        Memory.writeWord(0x2004, 300);
+        Memory.writeWord(0x2006, 400);
+
+        // R0 = 0x2000 (基址)
+        // R1 = [R0 + 0]  → 100
+        // R2 = [R0 + 2]  → 200
+        // R3 = [R0 + 4]  → 300
+        // R4 = [R0 + 6]  → 400
+        // R5 = 0x9999
+        // [R0 + 8] = R5  (写)
+        // R6 = [R0 + 8]  → 0x9999
+        ProgramLoader.loadInstructions(0x0100, [
+            { mnemonic: 'MOV_RI',  op1: 0, op2: 0x2000 },
+            { mnemonic: 'MOV_RMO', op1: 1, op2: 0, op3: 0 },
+            { mnemonic: 'MOV_RMO', op1: 2, op2: 0, op3: 2 },
+            { mnemonic: 'MOV_RMO', op1: 3, op2: 0, op3: 4 },
+            { mnemonic: 'MOV_RMO', op1: 4, op2: 0, op3: 6 },
+            { mnemonic: 'MOV_RI',  op1: 5, op2: 0x9999 },
+            { mnemonic: 'MOV_MRO', op1: 0, op2: 5, op3: 8 },
+            { mnemonic: 'MOV_RMO', op1: 6, op2: 0, op3: 8 },
+            { mnemonic: 'HLT',     op1: 0, op2: 0 }
+        ]);
+
+        CPU.setPC(0x0100);
+        printLine('── 索引寻址演示 ──', 'line-bright');
+        const r = CPU.run();
+        const s = CPU.snapshot();
+        printLine('  R1 = ' + s.R1 + ' (期望 100)', s.R1 === 100 ? 'line-success' : 'line-error');
+        printLine('  R2 = ' + s.R2 + ' (期望 200)', s.R2 === 200 ? 'line-success' : 'line-error');
+        printLine('  R3 = ' + s.R3 + ' (期望 300)', s.R3 === 300 ? 'line-success' : 'line-error');
+        printLine('  R4 = ' + s.R4 + ' (期望 400)', s.R4 === 400 ? 'line-success' : 'line-error');
+        printLine('  R6 = 0x' + hex4(s.R6) + ' (期望 0x9999)', s.R6 === 0x9999 ? 'line-success' : 'line-error');
+    }
+
+    function runDemoGfx() {
+        Memory.clear(); CPU.reset();
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+        Display.setMode(Display.MODE_GFX);
+        Display.clearGfx(0);
+
+        printLine('── 图形模式演示 ──', 'line-bright');
+        printLine('画一些图形到 Canvas...', 'line-info');
+
+        // 画边框
+        Display.drawHLine(0, 159, 0, 15);
+        Display.drawHLine(0, 159, 119, 15);
+        Display.drawVLine(0, 0, 119, 15);
+        Display.drawVLine(159, 0, 119, 15);
+
+        // 画对角十字
+        for (let i = 0; i < 120; i++) {
+            Display.putPixel(i, i, 12);       // 红
+            Display.putPixel(159 - i, i, 10); // 绿
+        }
+
+        // 画标题文字
+        const title = 'GRAPHICS';
+        for (let i = 0; i < title.length; i++) {
+            Display.drawCharGfx(24 + i * 8, 50, title.charCodeAt(i), 14);
+        }
+
+        // 画彩色方块
+        Display.fillRect(10, 100, 30, 10, 1);   // 蓝
+        Display.fillRect(50, 100, 30, 10, 2);   // 绿
+        Display.fillRect(90, 100, 30, 10, 4);   // 红
+        Display.fillRect(130, 100, 20, 10, 6);  // 棕
+
+        Display.render();
+        printLine('✅ 完成（查看显示器窗口）', 'line-success');
+    }
+
+    function runGfxTest() {
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+        printLine('── 图形 BIOS 测试 ──', 'line-bright');
+
+        // 切图形模式
+        CPU.setReg(0, 0x0001);  // AH=0, AL=1
+        // 用 BIOS.handle 直接调用
+        BIOS.handle(0x15, { getReg: CPU.getReg, setReg: CPU.setReg, setState: CPU.setState, setFlag: CPU.setFlag, clearFlag: function(m){ CPU.setFlag(m, false); } });
+        printLine('  切到图形模式', Display.getMode() === Display.MODE_GFX ? 'line-success' : 'line-error');
+
+        // 清屏蓝色
+        CPU.setReg(0, 0x0701);
+        BIOS.handle(0x15, { getReg: CPU.getReg, setReg: CPU.setReg, setState: CPU.setState, setFlag: CPU.setFlag, clearFlag: function(m){ CPU.setFlag(m, false); } });
+        printLine('  清屏蓝色', 'line-success');
+
+        // 画点
+        CPU.setReg(0, 0x010F);  // 画点白
+        CPU.setReg(1, 80);       // X=80
+        CPU.setReg(2, 60);       // Y=60
+        BIOS.handle(0x15, { getReg: CPU.getReg, setReg: CPU.setReg, setState: CPU.setState, setFlag: CPU.setFlag, clearFlag: function(m){ CPU.setFlag(m, false); } });
+        const c = Display.getPixel(80, 60);
+        printLine('  画点 (80,60) 颜色=' + c, c === 15 ? 'line-success' : 'line-error');
+
+        printLine('✅ 图形 BIOS 可用', 'line-success');
+    }
+
+    // ─── 全套测试 ───
+    function runFullTest() {
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        printLine('  JS-H86 C2 完整自检（v2.0.0）', 'line-bright');
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        newLine();
+
+        let passed = 0, failed = 0;
+
+        function assert(name, fn) {
+            try {
+                const result = fn();
+                if (result === true) { printLine('  [PASS] ' + name, 'line-success'); passed++; }
+                else { printLine('  [FAIL] ' + name + ' → ' + result, 'line-error'); failed++; }
+            } catch (e) {
+                printLine('  [FAIL] ' + name + ' → ' + e.message, 'line-error');
+                failed++;
+            }
+        }
+
+        // ═══ 基础硬件 ═══
+        printLine('【内存总线】', 'line-bright');
+        assert('写读单字节', () => {
+            Memory.writeByte(0x1000, 0xAB);
+            return Memory.readByte(0x1000) === 0xAB ? true : '读回不匹配';
+        });
+        assert('写读 16 位字', () => {
+            Memory.writeWord(0x2000, 0x1234);
+            return Memory.readWord(0x2000) === 0x1234 ? true : '字不匹配';
+        });
+        assert('越界检查', () => {
+            try { Memory.writeByte(0x10000, 0); return '未抛出异常'; }
+            catch (e) { return true; }
+        });
+        newLine();
+
+        printLine('【CPU 寄存器】', 'line-bright');
+        assert('R0-R7 写读', () => {
+            for (let i = 0; i < 8; i++) CPU.setReg(i, 0x1000 + i);
+            for (let i = 0; i < 8; i++) if (CPU.getReg(i) !== 0x1000 + i) return 'R' + i + ' 不匹配';
+            return true;
+        });
+        assert('复位', () => {
+            CPU.reset();
+            return (CPU.getPC() === 0 && CPU.getSP() === 0x7FFF) ? true : 'PC/SP 未复位';
+        });
+        newLine();
+
+        // ═══ 显示 ═══
+        printLine('【显示控制器】', 'line-bright');
+        assert('文本模式写读', () => {
+            Display.setMode(Display.MODE_TEXT);
+            Display.putTextChar(10, 5, 'A', 0x07);
+            return Display.getTextChar(10, 5).char === 'A' ? true : '字符不匹配';
+        });
+        assert('图形模式切模式', () => {
+            Display.setMode(Display.MODE_GFX);
+            const ok = Display.getMode() === Display.MODE_GFX;
+            Display.setMode(Display.MODE_TEXT);
+            return ok ? true : '切换失败';
+        });
+        assert('图形模式画点/读点', () => {
+            Display.setMode(Display.MODE_GFX);
+            Display.putPixel(50, 50, 12);
+            const c = Display.getPixel(50, 50);
+            Display.setMode(Display.MODE_TEXT);
+            return c === 12 ? true : '颜色不匹配: ' + c;
+        });
+        assert('横线', () => {
+            Display.setMode(Display.MODE_GFX);
+            Display.clearGfx(0);
+            Display.drawHLine(10, 20, 30, 5);
+            const ok = Display.getPixel(15, 30) === 5 && Display.getPixel(10, 30) === 5 && Display.getPixel(20, 30) === 5;
+            Display.setMode(Display.MODE_TEXT);
+            return ok ? true : '横线不对';
+        });
+        assert('竖线', () => {
+            Display.setMode(Display.MODE_GFX);
+            Display.clearGfx(0);
+            Display.drawVLine(30, 10, 20, 6);
+            const ok = Display.getPixel(30, 15) === 6 && Display.getPixel(30, 10) === 6 && Display.getPixel(30, 20) === 6;
+            Display.setMode(Display.MODE_TEXT);
+            return ok ? true : '竖线不对';
+        });
+        assert('填矩形', () => {
+            Display.setMode(Display.MODE_GFX);
+            Display.clearGfx(0);
+            Display.fillRect(10, 10, 5, 5, 7);
+            const ok = Display.getPixel(12, 12) === 7 && Display.getPixel(10, 10) === 7 && Display.getPixel(14, 14) === 7;
+            Display.setMode(Display.MODE_TEXT);
+            return ok ? true : '矩形不对';
+        });
+        assert('画字符（字库）', () => {
+            Display.setMode(Display.MODE_GFX);
+            Display.clearGfx(0);
+            Display.drawCharGfx(0, 0, 0x41 /* 'A' */, 15);
+            // 检查几个像素点（A 的第一行应该是 0b00011000 → 中心有亮）
+            let hits = 0;
+            for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+                if (Display.getPixel(x, y) === 15) hits++;
+            }
+            Display.setMode(Display.MODE_TEXT);
+            return hits > 5 ? true : '字符未画出（命中 ' + hits + ' 点）';
+        });
+        assert('画字符串', () => {
+            Display.setMode(Display.MODE_GFX);
+            Display.clearGfx(0);
+            // 写字符串到 0x3000
+            const str = 'Hi';
+            Memory.writeByte(0x3000, str.charCodeAt(0));
+            Memory.writeByte(0x3001, str.charCodeAt(1));
+            Memory.writeByte(0x3002, 0);
+            Display.drawStringGfx(0, 0, 0x3000, 15);
+            // 检查 'H' 在 (0,0) 附近有像素
+            let hits = 0;
+            for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+                if (Display.getPixel(x, y) === 15) hits++;
+            }
+            Display.setMode(Display.MODE_TEXT);
+            return hits > 5 ? true : '字符串未画出';
+        });
+        newLine();
+
+        // ═══ 鼠标 ═══
+        printLine('【鼠标控制器】', 'line-bright');
+        assert('鼠标位置设置/读取', () => {
+            Mouse.setPosition(50, 60);
+            const ok = (Mouse.getX() === 50 && Mouse.getY() === 60);
+            Mouse.reset();
+            return ok ? true : '位置不对';
+        });
+        assert('鼠标位置越界钳制', () => {
+            Mouse.setPosition(-10, 500);
+            const ok = (Mouse.getX() === 0 && Mouse.getY() === Display.GFX_H - 1);
+            Mouse.reset();
+            return ok ? true : '钳制失败: X=' + Mouse.getX() + ' Y=' + Mouse.getY();
+        });
+        assert('鼠标按键设置', () => {
+            Mouse.setButtons(0x03);
+            const ok = Mouse.getButtons() === 0x03;
+            Mouse.reset();
+            return ok ? true : '按键不对';
+        });
+        assert('鼠标端口访问', () => {
+            Mouse.reset();
+            Mouse.setPosition(70, 40);
+            const x = IOBus.inPort(0x60);
+            const y = IOBus.inPort(0x61);
+            const ok = (x === 70 && y === 40);
+            Mouse.reset();
+            return ok ? true : '端口读取不对: X=' + x + ' Y=' + y;
+        });
+        newLine();
+
+        // ═══ 指令集 ═══
+        printLine('【指令表】', 'line-bright');
+        assert('指令总数 38', () => Assembler.count() === 38 ? true : '不是 38');
+        assert('已实现 38', () => Assembler.IMPLEMENTED.length === 38 ? true : '已实现 ' + Assembler.IMPLEMENTED.length);
+        newLine();
+
+        // ═══ 基础指令 ═══
+        printLine('【基础指令】', 'line-bright');
+        assert('MOV_RI / ADD_RR', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 5 },
+                { mnemonic: 'MOV_RI', op1: 1, op2: 3 },
+                { mnemonic: 'ADD_RR', op1: 0, op2: 1 },
+                { mnemonic: 'HLT', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return CPU.getReg(0) === 8 ? true : 'R0=' + CPU.getReg(0);
+        });
+        assert('循环', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0 },
+                { mnemonic: 'MOV_RI', op1: 1, op2: 1 },
+                { mnemonic: 'MOV_RI', op1: 2, op2: 11 },
+                { mnemonic: 'MOV_RI', op1: 3, op2: 1 },
+                { mnemonic: 'ADD_RR', op1: 0, op2: 1 },
+                { mnemonic: 'ADD_RR', op1: 1, op2: 3 },
+                { mnemonic: 'CMP_RR', op1: 1, op2: 2 },
+                { mnemonic: 'JNZ',    op1: 0x0110, op2: 0 },
+                { mnemonic: 'HLT',    op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return CPU.getReg(0) === 55 ? true : 'R0=' + CPU.getReg(0);
+        });
+        newLine();
+
+        // ═══ C2 新增：索引寻址 ═══
+        printLine('【C2 新指令】', 'line-bright');
+        assert('MOV_RMO 读偏移', () => {
+            Memory.clear(); CPU.reset();
+            Memory.writeWord(0x2000, 100);
+            Memory.writeWord(0x2002, 200);
+            Memory.writeWord(0x2004, 300);
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI',  op1: 0, op2: 0x2000 },
+                { mnemonic: 'MOV_RMO', op1: 1, op2: 0, op3: 0 },
+                { mnemonic: 'MOV_RMO', op1: 2, op2: 0, op3: 2 },
+                { mnemonic: 'MOV_RMO', op1: 3, op2: 0, op3: 4 },
+                { mnemonic: 'HLT',     op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return (CPU.getReg(1) === 100 && CPU.getReg(2) === 200 && CPU.getReg(3) === 300) ? true : '失败';
+        });
+        assert('MOV_MRO 写偏移', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI',  op1: 0, op2: 0x2000 },
+                { mnemonic: 'MOV_RI',  op1: 1, op2: 0xDEAD },
+                { mnemonic: 'MOV_MRO', op1: 0, op2: 1, op3: 4 },
+                { mnemonic: 'HLT',     op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return Memory.readWord(0x2004) === 0xDEAD ? true : '内存未写入';
+        });
+        newLine();
+
+        // ═══ 中断 ═══
+        printLine('【中断系统】', 'line-bright');
+        assert('自定义 ISR', () => {
+            Memory.clear(); CPU.reset();
+            Display.setMode(Display.MODE_TEXT);
+            Display.clearText();
+            InterruptController.setVector(0x70, 0x0300);
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'INT',  op1: 0x70, op2: 0 },
+                { mnemonic: 'HLT',  op1: 0, op2: 0 }
+            ]);
+            ProgramLoader.loadInstructions(0x0300, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E2A },
+                { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+                { mnemonic: 'IRET',   op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            const c = Display.getTextChar(0, 0).char;
+            InterruptController.setVector(0x70, 0);
+            return c === '*' ? true : '屏幕: ' + c;
+        });
+        assert('向量越界拒绝', () => {
+            const before = InterruptController.getRejectedCount();
+            const ok = InterruptController.setVector(0x80, 0xDEAD);
+            const after = InterruptController.getRejectedCount();
+            return (!ok && after > before) ? true : '应拒绝但未拒绝';
+        });
+        newLine();
+
+        // ═══ 图形 BIOS ═══
+        printLine('【图形 BIOS】', 'line-bright');
+        assert('INT 0x15 切模式', () => {
+            Display.setMode(Display.MODE_TEXT);
+            CPU.setReg(0, 0x0001);  // AH=0, AL=1
+            BIOS.handle(0x15, { getReg: CPU.getReg, setReg: CPU.setReg, setState: CPU.setState, setFlag: CPU.setFlag, clearFlag: function(m){ CPU.setFlag(m, false); } });
+            const ok = Display.getMode() === Display.MODE_GFX;
+            Display.setMode(Display.MODE_TEXT);
+            return ok ? true : '未切换';
+        });
+        assert('INT 0x15 画点', () => {
+            Display.setMode(Display.MODE_GFX);
+            Display.clearGfx(0);
+            CPU.setReg(0, 0x010F);  // 画点，白
+            CPU.setReg(1, 80);
+            CPU.setReg(2, 60);
+            BIOS.handle(0x15, { getReg: CPU.getReg, setReg: CPU.setReg, setState: CPU.setState, setFlag: CPU.setFlag, clearFlag: function(m){ CPU.setFlag(m, false); } });
+            const c = Display.getPixel(80, 60);
+            Display.setMode(Display.MODE_TEXT);
+            return c === 15 ? true : '颜色=' + c;
+        });
+        assert('INT 0x15 填矩形', () => {
+            Display.setMode(Display.MODE_GFX);
+            Display.clearGfx(0);
+            CPU.setReg(0, 0x0505);  // 填矩形，深红
+            CPU.setReg(1, 10);
+            CPU.setReg(2, 10);
+            CPU.setReg(4, 20);
+            CPU.setReg(5, 20);
+            BIOS.handle(0x15, { getReg: CPU.getReg, setReg: CPU.setReg, setState: CPU.setState, setFlag: CPU.setFlag, clearFlag: function(m){ CPU.setFlag(m, false); } });
+            const ok = Display.getPixel(15, 15) === 5;
+            Display.setMode(Display.MODE_TEXT);
+            return ok ? true : '矩形不对';
+        });
+        newLine();
+
+        // ═══ GShell ═══
+        printLine('【GShell】', 'line-bright');
+        assert('GShell 代码生成', () => {
+            const instrs = GShell.generate();
+            return instrs.length > 20 ? true : '指令太少: ' + instrs.length;
+        });
+        assert('GShell 加载到内存', () => {
+            Memory.clear();
+            const info = GShell.loadToMemory();
+            // 读第一条指令
+            const b0 = Memory.readByte(GShell.CODE_ADDR);
+            return (info.instructionCount > 20 && b0 !== 0) ? true : '未正确加载';
+        });
+        assert('GShell 字符串池', () => {
+            // 'C2 GShell' 应该写在 STRING_ADDR + 0
+            const c0 = Memory.readByte(GShell.STRING_ADDR);
+            const c1 = Memory.readByte(GShell.STRING_ADDR + 1);
+            return (c0 === 0x43 /* 'C' */ && c1 === 0x32 /* '2' */) ? true : '字符串写入失败';
+        });
+        newLine();
+
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        printLine('  测试完成', 'line-bright');
+        printLine('  通过: ' + passed, 'line-success');
+        if (failed > 0) printLine('  失败: ' + failed, 'line-error');
+        else printLine('  失败: 0', 'line-success');
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        newLine();
+
+        Memory.clear(); CPU.reset();
+        Display.setMode(Display.MODE_TEXT);
+        Disk.clear(); Keyboard.clear();
+        Timer.reset(); InterruptController.reset();
+    }
+
+    function dumpMemory(addr, len) {
+        printLine('内存 0x' + hex4(addr) + ' - 0x' + hex4(addr + len - 1) + '：', 'line-bright');
+        for (let row = 0; row < len; row += 16) {
+            let hex = '', ascii = '';
+            for (let col = 0; col < 16 && row + col < len; col++) {
+                const b = Memory.readByte(addr + row + col);
+                hex += hex2(b) + ' ';
+                ascii += (b >= 32 && b < 127) ? String.fromCharCode(b) : '.';
+            }
+            printLine('  ' + hex4(addr + row) + '  ' + hex.padEnd(48, ' ') + ' |' + ascii.padEnd(16, ' ') + '|', 'line-info');
+        }
+    }
+
+    function hex2(v) { return v.toString(16).padStart(2, '0').toUpperCase(); }
+    function hex4(v) { return v.toString(16).padStart(4, '0').toUpperCase(); }
+    function parseHex(s) {
+        if (s.startsWith('0x') || s.startsWith('0X')) return parseInt(s.substring(2), 16);
+        return parseInt(s, 16);
+    }
+
+    return { start, printLine, newLine, clearScreen, registerCommand, printBanner };
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   启动
+   ═══════════════════════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+    Machine.boot();
+});
+/* ═══════════════════════════════════════════════════════════
+   GShell2 · 图形外壳（完整版 v2.1）
+   - 窗口管理：多窗口 + 拖动 + 关闭 + 菜单
+   - 应用：System Info / Notepad / Calculator / Paint / Terminal
+           Files（文件系统）/ Editor（汇编器）
+   ═══════════════════════════════════════════════════════════ */
+const GShell2 = (() => {
+
+    const W = 160, H = 120, MENUBAR_H = 10;
+
+    // 颜色
+    const C_BLACK=0,C_BLUE=1,C_GREEN=2,C_CYAN=3,C_RED=4,C_MAGENTA=5,C_BROWN=6,C_GRAY=7;
+    const C_DGRAY=8,C_LBLUE=9,C_LGREEN=10,C_LCYAN=11,C_LRED=12,C_LMAG=13,C_YELLOW=14,C_WHITE=15;
+
+    const MENU_ITEMS = [
+        'New Notepad', 'Calculator', 'Paint', 'Terminal',
+        'Files', 'Editor',
+        '---',
+        'Close All', 'About', 'Exit'
+    ];
+
+    let windows = [];
+    let nextWinId = 1;
+    let activeWinId = 0;
+    let draggingWinId = 0, dragOffsetX = 0, dragOffsetY = 0;
+    let menuOpen = false, menuSelection = -1;
+    let pressedItem = null;
+    let cursorBlink = 0, cursorVisible = true;
+    let running = false, rafId = null;
+
+    // ─── 磁盘文件系统 ───
+    // 用 Disk 模块的扇区 1-8（每扇区 512 字节）存文件
+    // 结构：每文件占 1 扇区，前 32 字节是文件名，后 480 字节是内容
+    const FS_START_SECTOR = 1;
+    const FS_MAX_FILES = 8;
+    const FS_NAME_LEN = 32;
+    const FS_DATA_LEN = 480;
+
+    function fsReadFile(idx) {
+        if (idx < 0 || idx >= FS_MAX_FILES) return null;
+        const buf = new Uint8Array(512);
+        try {
+            Disk.readSector(FS_START_SECTOR + idx, 0x4000);   // 临时缓冲区 0x4000
+            for (let i = 0; i < 512; i++) buf[i] = Memory.readByte(0x4000 + i);
+        } catch (e) { return null; }
+        // 检查是否有内容
+        let name = '';
+        for (let i = 0; i < FS_NAME_LEN; i++) {
+            if (buf[i] === 0) break;
+            name += String.fromCharCode(buf[i]);
+        }
+        if (!name) return null;
+        let content = '';
+        for (let i = FS_NAME_LEN; i < 512; i++) {
+            if (buf[i] === 0) break;
+            content += String.fromCharCode(buf[i]);
+        }
+        return { name: name, content: content, idx: idx };
+    }
+
+    function fsWriteFile(idx, name, content) {
+        if (idx < 0 || idx >= FS_MAX_FILES) return false;
+        const buf = new Uint8Array(512);
+        for (let i = 0; i < Math.min(name.length, FS_NAME_LEN - 1); i++) buf[i] = name.charCodeAt(i);
+        for (let i = 0; i < Math.min(content.length, FS_DATA_LEN - 1); i++) {
+            buf[FS_NAME_LEN + i] = content.charCodeAt(i);
+        }
+        for (let i = 0; i < 512; i++) Memory.writeByte(0x4000 + i, buf[i]);
+        try {
+            Disk.writeSector(FS_START_SECTOR + idx, 0x4000);
+            return true;
+        } catch (e) { return false; }
+    }
+
+    function fsDeleteFile(idx) {
+        if (idx < 0 || idx >= FS_MAX_FILES) return false;
+        for (let i = 0; i < 512; i++) Memory.writeByte(0x4000 + i, 0);
+        try {
+            Disk.writeSector(FS_START_SECTOR + idx, 0x4000);
+            return true;
+        } catch (e) { return false; }
+    }
+
+    function fsListFiles() {
+        const list = [];
+        for (let i = 0; i < FS_MAX_FILES; i++) {
+            const f = fsReadFile(i);
+            if (f) list.push(f);
+        }
+        return list;
+    }
+
+    // ─── 汇编器（简版：只支持 C2 指令集的一部分）───
+    // 每行一条指令
+    // 支持格式：MOV R0, 5 / ADD R0, R1 / INT 0x10 / HLT 等
+    const OPCODES = {
+        'NOP':0x00,'HLT':0x01,
+        'MOV':0x10,'ADD':0x20,'SUB':0x22,'MUL':0x24,'DIV':0x25,
+        'AND':0x30,'OR':0x31,'XOR':0x32,'NOT':0x33,
+        'CMP':0x40,
+        'JMP':0x50,'JZ':0x51,'JNZ':0x52,'JC':0x53,'JNC':0x54,'JN':0x55,
+        'PUSH':0x60,'POP':0x61,'CALL':0x62,'RET':0x63,
+        'IN':0x70,'OUT':0x71,'INT':0x72,'IRET':0x73,'STI':0x74,'CLI':0x75
+    };
+
+    /**
+     * 汇编一行
+     * 返回 { ok, bytes, error }
+     */
+    function assembleLine(line, labels, pc) {
+        line = line.replace(/;.*$/, '').trim();   // 去掉注释
+        if (!line) return { ok: true, bytes: new Uint8Array(0) };   // 空行
+
+        // 标签：name:
+        let m = line.match(/^(\w+):\s*(.*)$/);
+        if (m) {
+            labels[m[1]] = pc;
+            line = m[2].trim();
+            if (!line) return { ok: true, bytes: new Uint8Array(0) };
+        }
+
+        // 指令解析
+        const parts = line.split(/\s+/);
+        const mnemonic = parts[0].toUpperCase();
+        const args = line.slice(mnemonic.length).trim().split(',').map(s => s.trim());
+
+        const bytes = new Uint8Array(4);
+        let opcode = OPCODES[mnemonic];
+        if (opcode === undefined) {
+            return { ok: false, error: '未知指令: ' + mnemonic };
+        }
+        bytes[0] = opcode;
+
+        function reg(s) {
+            const m = s.match(/^R(\d+)$/i);
+            if (!m) return -1;
+            return parseInt(m[1]);
+        }
+        function imm(s) {
+            if (s.startsWith('0x') || s.startsWith('0X')) return parseInt(s.substring(2), 16);
+            // 标签
+            if (labels[s] !== undefined) return labels[s];
+            // 数字
+            const n = parseInt(s);
+            if (isNaN(n)) return null;
+            return n;
+        }
+
+        try {
+            if (mnemonic === 'NOP' || mnemonic === 'HLT' || mnemonic === 'RET' ||
+                mnemonic === 'IRET' || mnemonic === 'STI' || mnemonic === 'CLI') {
+                // 无参数
+            }
+            else if (mnemonic === 'MOV' || mnemonic === 'ADD' || mnemonic === 'SUB' ||
+                     mnemonic === 'MUL' || mnemonic === 'DIV' || mnemonic === 'AND' ||
+                     mnemonic === 'OR' || mnemonic === 'XOR' || mnemonic === 'CMP') {
+                // MOV Rd, Rs 或 MOV Rd, #imm
+                const rd = reg(args[0]);
+                if (rd < 0) return { ok: false, error: '非法目标寄存器: ' + args[0] };
+                const rs = reg(args[1]);
+                if (rs >= 0) {
+                    // 寄存器-寄存器
+                    bytes[1] = rd;
+                    bytes[2] = rs;
+                } else {
+                    // 立即数
+                    const v = imm(args[1]);
+                    if (v === null) return { ok: false, error: '非法立即数: ' + args[1] };
+                    bytes[0] = opcode + 1;   // _RI 变体
+                    bytes[1] = rd;
+                    bytes[2] = (v >> 8) & 0xFF;
+                    bytes[3] = v & 0xFF;
+                }
+            }
+            else if (mnemonic === 'NOT' || mnemonic === 'PUSH' || mnemonic === 'POP') {
+                const r = reg(args[0]);
+                if (r < 0) return { ok: false, error: '非法寄存器: ' + args[0] };
+                bytes[1] = r;
+            }
+            else if (mnemonic === 'JMP' || mnemonic === 'JZ' || mnemonic === 'JNZ' ||
+                     mnemonic === 'JC' || mnemonic === 'JNC' || mnemonic === 'JN' ||
+                     mnemonic === 'CALL') {
+                const v = imm(args[0]);
+                if (v === null) return { ok: false, error: '非法地址: ' + args[0] };
+                bytes[2] = (v >> 8) & 0xFF;
+                bytes[3] = v & 0xFF;
+            }
+            else if (mnemonic === 'INT') {
+                const v = imm(args[0]);
+                if (v === null) return { ok: false, error: '非法中断号: ' + args[0] };
+                bytes[1] = v & 0xFF;
+            }
+            else if (mnemonic === 'IN') {
+                const rd = reg(args[0]);
+                const p = imm(args[1]);
+                if (rd < 0 || p === null) return { ok: false, error: 'IN 参数错' };
+                bytes[1] = rd;
+                bytes[2] = p & 0xFF;
+            }
+            else if (mnemonic === 'OUT') {
+                const p = imm(args[0]);
+                const rs = reg(args[1]);
+                if (p === null || rs < 0) return { ok: false, error: 'OUT 参数错' };
+                bytes[1] = p & 0xFF;
+                bytes[2] = rs;
+            }
+            else {
+                return { ok: false, error: '不支持的指令: ' + mnemonic };
+            }
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
+
+        return { ok: true, bytes: bytes };
+    }
+
+    /**
+     * 汇编整个程序
+     * 返回 { ok, bytes, errors, labels }
+     */
+    function assembleProgram(src) {
+        const lines = src.split('\n');
+        const labels = {};
+        const errors = [];
+        let pc = 0x0100;   // 程序加载到 0x0100
+
+        // 第一遍：收集标签
+        for (const line of lines) {
+            const m = line.match(/^\s*(\w+):/);
+            if (m) {
+                labels[m[1]] = pc;
+            }
+            // 跳过空行和纯标签行
+            const code = line.replace(/;.*$/, '').replace(/^\s*\w+:\s*/, '').trim();
+            if (code) pc += 4;
+        }
+
+        // 第二遍：生成字节
+        const program = [];
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const code = line.replace(/;.*$/, '').replace(/^\s*\w+:\s*/, '').trim();
+            if (!code) continue;
+
+            const r = assembleLine(line, labels, program.length * 4 + 0x0100);
+            if (!r.ok) {
+                errors.push(line + '  →  ' + r.error);
+            } else {
+                program.push(...r.bytes);
+            }
+        }
+
+        return {
+            ok: errors.length === 0,
+            bytes: new Uint8Array(program),
+            errors: errors,
+            labels: labels
+        };
+    }
+
+    // ═══ 底层绘图 ═══
+    function px(x, y, c) { Display.putPixel(x|0, y|0, c); }
+    function fill(x, y, w, h, c) { Display.fillRect(x|0, y|0, w|0, h|0, c); }
+    function hline(x1, x2, y, c) { Display.drawHLine(x1|0, x2|0, y|0, c); }
+    function vline(x, y1, y2, c) { Display.drawVLine(x|0, y1|0, y2|0, c); }
+    function text(x, y, s, c) {
+        let cx = x;
+        for (let i = 0; i < s.length; i++) {
+            if (cx + 8 > W) break;
+            Display.drawCharGfx(cx, y, s.charCodeAt(i), c);
+            cx += 8;
+        }
+    }
+
+    // ═══ 窗口工厂 ═══
+    function makeWin(opts) {
+        return Object.assign({
+            id: nextWinId++,
+            x: 10, y: 15, w: 100, h: 70,
+            title: 'Window',
+            visible: true,
+            type: 'lines',
+            lines: [],
+            buffer: '',
+            calcDisplay: '0', calcOp: null, calcAcc: 0,
+            paintBuf: null, paintColor: C_RED,
+            termLines: ['JS-H86 C2 Terminal', 'Type "help"', ''], termInput: '',
+            // Files
+            fsFiles: null, fsSelected: -1,
+            // Editor
+            editorText: '',
+            editorErrors: [],
+            editorStatus: '',
+            buttons: null,
+            hoverBtn: -1
+        }, opts);
+    }
+
+    function createWin(opts) {
+        if (windows.length >= 4) return null;
+        const w = makeWin(opts);
+        if (w.type === 'paint') {
+            const cw = w.w - 4, ch = w.h - 22;
+            w.paintBuf = new Uint8Array(cw * ch);
+        }
+        if (w.type === 'files') {
+            w.fsFiles = fsListFiles();
+        }
+        if (w.type === 'editor') {
+            if (!w.editorText) {
+                w.editorText = '; C2 Assembly\nMOV R0, 5\nMOV R1, 3\nADD R0, R1\nINT 0x10\nHLT\n';
+            }
+        }
+        windows.push(w);
+        activeWinId = w.id;
+        return w;
+    }
+
+    function findWin(id) {
+        for (const w of windows) if (w.id === id) return w;
+        return null;
+    }
+    function closeWin(id) {
+        const idx = windows.findIndex(w => w.id === id);
+        if (idx >= 0) {
+            windows.splice(idx, 1);
+            if (activeWinId === id) activeWinId = windows.length > 0 ? windows[windows.length-1].id : 0;
+        }
+    }
+    function bringToFront(id) {
+        const idx = windows.findIndex(w => w.id === id);
+        if (idx >= 0) {
+            const [w] = windows.splice(idx, 1);
+            windows.push(w);
+            activeWinId = id;
+        }
+    }
+
+    function hitTest(mx, my) {
+        if (my < MENUBAR_H) return { id: 0, region: 'menu' };
+        for (let i = windows.length - 1; i >= 0; i--) {
+            const w = windows[i];
+            if (!w.visible) continue;
+            if (mx >= w.x && mx < w.x + w.w && my >= w.y && my < w.y + w.h) {
+                const cbx = w.x + w.w - 8, cby = w.y + 2;
+                if (mx >= cbx && mx < cbx + 6 && my >= cby && my < cby + 6) return { id: w.id, region: 'close' };
+                if (my < w.y + 10) return { id: w.id, region: 'title' };
+                return { id: w.id, region: 'body' };
+            }
+        }
+        return { id: 0, region: 'none' };
+    }
+
+    // ═══ 绘制 ═══
+    function drawDesktop() {
+        fill(0, 0, W, H, C_BLUE);
+        for (let i = 0; i < W; i += 16) px(i, H - 1, C_DGRAY);
+    }
+
+    function drawMenuBar() {
+        fill(0, 0, W, MENUBAR_H, C_BLACK);
+        text(2, 1, 'C2 GShell', C_YELLOW);
+        const sysX = 70;
+        text(sysX, 1, 'System', C_WHITE);
+        if (menuOpen) {
+            fill(sysX - 2, 0, 6 * 8 + 4, MENUBAR_H, C_LBLUE);
+            text(sysX, 1, 'System', C_BLACK);
+        }
+    }
+
+    function drawMenuDropdown() {
+        if (!menuOpen) return;
+        const dx = 68, dy = MENUBAR_H, dw = 100, itemH = 10;
+        const dh = MENU_ITEMS.length * itemH + 2;
+        fill(dx + 1, dy + 1, dw, dh, C_DGRAY);
+        fill(dx, dy, dw, dh, C_GRAY);
+        hline(dx, dx + dw - 1, dy, C_BLACK);
+        hline(dx, dx + dw - 1, dy + dh - 1, C_BLACK);
+        vline(dx, dy, dy + dh - 1, C_BLACK);
+        vline(dx + dw - 1, dy, dy + dh - 1, C_BLACK);
+        for (let i = 0; i < MENU_ITEMS.length; i++) {
+            const iy = dy + 1 + i * itemH;
+            if (MENU_ITEMS[i] === '---') {
+                hline(dx + 2, dx + dw - 3, iy + itemH/2, C_DGRAY);
+                continue;
+            }
+            if (menuSelection === i) {
+                fill(dx + 1, iy, dw - 2, itemH, C_BLUE);
+                text(dx + 4, iy + 1, MENU_ITEMS[i], C_WHITE);
+            } else {
+                text(dx + 4, iy + 1, MENU_ITEMS[i], C_BLACK);
+            }
+        }
+    }
+
+    function drawWindowBorder(win) {
+        const { x, y, w, h } = win;
+        const isActive = (win.id === activeWinId);
+        const titleColor = isActive ? C_BLUE : C_DGRAY;
+        const titleText = isActive ? C_WHITE : C_GRAY;
+        fill(x + 1, y + 1, w, h, C_DGRAY);
+        fill(x, y, w, h, C_GRAY);
+        hline(x, x + w - 1, y, C_BLACK);
+        hline(x, x + w - 1, y + h - 1, C_BLACK);
+        vline(x, y, y + h - 1, C_BLACK);
+        vline(x + w - 1, y, y + h - 1, C_BLACK);
+        fill(x + 1, y + 1, w - 2, 9, titleColor);
+        text(x + 3, y + 2, win.title, titleText);
+        const cbx = x + w - 8, cby = y + 2;
+        fill(cbx, cby, 6, 6, C_RED);
+        px(cbx + 1, cby + 1, C_WHITE); px(cbx + 2, cby + 2, C_WHITE);
+        px(cbx + 3, cby + 3, C_WHITE); px(cbx + 4, cby + 4, C_WHITE);
+        px(cbx + 4, cby + 1, C_WHITE); px(cbx + 3, cby + 2, C_WHITE);
+        px(cbx + 2, cby + 3, C_WHITE); px(cbx + 1, cby + 4, C_WHITE);
+    }
+
+    function drawWindowContent(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 3, padY = y + 12;
+
+        if (win.type === 'lines' || win.type === 'notepad') {
+            const maxW = w - 6, maxH = h - 15;
+            const cols = Math.floor(maxW / 8), rows = Math.floor(maxH / 8);
+            const lines = win.type === 'notepad' ? win.buffer.split('\n') : win.lines;
+            const showLines = lines.slice(-rows);
+            for (let i = 0; i < showLines.length; i++) {
+                let line = showLines[i];
+                if (line.length > cols) line = line.slice(-cols);
+                text(padX, padY + i * 8, line, C_BLACK);
+            }
+            if (win.type === 'notepad' && win.id === activeWinId && cursorVisible) {
+                const lastLine = lines[lines.length - 1] || '';
+                const curLineIdx = lines.length - 1;
+                if (curLineIdx < rows) {
+                    const cx = padX + Math.min(lastLine.length, cols) * 8;
+                    const cy = padY + curLineIdx * 8;
+                    fill(cx, cy + 7, 6, 2, C_BLACK);
+                }
+            }
+        } else if (win.type === 'calculator') {
+            drawCalculator(win);
+        } else if (win.type === 'paint') {
+            drawPaint(win);
+        } else if (win.type === 'terminal') {
+            drawTerminal(win);
+        } else if (win.type === 'files') {
+            drawFiles(win);
+        } else if (win.type === 'editor') {
+            drawEditor(win);
+        }
+    }
+
+    function drawCalculator(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 3, padY = y + 12;
+        const dispW = w - 6;
+        fill(padX, padY, dispW, 12, C_BLACK);
+        text(padX + 2, padY + 2, win.calcDisplay, C_LGREEN);
+        if (!win.buttons) {
+            const btnW = Math.floor((w - 8) / 4), btnH = 10;
+            const labels = [
+                ['C','CE','←','/'],
+                ['7','8','9','*'],
+                ['4','5','6','-'],
+                ['1','2','3','+'],
+                ['0','.','=','=']
+            ];
+            win.buttons = [];
+            for (let r = 0; r < 5; r++) for (let c = 0; c < 4; c++) {
+                win.buttons.push({
+                    x: padX + c * btnW,
+                    y: padY + 16 + r * (btnH + 1),
+                    w: btnW - 1, h: btnH, label: labels[r][c]
+                });
+            }
+        }
+        for (let i = 0; i < win.buttons.length; i++) {
+            const b = win.buttons[i];
+            const isHover = (pressedItem && pressedItem.winId === win.id && pressedItem.itemId === i);
+            fill(b.x, b.y, b.w, b.h, isHover ? C_LBLUE : C_GRAY);
+            hline(b.x, b.x + b.w - 1, b.y, C_BLACK);
+            hline(b.x, b.x + b.w - 1, b.y + b.h - 1, C_BLACK);
+            vline(b.x, b.y, b.y + b.h - 1, C_BLACK);
+            vline(b.x + b.w - 1, b.y, b.y + b.h - 1, C_BLACK);
+            text(b.x + Math.max(1, Math.floor((b.w - b.label.length*8)/2)), b.y + 1, b.label, C_BLACK);
+        }
+    }
+
+    function drawPaint(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 2, padY = y + 12;
+        const cw = w - 4, ch = h - 22;
+        fill(padX, padY, cw, ch, C_WHITE);
+        if (win.paintBuf) {
+            for (let py = 0; py < ch; py++) for (let pxi = 0; pxi < cw; pxi++) {
+                const c = win.paintBuf[py * cw + pxi];
+                if (c) px(padX + pxi, padY + py, c);
+            }
+        }
+        hline(padX, padX + cw - 1, padY - 1, C_BLACK);
+        hline(padX, padX + cw - 1, padY + ch, C_BLACK);
+        vline(padX - 1, padY, padY + ch - 1, C_BLACK);
+        vline(padX + cw, padY, padY + ch - 1, C_BLACK);
+        const palY = padY + ch + 2;
+        const colors = [C_BLACK, C_RED, C_GREEN, C_BLUE, C_YELLOW, C_WHITE];
+        for (let i = 0; i < colors.length; i++) {
+            const swX = padX + i * 10;
+            fill(swX, palY, 8, 6, colors[i]);
+            if (colors[i] === win.paintColor) {
+                hline(swX, swX + 7, palY - 1, C_BLACK);
+                hline(swX, swX + 7, palY + 6, C_BLACK);
+            }
+        }
+    }
+
+    function drawTerminal(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 2, padY = y + 12;
+        const maxW = w - 4, maxH = h - 15;
+        const rows = Math.floor((maxH - 10) / 8), cols = Math.floor(maxW / 8);
+        fill(padX, padY, maxW, maxH, C_BLACK);
+        const showLines = win.termLines.slice(-rows);
+        for (let i = 0; i < showLines.length; i++) {
+            let line = showLines[i];
+            if (line.length > cols) line = line.slice(-cols);
+            text(padX + 1, padY + 1 + i * 8, line, C_LGREEN);
+        }
+        const inputY = padY + maxH - 10;
+        text(padX + 1, inputY, '> ' + win.termInput, C_WHITE);
+        if (win.id === activeWinId && cursorVisible) {
+            fill(padX + 9 + win.termInput.length * 8, inputY + 7, 6, 2, C_WHITE);
+        }
+    }
+
+    function drawFiles(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 2, padY = y + 12;
+        const maxW = w - 4, maxH = h - 15;
+        fill(padX, padY, maxW, maxH, C_BLACK);
+        // 刷新列表
+        win.fsFiles = fsListFiles();
+        if (win.fsFiles.length === 0) {
+            text(padX + 4, padY + 4, '(no files)', C_GRAY);
+        } else {
+            for (let i = 0; i < win.fsFiles.length && i < 7; i++) {
+                const f = win.fsFiles[i];
+                const isSel = (i === win.fsSelected);
+                if (isSel) fill(padX + 1, padY + 1 + i * 9, maxW - 2, 9, C_BLUE);
+                text(padX + 3, padY + 2 + i * 9, '[' + i + '] ' + f.name, isSel ? C_WHITE : C_LGREEN);
+            }
+        }
+        // 底部提示
+        const hintY = padY + maxH - 9;
+        fill(padX, hintY, maxW, 9, C_DGRAY);
+        text(padX + 2, hintY + 1, 'N=New  D=Del  Enter=Open', C_WHITE);
+    }
+
+    function drawEditor(win) {
+        const { x, y, w, h } = win;
+        const padX = x + 2, padY = y + 12;
+        const maxW = w - 4, maxH = h - 22;
+        fill(padX, padY, maxW, maxH, C_BLACK);
+        // 显示文本
+        const lines = win.editorText.split('\n');
+        const rows = Math.floor(maxH / 8), cols = Math.floor(maxW / 8);
+        const showLines = lines.slice(-rows);
+        for (let i = 0; i < showLines.length; i++) {
+            let line = showLines[i];
+            if (line.length > cols) line = line.slice(-cols);
+            text(padX + 1, padY + 1 + i * 8, line, C_LGREEN);
+        }
+        // 光标
+        if (win.id === activeWinId && cursorVisible) {
+            const lastLine = lines[lines.length - 1] || '';
+            const curLineIdx = lines.length - 1;
+            if (curLineIdx < rows) {
+                const cx = padX + 1 + Math.min(lastLine.length, cols) * 8;
+                const cy = padY + 1 + curLineIdx * 8;
+                fill(cx, cy + 7, 6, 2, C_LGREEN);
+            }
+        }
+        // 底部状态栏
+        const statusY = padY + maxH;
+        fill(padX, statusY, maxW, 9, C_DGRAY);
+        text(padX + 2, statusY + 1, win.editorStatus || 'F5=Assemble&Run  Esc=Close', C_WHITE);
+    }
+
+    function drawCursor() {
+        const mx = Mouse.getX(), my = Mouse.getY();
+        px(mx, my, C_WHITE);
+        px(mx - 1, my, C_WHITE);
+        px(mx + 1, my, C_WHITE);
+        px(mx, my - 1, C_WHITE);
+        px(mx, my + 1, C_WHITE);
+    }
+
+    function drawAll() {
+        drawDesktop();
+        for (const w of windows) {
+            drawWindowBorder(w);
+            drawWindowContent(w);
+        }
+        drawMenuBar();
+        drawMenuDropdown();
+        drawCursor();
+    }
+
+    function tick() {
+        if (!running) return;
+        drawAll();
+        Display.render();
+        cursorBlink++;
+        if (cursorBlink % 15 === 0) cursorVisible = !cursorVisible;
+        rafId = setTimeout(tick, 50);
+    }
+
+    // ═══ 事件 ═══
+    function onMouseDown(mx, my, btn) {
+        if (!(btn & 1)) return;
+
+        if (my < MENUBAR_H) {
+            if (mx >= 68 && mx < 68 + 6 * 8) { menuOpen = !menuOpen; menuSelection = -1; }
+            else menuOpen = false;
+            return;
+        }
+
+        if (menuOpen) {
+            const dx = 68, dy = MENUBAR_H, dw = 100, itemH = 10;
+            const dh = MENU_ITEMS.length * itemH + 2;
+            if (mx >= dx && mx < dx + dw && my >= dy && my < dy + dh) {
+                const idx = Math.floor((my - dy - 1) / itemH);
+                if (idx >= 0 && idx < MENU_ITEMS.length && MENU_ITEMS[idx] !== '---') handleMenuItem(idx);
+                menuOpen = false;
+                return;
+            } else {
+                menuOpen = false;
+            }
+        }
+
+        const hit = hitTest(mx, my);
+        if (hit.id === 0) return;
+        bringToFront(hit.id);
+
+        if (hit.region === 'close') { closeWin(hit.id); return; }
+        if (hit.region === 'title') {
+            const w = findWin(hit.id);
+            if (w) { draggingWinId = w.id; dragOffsetX = mx - w.x; dragOffsetY = my - w.y; }
+            return;
+        }
+
+        const w = findWin(hit.id);
+        if (!w) return;
+
+        // Files 窗口：点击文件列表
+        if (w.type === 'files') {
+            const padX = w.x + 2, padY = w.y + 12;
+            const localY = my - padY;
+            if (localY >= 0 && localY < 7 * 9) {
+                const idx = Math.floor(localY / 9);
+                if (idx >= 0 && idx < w.fsFiles.length) {
+                    w.fsSelected = idx;
+                    // 双击打开？简化：单击选中，回车打开
+                }
+            }
+        }
+
+        handleContentClick(w, mx, my, true);
+    }
+
+    function onMouseMove(mx, my) {
+        if (draggingWinId) {
+            const w = findWin(draggingWinId);
+            if (w) {
+                w.x = Math.max(0, Math.min(W - w.w, mx - dragOffsetX));
+                w.y = Math.max(MENUBAR_H, Math.min(H - 10, my - dragOffsetY));
+            }
+            return;
+        }
+        if (menuOpen) {
+            const dx = 68, dy = MENUBAR_H, dw = 100, itemH = 10;
+            const dh = MENU_ITEMS.length * itemH + 2;
+            if (mx >= dx && mx < dx + dw && my >= dy && my < dy + dh) {
+                const idx = Math.floor((my - dy - 1) / itemH);
+                menuSelection = (idx >= 0 && idx < MENU_ITEMS.length) ? idx : -1;
+            } else menuSelection = -1;
+        }
+        const hit = hitTest(mx, my);
+        if (hit.id > 0) {
+            const w = findWin(hit.id);
+            if (w) handleContentClick(w, mx, my, false);
+        }
+    }
+
+    function onMouseUp(mx, my, btn) {
+        if (draggingWinId) { draggingWinId = 0; pressedItem = null; return; }
+        if (pressedItem) {
+            const w = findWin(pressedItem.winId);
+            if (w) handleContentClick(w, mx, my, 'up');
+            pressedItem = null;
+        }
+    }
+
+    function handleContentClick(w, mx, my, isDown) {
+        if (w.type === 'calculator') {
+            if (!w.buttons) return;
+            for (let i = 0; i < w.buttons.length; i++) {
+                const b = w.buttons[i];
+                if (mx >= b.x && mx < b.x + b.w && my >= b.y && my < b.y + b.h) {
+                    if (isDown === true) { pressedItem = { winId: w.id, itemId: i }; calcInput(w, b.label); }
+                    return;
+                }
+            }
+        } else if (w.type === 'paint') {
+            const padX = w.x + 2, padY = w.y + 12;
+            const cw = w.w - 4, ch = w.h - 22;
+            const palY = padY + ch + 2;
+            if (my >= palY && my < palY + 6) {
+                const colors = [C_BLACK, C_RED, C_GREEN, C_BLUE, C_YELLOW, C_WHITE];
+                const idx = Math.floor((mx - padX) / 10);
+                if (idx >= 0 && idx < colors.length) { w.paintColor = colors[idx]; return; }
+            }
+            if (mx >= padX && mx < padX + cw && my >= padY && my < padY + ch) {
+                if (isDown === true) pressedItem = { winId: w.id, itemId: 'paint' };
+                const pxi = mx - padX, pyi = my - padY;
+                if (pxi >= 0 && pxi < cw && pyi >= 0 && pyi < ch) {
+                    w.paintBuf[pyi * cw + pxi] = w.paintColor;
+                }
+            }
+        }
+    }
+
+    function calcInput(w, label) {
+        const d = w.calcDisplay;
+        if (label === 'C') { w.calcDisplay = '0'; w.calcOp = null; w.calcAcc = 0; return; }
+        if (label === 'CE') { w.calcDisplay = '0'; return; }
+        if (label === '←') { w.calcDisplay = d.length > 1 ? d.slice(0, -1) : '0'; return; }
+        if ('+-*/'.includes(label)) {
+            w.calcAcc = parseFloat(d) || 0;
+            w.calcOp = label;
+            w.calcDisplay = '0';
+            return;
+        }
+        if (label === '=') {
+            const b = parseFloat(d) || 0;
+            let r = w.calcAcc;
+            switch (w.calcOp) {
+                case '+': r += b; break;
+                case '-': r -= b; break;
+                case '*': r *= b; break;
+                case '/': r = b === 0 ? 0 : r / b; break;
+                default: r = b;
+            }
+            let s = (Math.round(r * 100) / 100).toString();
+            if (s.length > 8) s = s.slice(0, 8);
+            w.calcDisplay = s;
+            w.calcOp = null; w.calcAcc = 0;
+            return;
+        }
+        if (label === '.') { if (!d.includes('.')) w.calcDisplay = d + '.'; return; }
+        if (d === '0') w.calcDisplay = label;
+        else if (d.length < 8) w.calcDisplay = d + label;
+    }
+
+    function termExec(w, cmd) {
+        cmd = cmd.trim();
+        w.termLines.push('> ' + cmd);
+        if (cmd === '') return;
+        if (cmd === 'help') {
+            w.termLines.push('Commands: help, clear, echo X, ver, ls, cat N');
+        } else if (cmd === 'clear') {
+            w.termLines = [];
+        } else if (cmd.startsWith('echo ')) {
+            w.termLines.push(cmd.slice(5));
+        } else if (cmd === 'ver') {
+            w.termLines.push('JS-H86 C2 v2.1');
+        } else if (cmd === 'ls') {
+            const files = fsListFiles();
+            if (files.length === 0) w.termLines.push('(no files)');
+            else files.forEach((f, i) => w.termLines.push('[' + i + '] ' + f.name));
+        } else if (cmd.startsWith('cat ')) {
+            const idx = parseInt(cmd.slice(4));
+            const f = fsReadFile(idx);
+            if (f) w.termLines.push(f.content);
+            else w.termLines.push('No such file');
+        } else {
+            w.termLines.push('Unknown: ' + cmd);
+        }
+    }
+
+    // ─── Files 操作 ───
+    function filesNew(w) {
+        const name = prompt('文件名:', 'file' + (w.fsFiles.length + 1) + '.txt');
+        if (!name) return;
+        // 找空槽位
+        for (let i = 0; i < FS_MAX_FILES; i++) {
+            if (!fsReadFile(i)) {
+                fsWriteFile(i, name, '');
+                w.fsFiles = fsListFiles();
+                w.fsSelected = w.fsFiles.findIndex(f => f.name === name);
+                return;
+            }
+        }
+        alert('磁盘已满');
+    }
+    function filesDelete(w) {
+        if (w.fsSelected < 0 || w.fsSelected >= w.fsFiles.length) return;
+        const f = w.fsFiles[w.fsSelected];
+        fsDeleteFile(f.idx);
+        w.fsFiles = fsListFiles();
+        w.fsSelected = -1;
+    }
+    function filesOpen(w) {
+        if (w.fsSelected < 0 || w.fsSelected >= w.fsFiles.length) return;
+        const f = w.fsFiles[w.fsSelected];
+        // 打开到 Editor
+        createWin({ x: 15, y: 18, w: 130, h: 90, title: f.name, type: 'editor', editorText: f.content });
+    }
+
+    // ─── Editor 操作 ───
+    function editorRun(w) {
+        const result = assembleProgram(w.editorText);
+        if (!result.ok) {
+            w.editorStatus = 'ERROR: ' + result.errors[0];
+            return;
+        }
+        // 加载到 0x0100
+        Memory.writeBlock(0x0100, result.bytes);
+        CPU.setPC(0x0100);
+        CPU.setState('RUNNING');
+        const r = CPU.run(1000);
+        w.editorStatus = 'OK: ' + result.bytes.length + 'B, exec ' + r.executed + ' instr';
+        // 保存到磁盘
+        // 找同名文件，找不到就写入第一个空槽位
+        for (let i = 0; i < FS_MAX_FILES; i++) {
+            const f = fsReadFile(i);
+            if (f && f.name === w.title) {
+                fsWriteFile(i, w.title, w.editorText);
+                break;
+            }
+        }
+    }
+
+    // ─── 菜单 ───
+    function handleMenuItem(idx) {
+        const item = MENU_ITEMS[idx];
+        switch (item) {
+            case 'New Notepad': createWin({ x: 20, y: 20, w: 100, h: 70, title: 'Notepad', type: 'notepad', buffer: '' }); break;
+            case 'Calculator': createWin({ x: 20, y: 20, w: 70, h: 80, title: 'Calc', type: 'calculator' }); break;
+            case 'Paint': createWin({ x: 20, y: 20, w: 100, h: 80, title: 'Paint', type: 'paint' }); break;
+            case 'Terminal': createWin({ x: 15, y: 18, w: 120, h: 80, title: 'Terminal', type: 'terminal' }); break;
+            case 'Files': createWin({ x: 15, y: 18, w: 120, h: 80, title: 'Files', type: 'files' }); break;
+            case 'Editor': createWin({ x: 10, y: 15, w: 140, h: 95, title: 'Editor', type: 'editor' }); break;
+            case 'Close All': windows = []; activeWinId = 0; break;
+            case 'About': createWin({ x: 30, y: 25, w: 100, h: 60, title: 'About', type: 'lines',
+                lines: ['JS-H86 C2 v2.1', 'Graphical Shell', 'Files + Assembler', '(c) Snxth 2026'] }); break;
+            case 'Exit': exit(); break;
+        }
+    }
+
+    // ─── 键盘 ───
+    function onKeyDown(e) {
+        const w = findWin(activeWinId);
+        if (!w) return;
+
+        if (w.type === 'notepad') {
+            if (e.key === 'Backspace') { w.buffer = w.buffer.slice(0, -1); e.preventDefault(); return; }
+            if (e.key === 'Enter') { w.buffer += '\n'; e.preventDefault(); return; }
+            if (e.key.length === 1 && w.buffer.length < 500) { w.buffer += e.key; e.preventDefault(); }
+        } else if (w.type === 'terminal') {
+            if (e.key === 'Backspace') { w.termInput = w.termInput.slice(0, -1); e.preventDefault(); return; }
+            if (e.key === 'Enter') { termExec(w, w.termInput); w.termInput = ''; e.preventDefault(); return; }
+            if (e.key.length === 1 && w.termInput.length < 30) { w.termInput += e.key; e.preventDefault(); }
+        } else if (w.type === 'calculator') {
+            if (e.key >= '0' && e.key <= '9') { calcInput(w, e.key); e.preventDefault(); }
+            else if ('+-*/'.includes(e.key)) { calcInput(w, e.key); e.preventDefault(); }
+            else if (e.key === 'Enter' || e.key === '=') { calcInput(w, '='); e.preventDefault(); }
+            else if (e.key === 'Backspace') { calcInput(w, '←'); e.preventDefault(); }
+            else if (e.key === 'Escape') { calcInput(w, 'C'); e.preventDefault(); }
+        } else if (w.type === 'files') {
+            if (e.key === 'n' || e.key === 'N') { filesNew(w); e.preventDefault(); }
+            else if (e.key === 'd' || e.key === 'D') { filesDelete(w); e.preventDefault(); }
+            else if (e.key === 'Enter') { filesOpen(w); e.preventDefault(); }
+        } else if (w.type === 'editor') {
+            if (e.key === 'F5') { editorRun(w); e.preventDefault(); return; }
+            if (e.key === 'Backspace') { w.editorText = w.editorText.slice(0, -1); e.preventDefault(); return; }
+            if (e.key === 'Enter') { w.editorText += '\n'; e.preventDefault(); return; }
+            if (e.key === 'Tab') { w.editorText += '  '; e.preventDefault(); return; }
+            if (e.key.length === 1 && w.editorText.length < 800) { w.editorText += e.key; e.preventDefault(); }
+        }
+    }
+
+    // ─── 启动/退出 ───
+    function boot() {
+        if (running) return;
+        Memory.clear();
+        CPU.reset();
+        Display.setMode(Display.MODE_GFX);
+        Display.clearGfx(C_BLUE);
+
+        if (!document.getElementById('c1-display-canvas')) {
+            if (typeof Terminal._openDisplayWindow === 'function') Terminal._openDisplayWindow();
+        }
+
+        running = true;
+        cursorBlink = 0; cursorVisible = true;
+        nextWinId = 1; activeWinId = 0; draggingWinId = 0;
+        menuOpen = false; menuSelection = -1; pressedItem = null;
+        windows = [];
+
+        // 初始 System Info
+        createWin({
+            x: 30, y: 20, w: 100, h: 70, title: 'System Info', type: 'lines',
+            lines: ['JS-H86 C2 v2.1', 'RAM: 64 KB', 'Disk: 1 MB',
+                    'Files: ' + fsListFiles().length, 'Click "System"!']
+        });
+
+        bindCanvasInput();
+        tick();
+
+        Terminal.printLine('GShell2 v2.1 已启动', 'line-success');
+        Terminal.printLine('  菜单：Notepad / Calculator / Paint / Terminal / Files / Editor', 'line-info');
+        Terminal.printLine('  Files 窗口：N=新建 D=删除 Enter=打开', 'line-info');
+        Terminal.printLine('  Editor 窗口：写 C2 汇编，F5 编译运行', 'line-info');
+        Terminal.newLine();
+    }
+
+    function bindCanvasInput() {
+        const canvas = document.getElementById('c1-display-canvas');
+        if (!canvas || canvas._gshell2_bound) return;
+        canvas._gshell2_bound = true;
+
+        function toC1(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) / rect.width * W);
+            const y = Math.floor((e.clientY - rect.top) / rect.height * H);
+            return { x: Math.max(0, Math.min(W - 1, x)), y: Math.max(0, Math.min(H - 1, y)) };
+        }
+
+        canvas.addEventListener('mousedown', function(e) {
+            const p = toC1(e);
+            let btn = e.button === 0 ? 1 : (e.button === 2 ? 2 : 0);
+            onMouseDown(p.x, p.y, btn);
+            Mouse.setPosition(p.x, p.y);
+            Mouse.setButtons(btn);
+            e.preventDefault();
+        });
+
+        canvas.addEventListener('mousemove', function(e) {
+            const p = toC1(e);
+            onMouseMove(p.x, p.y);
+            Mouse.setPosition(p.x, p.y);
+            if (pressedItem) {
+                const w = findWin(pressedItem.winId);
+                if (w && w.type === 'paint' && pressedItem.itemId === 'paint') {
+                    handleContentClick(w, p.x, p.y, true);
+                }
+            }
+        });
+
+        canvas.addEventListener('mouseup', function(e) {
+            const p = toC1(e);
+            onMouseUp(p.x, p.y, 0);
+            Mouse.setButtons(0);
+        });
+
+        canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+        if (!window._gshell2_key_bound) {
+            window._gshell2_key_bound = true;
+            window.addEventListener('keydown', function(e) {
+                if (!running) return;
+                if (e.key === 'Escape' && !findWin(activeWinId)) { exit(); e.preventDefault(); return; }
+                onKeyDown(e);
+            });
+        }
+    }
+
+    function exit() {
+        running = false;
+        if (rafId) { clearTimeout(rafId); rafId = null; }
+        Display.setMode(Display.MODE_TEXT);
+        Display.clearText();
+        Display.setCursor(0, 0);
+        const msg = 'GShell2 exited.';
+        for (let i = 0; i < msg.length; i++) Display.putCharAtCursor(msg[i]);
+        Terminal.printLine('[GShell2] 退出，切回文本模式。', 'line-success');
+        Terminal.newLine();
+    }
+
+    return {
+        boot: boot,
+        exit: exit,
+        isRunning: function() { return running; },
+        listWindows: function() { return windows.slice(); }
+    };
+})();
+/* ═══════════════════════════════════════════════════════════
+   GShell2 键盘焦点锁定补丁
+   - GShell2 运行时：终端输入框失焦 + 禁止抢焦点
+   - GShell2 退出时：恢复终端焦点
+   - 同时清空 C1 键盘缓冲区，避免残留按键污染
+   ═══════════════════════════════════════════════════════════ */
+(function() {
+
+    window._gshell2FocusGuard = false;
+    let lastRunning = false;
+
+    // 捕获阶段拦截 input-field 的聚焦
+    const el = document.getElementById('input-field');
+    if (el) {
+        el.addEventListener('focus', function() {
+            if (window._gshell2FocusGuard) {
+                el.blur();
+            }
+        }, true);
+    }
+
+    // 捕获阶段拦截所有 click：GShell2 运行时，点 input-field 无效
+    document.addEventListener('click', function(e) {
+        if (!window._gshell2FocusGuard) return;
+        if (e.target && e.target.id === 'input-field') {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
+
+    // 轮询 GShell2 状态
+    setInterval(function() {
+        if (typeof GShell2 === 'undefined') return;
+        const isRunning = GShell2.isRunning();
+        if (isRunning && !lastRunning) {
+            window._gshell2FocusGuard = true;
+            if (el) el.blur();
+            if (typeof Keyboard !== 'undefined' && Keyboard.clear) Keyboard.clear();
+        } else if (!isRunning && lastRunning) {
+            window._gshell2FocusGuard = false;
+            if (typeof Keyboard !== 'undefined' && Keyboard.clear) Keyboard.clear();
+            if (el) el.focus();
+        }
+        lastRunning = isRunning;
+    }, 100);
+
+    console.log('✅ GShell2 键盘焦点锁定已启用');
+})();
+/* ═══════════════════════════════════════════════════════════
+   C2 磁盘持久化补丁 (localStorage 版)
+   - 自动在开机时恢复磁盘镜像
+   - 每次写入扇区后自动保存
+   ═══════════════════════════════════════════════════════════ */
+(function patchDiskPersistence() {
+    const STORAGE_KEY = 'c2_disk_image_v1';
+
+    // 1. 劫持 Disk.writeSector：写完自动保存
+    const _origWriteSector = Disk.writeSector;
+    Disk.writeSector = function(sector, memAddr) {
+        // 调用原函数
+        _origWriteSector.call(Disk, sector, memAddr);
+        
+        // 异步保存，避免卡死主线程
+        setTimeout(() => {
+            try {
+                // 只取有内容的扇区（优化存储）
+                const img = Disk.getImage();
+                // 把 Uint8Array 转成 Base64 字符串存，比 JSON 体积小很多
+                let binary = '';
+                const len = img.byteLength;
+                // 分块转，防止爆栈
+                for (let i = 0; i < len; i += 8192) {
+                    binary += String.fromCharCode.apply(null, img.subarray(i, i + 8192));
+                }
+                const b64 = btoa(binary);
+                localStorage.setItem(STORAGE_KEY, b64);
+            } catch (e) {
+                console.warn('磁盘持久化失败 (可能空间不足):', e.message);
+                // 如果存不下，提示用户
+                if (e.name === 'QuotaExceededError') {
+                    showToast('⚠️ 磁盘存满了！请清理或减少文件。');
+                }
+            }
+        }, 10);
+    };
+
+    // 2. 开机时自动加载
+    // 劫持 Machine.boot 或者利用 DOMContentLoaded
+    // 因为 Machine.boot 在 DOMContentLoaded 时执行，我们延迟一点加载
+    window.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            try {
+                const b64 = localStorage.getItem(STORAGE_KEY);
+                if (b64) {
+                    const binary = atob(b64);
+                    const len = binary.length;
+                    const arr = new Uint8Array(1048576);
+                    for (let i = 0; i < len; i++) {
+                        arr[i] = binary.charCodeAt(i);
+                    }
+                    // 加载进内存
+                    const img = Disk.getImage();
+                    img.set(arr);
+                    console.log('✅ C2 磁盘镜像已从本地恢复');
+                }
+            } catch (e) {
+                console.warn('磁盘镜像读取失败:', e);
+            }
+        }, 200); // 等 200ms，确保 Machine.boot 初始化完毕
+    });
+
+})();
+</script>
+
+</body>
+</html>

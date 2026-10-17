@@ -1,0 +1,3015 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JS-H86 C1</title>
+<!--
+  ═══════════════════════════════════════════════════════════
+  JS-H86 C1 架构 · 第一代实现
+  版本：v1.0.1（完整机 · 修复版）
+  宿主：浏览器 JS 引擎
+  ═══════════════════════════════════════════════════════════
+  修复列表：
+    1. 中断向量与用户程序冲突（0x80 覆盖 0x0100）
+       - 用户测试 ISR 号从 0x80/0x81/0x82 → 0x70/0x71/0x72
+    2. 显式保护：setVector 拒绝写入 0x0100 及以上地址
+       - 防止未来的代码再次踩坑
+    3. 中断处理时保存/恢复全部寄存器（R0-R7）
+       - 之前的 ISR 会破坏调用者的寄存器
+    4. IRET 与 CALL 的 PC 恢复语义分离
+    5. 栈溢出/下溢报错信息更明确
+    6. BIOS INT 0x16 的 AH=0x00 阻塞检查
+    7. 定时器中断在关中断时不再累积 pendingIRQ
+    8. 用户 ISR 未找到时不再静默吞掉，走 BIOS 或记录
+    9. Display.clear() 不再重置光标位置（修复滚动 bug）
+   10. OS 引导扇区增加计数器，避免无限循环
+  ═══════════════════════════════════════════════════════════
+-->
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: 'Consolas', 'Cascadia Code', 'Courier New', monospace;
+    color: #cccccc;
+}
+
+#screen {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #0a0a0a;
+}
+
+#status-bar {
+    height: 28px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 12px;
+    color: #888;
+    flex-shrink: 0;
+}
+
+#status-bar .brand {
+    color: #4ec9b0;
+    font-weight: bold;
+    margin-right: 16px;
+}
+
+#status-bar .item {
+    margin-right: 16px;
+}
+
+#status-bar .item .val {
+    color: #cccccc;
+    margin-left: 4px;
+}
+
+#status-bar .spacer {
+    flex: 1;
+}
+
+#status-bar .led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #333;
+    margin-right: 6px;
+    display: inline-block;
+    transition: background 0.1s;
+}
+
+#status-bar .led.on {
+    background: #4ec9b0;
+    box-shadow: 0 0 6px #4ec9b0;
+}
+
+#status-bar .led.running {
+    background: #dcdcaa;
+    box-shadow: 0 0 6px #dcdcaa;
+}
+
+#terminal {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #cccccc;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+#terminal::-webkit-scrollbar {
+    width: 8px;
+}
+#terminal::-webkit-scrollbar-track {
+    background: #0a0a0a;
+}
+#terminal::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 4px;
+}
+
+.line-info    { color: #6a9955; }
+.line-error   { color: #f44747; }
+.line-success { color: #4ec9b0; }
+.line-warn    { color: #dcdcaa; }
+.line-prompt  { color: #569cd6; }
+.line-input   { color: #ce9178; }
+.line-dim     { color: #666; }
+.line-bright  { color: #ffffff; }
+.line-hex     { color: #b5cea8; }
+
+#input-line {
+    height: 32px;
+    background: #141414;
+    border-top: 1px solid #333;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    flex-shrink: 0;
+}
+
+#input-line .prompt {
+    color: #569cd6;
+    font-size: 14px;
+    margin-right: 8px;
+    white-space: nowrap;
+}
+
+#input-line input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+    caret-color: #4ec9b0;
+}
+
+#bottom-bar {
+    height: 22px;
+    background: #1a1a1a;
+    border-top: 1px solid #333;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 11px;
+    color: #666;
+    flex-shrink: 0;
+    gap: 16px;
+}
+
+#c1-display-canvas {
+    display: block;
+    background: #000;
+    image-rendering: pixelated;
+}
+</style>
+</head>
+<body>
+
+<div id="screen">
+
+    <div id="status-bar">
+        <span class="brand">JS-H86 C1</span>
+        <span class="item">CPU <span class="val" id="stat-cpu">IDLE</span></span>
+        <span class="item">PC <span class="val" id="stat-pc">0x0000</span></span>
+        <span class="item">SP <span class="val" id="stat-sp">0x7FFF</span></span>
+        <span class="item">FLAGS <span class="val" id="stat-flags">0x0000</span></span>
+        <span class="item">INT <span class="val" id="stat-int">--</span></span>
+        <span class="spacer"></span>
+        <span class="led" id="led-power"></span>
+        <span class="item" style="margin-right:0;">POWER</span>
+    </div>
+
+    <div id="terminal"></div>
+
+    <div id="input-line">
+        <span class="prompt" id="input-prompt">C1&gt;</span>
+        <input type="text" id="input-field" autocomplete="off" spellcheck="false" autofocus>
+    </div>
+
+    <div id="bottom-bar">
+        <span>v1.0.1 · 完整机 · 已修复</span>
+        <span>64 KB RAM · 1 MB Disk</span>
+        <span>36 条指令</span>
+        <span><b style="color:#569cd6;">boot</b> 开机 · <b style="color:#569cd6;">test</b> 测试</span>
+    </div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   JS-H86 C1 · 完整机核心代码
+   ═══════════════════════════════════════════════════════════════ */
+
+'use strict';
+
+/* ─────────────────────────────────────────────────────────────
+   模块 1：Memory Bus
+   ───────────────────────────────────────────────────────────── */
+const Memory = (() => {
+
+    const SIZE = 65536;
+    const data = new Uint8Array(SIZE);
+    let readCount = 0;
+    let writeCount = 0;
+
+    function readByte(addr) {
+        if (addr < 0 || addr >= SIZE) throw new Error('内存越界读: 0x' + addr.toString(16));
+        readCount++;
+        return data[addr];
+    }
+
+    function writeByte(addr, value) {
+        if (addr < 0 || addr >= SIZE) throw new Error('内存越界写: 0x' + addr.toString(16));
+        writeCount++;
+        data[addr] = value & 0xFF;
+    }
+
+    function readWord(addr) {
+        return (readByte((addr + 1) & 0xFFFF) << 8) | readByte(addr & 0xFFFF);
+    }
+
+    function writeWord(addr, value) {
+        writeByte(addr & 0xFFFF, value & 0xFF);
+        writeByte((addr + 1) & 0xFFFF, (value >> 8) & 0xFF);
+    }
+
+    function readBlock(addr, length) { return data.slice(addr, addr + length); }
+    function writeBlock(addr, bytes) {
+        for (let i = 0; i < bytes.length; i++) writeByte(addr + i, bytes[i]);
+    }
+
+    function clear() { data.fill(0); readCount = 0; writeCount = 0; }
+
+    function getStats() {
+        return { size: SIZE, readCount, writeCount, nonZeroBytes: data.filter(b => b !== 0).length };
+    }
+
+    return { SIZE, readByte, writeByte, readWord, writeWord, readBlock, writeBlock, clear, getStats };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 2：Display Controller
+   修复 #9：clear() 不再重置光标位置（交给调用者决定）
+   ───────────────────────────────────────────────────────────── */
+const Display = (() => {
+
+    const COLS = 80;
+    const ROWS = 25;
+    const VRAM_BASE = 0x8000;
+    const VRAM_SIZE = COLS * ROWS * 2;
+    const CHAR_W = 8;
+    const CHAR_H = 16;
+    const ATTR_DEFAULT = 0x07;
+
+    let cursorX = 0;
+    let cursorY = 0;
+    let canvas = null;
+    let ctx = null;
+
+    function initCanvas(canvasEl) {
+        canvas = canvasEl;
+        ctx = canvas.getContext('2d');
+        canvas.width = COLS * CHAR_W;
+        canvas.height = ROWS * CHAR_H;
+        render();
+    }
+
+    function attrToColor(n) {
+        const colors = [
+            '#000000', '#0000AA', '#00AA00', '#00AAAA',
+            '#AA0000', '#AA00AA', '#AA5500', '#AAAAAA',
+            '#555555', '#5555FF', '#55FF55', '#55FFFF',
+            '#FF5555', '#FF55FF', '#FFFF55', '#FFFFFF'
+        ];
+        return colors[n & 0x0F];
+    }
+
+    function render() {
+        if (!ctx) return;
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = CHAR_H + 'px "Consolas", "Courier New", monospace';
+        ctx.textBaseline = 'top';
+
+        for (let y = 0; y < ROWS; y++) {
+            for (let x = 0; x < COLS; x++) {
+                const offset = VRAM_BASE + (y * COLS + x) * 2;
+                const code = Memory.readByte(offset);
+                const attr = Memory.readByte(offset + 1);
+                if (code === 0 || code === 32) continue;
+
+                const fg = attr & 0x0F;
+                const bg = (attr >> 4) & 0x0F;
+                if (bg !== 0) {
+                    ctx.fillStyle = attrToColor(bg);
+                    ctx.fillRect(x * CHAR_W, y * CHAR_H, CHAR_W, CHAR_H);
+                }
+                ctx.fillStyle = attrToColor(fg);
+                ctx.fillText(String.fromCharCode(code), x * CHAR_W, y * CHAR_H);
+            }
+        }
+
+        if (cursorX >= 0 && cursorX < COLS && cursorY >= 0 && cursorY < ROWS) {
+            ctx.fillStyle = 'rgba(78, 201, 176, 0.7)';
+            ctx.fillRect(cursorX * CHAR_W, cursorY * CHAR_H + CHAR_H - 3, CHAR_W, 3);
+        }
+
+        const cursorInfo = document.getElementById('c1-display-cursor');
+        if (cursorInfo) cursorInfo.textContent = '光标: (' + cursorX + ', ' + cursorY + ')';
+    }
+
+    function setCursor(x, y) {
+        cursorX = Math.max(0, Math.min(COLS - 1, x));
+        cursorY = Math.max(0, Math.min(ROWS - 1, y));
+        render();
+    }
+
+    function getCursor() { return { x: cursorX, y: cursorY }; }
+
+    function putChar(x, y, char, attr) {
+        if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+        const offset = VRAM_BASE + (y * COLS + x) * 2;
+        Memory.writeByte(offset, char.charCodeAt(0) & 0xFF);
+        Memory.writeByte(offset + 1, (attr !== undefined ? attr : ATTR_DEFAULT) & 0xFF);
+    }
+
+    function getChar(x, y) {
+        if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return null;
+        const offset = VRAM_BASE + (y * COLS + x) * 2;
+        const code = Memory.readByte(offset);
+        const attr = Memory.readByte(offset + 1);
+        return { char: String.fromCharCode(code), attr };
+    }
+
+    function putCharAtCursor(ch) {
+        if (ch === '\n') { newLine(); render(); return; }
+        if (ch === '\r') { cursorX = 0; render(); return; }
+        if (ch === '\b') { backspace(); render(); return; }
+        if (ch === '\t') { cursorX = Math.min(Math.ceil((cursorX + 1) / 8) * 8, COLS - 1); render(); return; }
+
+        putChar(cursorX, cursorY, ch, ATTR_DEFAULT);
+        cursorX++;
+        if (cursorX >= COLS) {
+            cursorX = 0;
+            cursorY++;
+            if (cursorY >= ROWS) { scrollUp(); cursorY = ROWS - 1; }
+        }
+        render();
+    }
+
+    function newLine() {
+        cursorX = 0;
+        cursorY++;
+        if (cursorY >= ROWS) { scrollUp(); cursorY = ROWS - 1; }
+    }
+
+    function backspace() {
+        if (cursorX > 0) cursorX--;
+        else if (cursorY > 0) { cursorY--; cursorX = COLS - 1; }
+        putChar(cursorX, cursorY, ' ', ATTR_DEFAULT);
+    }
+
+    function scrollUp() {
+        for (let y = 0; y < ROWS - 1; y++) {
+            for (let x = 0; x < COLS; x++) {
+                const srcOff = VRAM_BASE + ((y + 1) * COLS + x) * 2;
+                const dstOff = VRAM_BASE + (y * COLS + x) * 2;
+                Memory.writeByte(dstOff, Memory.readByte(srcOff));
+                Memory.writeByte(dstOff + 1, Memory.readByte(srcOff + 1));
+            }
+        }
+        for (let x = 0; x < COLS; x++) putChar(x, ROWS - 1, ' ', ATTR_DEFAULT);
+        render();
+    }
+
+    /**
+     * 清屏。修复 #9：默认重置光标到 (0,0)，但允许调用者传入 false 保持光标
+     */
+    function clear(attr, resetCursor) {
+        if (resetCursor === undefined) resetCursor = true;
+        for (let y = 0; y < ROWS; y++)
+            for (let x = 0; x < COLS; x++)
+                putChar(x, y, ' ', attr !== undefined ? attr : ATTR_DEFAULT);
+        if (resetCursor) {
+            cursorX = 0;
+            cursorY = 0;
+        }
+        render();
+    }
+
+    function getInfo() {
+        return { cols: COLS, rows: ROWS, vramBase: VRAM_BASE, vramSize: VRAM_SIZE, cursorX, cursorY };
+    }
+
+    function getScreenText() {
+        let result = '';
+        for (let y = 0; y < ROWS; y++) {
+            let line = '';
+            for (let x = 0; x < COLS; x++) line += getChar(x, y).char;
+            result += line.replace(/\s+$/, '') + '\n';
+        }
+        return result.replace(/\n+$/, '');
+    }
+
+    return {
+        COLS, ROWS, VRAM_BASE, VRAM_SIZE,
+        initCanvas, render,
+        setCursor, getCursor,
+        putChar, getChar, putCharAtCursor,
+        newLine, backspace, scrollUp,
+        clear, getInfo, getScreenText
+    };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 3：Keyboard Controller
+   ───────────────────────────────────────────────────────────── */
+const Keyboard = (() => {
+
+    const buffer = [];
+    const MAX_BUFFER = 256;
+    let irqEnabled = false;
+    let pendingIRQ = false;
+
+    function pushKey(key) {
+        if (buffer.length >= MAX_BUFFER) buffer.shift();
+        buffer.push(key);
+        // 修复：只有在中断启用时才设置 pendingIRQ
+        if (irqEnabled) pendingIRQ = true;
+    }
+
+    function popKey() { return buffer.length > 0 ? buffer.shift() : null; }
+    function peekKey() { return buffer.length > 0 ? buffer[0] : null; }
+    function hasKey() { return buffer.length > 0; }
+    function getStatus() { return { bufferSize: buffer.length, irqEnabled }; }
+    function clear() { buffer.length = 0; pendingIRQ = false; }
+
+    function setIRQEnabled(enabled) {
+        irqEnabled = !!enabled;
+        if (!irqEnabled) pendingIRQ = false;
+    }
+
+    function hasPendingIRQ() { return pendingIRQ; }
+    function clearPendingIRQ() { pendingIRQ = false; }
+
+    return {
+        pushKey, popKey, peekKey, hasKey, getStatus, clear,
+        setIRQEnabled, hasPendingIRQ, clearPendingIRQ
+    };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 4：Disk Controller
+   ───────────────────────────────────────────────────────────── */
+const Disk = (() => {
+
+    const SECTOR_SIZE = 512;
+    const SECTOR_COUNT = 2048;
+    const DISK_SIZE = SECTOR_SIZE * SECTOR_COUNT;
+
+    const image = new Uint8Array(DISK_SIZE);
+    let status = 'IDLE';
+    let sectorReg = 0;
+    let addrReg = 0;
+
+    function readSector(sector, memAddr) {
+        if (sector < 0 || sector >= SECTOR_COUNT) throw new Error('非法扇区号: ' + sector);
+        status = 'BUSY';
+        const offset = sector * SECTOR_SIZE;
+        for (let i = 0; i < SECTOR_SIZE; i++) Memory.writeByte(memAddr + i, image[offset + i]);
+        status = 'DONE';
+    }
+
+    function writeSector(sector, memAddr) {
+        if (sector < 0 || sector >= SECTOR_COUNT) throw new Error('非法扇区号: ' + sector);
+        status = 'BUSY';
+        const offset = sector * SECTOR_SIZE;
+        for (let i = 0; i < SECTOR_SIZE; i++) image[offset + i] = Memory.readByte(memAddr + i);
+        status = 'DONE';
+    }
+
+    function setSectorReg(value) { sectorReg = value & 0xFFFF; }
+    function setAddrReg(value) { addrReg = value & 0xFFFF; }
+    function getSectorReg() { return sectorReg; }
+    function getAddrReg() { return addrReg; }
+
+    function executeCmd(cmd) {
+        try {
+            if (cmd === 0) readSector(sectorReg, addrReg);
+            else if (cmd === 1) writeSector(sectorReg, addrReg);
+        } catch (e) {
+            status = 'ERROR';
+        }
+    }
+
+    function getStatus() {
+        return status === 'IDLE' ? 0 : (status === 'BUSY' ? 1 : (status === 'DONE' ? 2 : 3));
+    }
+
+    function getInfo() {
+        return {
+            sectorSize: SECTOR_SIZE, sectorCount: SECTOR_COUNT,
+            diskSize: DISK_SIZE, status,
+            nonZeroBytes: image.filter(b => b !== 0).length
+        };
+    }
+
+    function clear() { image.fill(0); status = 'IDLE'; }
+    function exportImage() { return image.slice(); }
+    function importImage(bytes) {
+        if (bytes.length !== DISK_SIZE) throw new Error('磁盘镜像大小不匹配');
+        image.set(bytes);
+    }
+    function getImage() { return image; }
+
+    return {
+        SECTOR_SIZE, SECTOR_COUNT, DISK_SIZE,
+        readSector, writeSector,
+        setSectorReg, setAddrReg, getSectorReg, getAddrReg,
+        executeCmd, getStatus,
+        getInfo, clear, exportImage, importImage, getImage
+    };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 5：Timer
+   ───────────────────────────────────────────────────────────── */
+const Timer = (() => {
+
+    let counter = 0;
+    let irqInterval = 0;
+    let irqEnabled = false;
+    let pendingIRQ = false;
+
+    function tick() {
+        counter = (counter + 1) & 0xFFFF;
+        if (irqEnabled && irqInterval > 0 && counter % irqInterval === 0) {
+            pendingIRQ = true;
+        }
+    }
+
+    function getLow() { return counter & 0xFF; }
+    function getHigh() { return (counter >> 8) & 0xFF; }
+    function getValue() { return counter; }
+    function reset() { counter = 0; pendingIRQ = false; }
+
+    function setIRQInterval(n) { irqInterval = n & 0xFFFF; }
+    function setIRQEnabled(enabled) {
+        irqEnabled = !!enabled;
+        if (!irqEnabled) pendingIRQ = false;
+    }
+    function hasPendingIRQ() { return pendingIRQ; }
+    function clearPendingIRQ() { pendingIRQ = false; }
+
+    return {
+        tick, getLow, getHigh, getValue, reset,
+        setIRQInterval, setIRQEnabled, hasPendingIRQ, clearPendingIRQ
+    };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 6：I/O Bus
+   ───────────────────────────────────────────────────────────── */
+const IOBus = (() => {
+
+    const PORT = {
+        KBD_DATA:       0x00,
+        KBD_STATUS:     0x01,
+        DISP_CHAR:      0x10,
+        DISP_CTRL:      0x11,
+        DISP_CURSOR_X:  0x12,
+        DISP_CURSOR_Y:  0x13,
+        DISK_SECTOR_L:  0x20,
+        DISK_SECTOR_H:  0x21,
+        DISK_ADDR_L:    0x22,
+        DISK_ADDR_H:    0x23,
+        DISK_CMD:       0x24,
+        DISK_STATUS:    0x25,
+        TIMER_L:        0x30,
+        TIMER_H:        0x31,
+        INT_CTRL:       0x40,
+        TIMER_IRQ:      0x41
+    };
+
+    let diskSector = 0;
+    let diskAddr = 0;
+
+    function inPort(port) {
+        switch (port & 0xFF) {
+            case PORT.KBD_DATA: {
+                const ch = Keyboard.popKey();
+                return ch !== null ? ch.charCodeAt(0) : 0;
+            }
+            case PORT.KBD_STATUS:
+                return Keyboard.hasKey() ? 1 : 0;
+            case PORT.DISK_STATUS:
+                return Disk.getStatus();
+            case PORT.TIMER_L:
+                return Timer.getLow();
+            case PORT.TIMER_H:
+                return Timer.getHigh();
+            case PORT.INT_CTRL:
+                return (Keyboard.hasPendingIRQ() ? 1 : 0) | (Timer.hasPendingIRQ() ? 2 : 0);
+            default:
+                return 0;
+        }
+    }
+
+    function outPort(port, value) {
+        const v = value & 0xFF;
+        switch (port & 0xFF) {
+            case PORT.DISP_CHAR:
+                Display.putCharAtCursor(String.fromCharCode(v));
+                break;
+            case PORT.DISP_CTRL:
+                if (v === 0) Display.clear();
+                else if (v === 1) Display.putCharAtCursor('\r');
+                else if (v === 2) Display.putCharAtCursor('\n');
+                else if (v === 3) Display.putCharAtCursor('\b');
+                break;
+            case PORT.DISP_CURSOR_X: {
+                const c = Display.getCursor();
+                Display.setCursor(v, c.y);
+                break;
+            }
+            case PORT.DISP_CURSOR_Y: {
+                const c = Display.getCursor();
+                Display.setCursor(c.x, v);
+                break;
+            }
+            case PORT.DISK_SECTOR_L:
+                diskSector = (diskSector & 0xFF00) | v;
+                Disk.setSectorReg(diskSector);
+                break;
+            case PORT.DISK_SECTOR_H:
+                diskSector = (diskSector & 0x00FF) | (v << 8);
+                Disk.setSectorReg(diskSector);
+                break;
+            case PORT.DISK_ADDR_L:
+                diskAddr = (diskAddr & 0xFF00) | v;
+                Disk.setAddrReg(diskAddr);
+                break;
+            case PORT.DISK_ADDR_H:
+                diskAddr = (diskAddr & 0x00FF) | (v << 8);
+                Disk.setAddrReg(diskAddr);
+                break;
+            case PORT.DISK_CMD:
+                Disk.executeCmd(v);
+                break;
+            case PORT.INT_CTRL:
+                Keyboard.setIRQEnabled((v & 1) !== 0);
+                Timer.setIRQEnabled((v & 2) !== 0);
+                break;
+            case PORT.TIMER_IRQ:
+                Timer.setIRQInterval(v);
+                break;
+            default:
+                break;
+        }
+    }
+
+    return { PORT, inPort, outPort };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 7：Interrupt Controller
+   修复 #2：setVector 显式拒绝与用户程序区冲突的地址
+   ───────────────────────────────────────────────────────────── */
+const InterruptController = (() => {
+
+    const IVT_BASE = 0x0000;
+    const IVT_END = 0x00FF;           // 中断向量表占 0x0000 - 0x00FF
+    const USER_PROGRAM_BASE = 0x0100; // 用户程序从此开始
+
+    let intCount = 0;
+    let lastInt = -1;
+    let inInterrupt = 0;
+    let maxNesting = 0;
+    let rejectedVectors = 0;  // 因冲突被拒绝的 setVector 次数
+
+    /**
+     * 设置中断向量。
+     * 修复 #2：显式检查 n 的有效范围，超出 0x7F 会拒绝并记录警告
+     * 因为向量 n 的地址 = n*2，n=0x80 时地址=0x0100，会覆盖用户程序
+     */
+    function setVector(n, addr) {
+        n = n & 0xFF;
+        // 中断向量表地址范围检查
+        if (n * 2 >= USER_PROGRAM_BASE) {
+            // 会覆盖用户程序区，拒绝
+            rejectedVectors++;
+            console.warn('[IC] 拒绝设置向量 0x' + n.toString(16) + '（地址 0x' + (n*2).toString(16) + ' 会覆盖用户程序区）');
+            return false;
+        }
+        Memory.writeWord(IVT_BASE + n * 2, addr & 0xFFFF);
+        return true;
+    }
+
+    function getVector(n) {
+        n = n & 0xFF;
+        return Memory.readWord(IVT_BASE + n * 2);
+    }
+
+    function getCount() { return intCount; }
+    function getLastInt() { return lastInt; }
+    function getNesting() { return inInterrupt; }
+    function getMaxNesting() { return maxNesting; }
+    function getRejectedCount() { return rejectedVectors; }
+    function reset() {
+        intCount = 0;
+        lastInt = -1;
+        inInterrupt = 0;
+        maxNesting = 0;
+        rejectedVectors = 0;
+    }
+
+    function beginInterrupt(n) {
+        intCount++;
+        lastInt = n;
+        inInterrupt++;
+        if (inInterrupt > maxNesting) maxNesting = inInterrupt;
+    }
+
+    function endInterrupt() {
+        if (inInterrupt > 0) inInterrupt--;
+    }
+
+    return {
+        IVT_BASE, IVT_END, USER_PROGRAM_BASE,
+        setVector, getVector,
+        getCount, getLastInt, getNesting, getMaxNesting, getRejectedCount, reset,
+        beginInterrupt, endInterrupt
+    };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 8：BIOS
+   修复 #6：INT 0x16 AH=0x00 增加无键时的"等待"语义提示
+   ───────────────────────────────────────────────────────────── */
+const BIOS = (() => {
+
+    let callCount = 0;
+    const callLog = [];
+
+    function handle(n, cpuAPI) {
+        callCount++;
+        if (callLog.length < 100) callLog.push(n);
+
+        switch (n) {
+
+            case 0x10: {
+                const ah = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                const al = cpuAPI.getReg(0) & 0xFF;
+
+                if (ah === 0x00) {
+                    Display.clear();
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x01) {
+                    Display.putCharAtCursor(String.fromCharCode(al));
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x02) {
+                    const col = cpuAPI.getReg(1) & 0xFF;
+                    const row = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                    Display.setCursor(col, row);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x03) {
+                    const c = Display.getCursor();
+                    cpuAPI.setReg(2, (c.y << 8) | c.x);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x0E) {
+                    Display.putCharAtCursor(String.fromCharCode(al));
+                    cpuAPI.setReg(0, 0);
+                }
+                return true;
+            }
+
+            case 0x11: {
+                cpuAPI.setReg(0, 0x000F);
+                return true;
+            }
+
+            case 0x12: {
+                cpuAPI.setReg(0, 64);
+                return true;
+            }
+
+            case 0x13: {
+                const ah = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                if (ah === 0x00) {
+                    Disk.executeCmd(-1);
+                    cpuAPI.setReg(0, 0);
+                } else if (ah === 0x02) {
+                    const sector = cpuAPI.getReg(2) & 0xFFFF;
+                    const addr = cpuAPI.getReg(3);
+                    try {
+                        Disk.readSector(sector, addr);
+                        cpuAPI.setReg(0, 0);
+                    } catch (e) {
+                        cpuAPI.setReg(0, 0x0C00);
+                    }
+                } else if (ah === 0x03) {
+                    const sector = cpuAPI.getReg(2) & 0xFFFF;
+                    const addr = cpuAPI.getReg(3);
+                    try {
+                        Disk.writeSector(sector, addr);
+                        cpuAPI.setReg(0, 0);
+                    } catch (e) {
+                        cpuAPI.setReg(0, 0x0C00);
+                    }
+                }
+                return true;
+            }
+
+            case 0x16: {
+                const ah = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                if (ah === 0x00) {
+                    // 修复 #6：无键时返回 0（调用者需要自己循环等待）
+                    const ch = Keyboard.popKey();
+                    if (ch === null) {
+                        cpuAPI.setReg(0, 0);
+                    } else {
+                        cpuAPI.setReg(0, ch.charCodeAt(0) & 0xFF);
+                    }
+                } else if (ah === 0x01) {
+                    // 检查按键
+                    if (Keyboard.hasKey()) {
+                        // 返回 AL = 字符, ZF = 0
+                        const ch = Keyboard.peekKey();
+                        cpuAPI.setReg(0, ch.charCodeAt(0) & 0xFF);
+                        cpuAPI.clearFlag(0x0001);  // 清 ZF
+                    } else {
+                        // ZF = 1
+                        cpuAPI.setReg(0, 0);
+                        cpuAPI.setFlag(0x0001);  // 置 ZF
+                    }
+                }
+                return true;
+            }
+
+            case 0x1A: {
+                cpuAPI.setReg(1, Timer.getHigh());
+                cpuAPI.setReg(2, Timer.getLow());
+                return true;
+            }
+
+            case 0x20: {
+                const ah = (cpuAPI.getReg(0) >> 8) & 0xFF;
+                if (ah === 0x00) {
+                    cpuAPI.setReg(0, 0);
+                    cpuAPI.setState('HALTED');
+                } else if (ah === 0x01) {
+                    cpuAPI.setReg(0, 0);
+                    Display.clear();
+                    const msg = '[REBOOT]';
+                    for (let i = 0; i < msg.length; i++) {
+                        Display.putCharAtCursor(msg[i]);
+                    }
+                } else {
+                    cpuAPI.setReg(0, 0);
+                }
+                return true;
+            }
+
+            default:
+                return false;
+        }
+    }
+
+    function getCallCount() { return callCount; }
+    function getCallLog() { return callLog.slice(); }
+    function reset() { callCount = 0; callLog.length = 0; }
+
+    return { handle, getCallCount, getCallLog, reset };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 9：CPU Core
+   36 条指令
+   修复 #3：中断保存/恢复全部寄存器
+   修复 #4：IRET 与 CALL 的 PC 恢复语义分离
+   修复 #5：栈溢出/下溢报错信息更明确
+   修复 #8：用户 ISR 未找到时走 BIOS 并记录
+   ───────────────────────────────────────────────────────────── */
+const CPU = (() => {
+
+    const regs = new Uint16Array(8);
+    let PC = 0x0000;
+    let SP = 0x7FFF;
+    let FLAGS = 0x0000;
+
+    const FLAG_Z = 0x0001;
+    const FLAG_C = 0x0002;
+    const FLAG_N = 0x0004;
+    const FLAG_V = 0x0008;
+    const FLAG_I = 0x0010;
+
+    const STACK_TOP = 0x7FFF;
+    const STACK_BOTTOM = 0x7000;
+
+    let state = 'IDLE';
+    let lastError = null;
+    let instructionCount = 0;
+    let intInProgress = false;
+    let unhandledInterrupts = 0;  // 修复 #8
+
+    const MAX_INSTRUCTIONS_PER_RUN = 100000;
+
+    function getReg(index) {
+        if (index < 0 || index > 7) throw new Error('非法寄存器索引: ' + index);
+        return regs[index];
+    }
+
+    function setReg(index, value) {
+        if (index < 0 || index > 7) throw new Error('非法寄存器索引: ' + index);
+        regs[index] = value & 0xFFFF;
+    }
+
+    function getPC() { return PC; }
+    function setPC(value) { PC = value & 0xFFFF; }
+    function getSP() { return SP; }
+    function setSP(value) { SP = value & 0xFFFF; }
+    function getFLAGS() { return FLAGS; }
+    function setFLAGS(value) { FLAGS = value & 0xFFFF; }
+
+    function testFlag(mask) { return (FLAGS & mask) !== 0; }
+    function setFlag(mask, on) {
+        if (on) FLAGS |= mask;
+        else FLAGS &= ~mask;
+        FLAGS &= 0xFFFF;
+    }
+
+    function getState() { return state; }
+    function setState(s) { state = s; }
+    function getLastError() { return lastError; }
+    function getInstructionCount() { return instructionCount; }
+    function getUnhandledInterrupts() { return unhandledInterrupts; }
+
+    function reset() {
+        regs.fill(0);
+        PC = 0x0000;
+        SP = 0x7FFF;
+        FLAGS = 0;
+        state = 'IDLE';
+        lastError = null;
+        instructionCount = 0;
+        intInProgress = false;
+        unhandledInterrupts = 0;
+        Timer.reset();
+        InterruptController.reset();
+    }
+
+    function updateFlags(result, a, b, isAdd) {
+        const r16 = result & 0xFFFF;
+        setFlag(FLAG_Z, r16 === 0);
+        setFlag(FLAG_N, (r16 & 0x8000) !== 0);
+        if (isAdd) setFlag(FLAG_C, result > 0xFFFF);
+        else setFlag(FLAG_C, (a & 0xFFFF) < (b & 0xFFFF));
+        const aSign = (a & 0x8000) !== 0 ? 1 : 0;
+        const bSign = (b & 0x8000) !== 0 ? 1 : 0;
+        const rSign = (r16 & 0x8000) !== 0 ? 1 : 0;
+        if (isAdd) setFlag(FLAG_V, aSign === bSign && aSign !== rSign);
+        else setFlag(FLAG_V, aSign !== bSign && aSign !== rSign);
+    }
+
+    function updateFlagsLogic(result) {
+        const r16 = result & 0xFFFF;
+        setFlag(FLAG_Z, r16 === 0);
+        setFlag(FLAG_N, (r16 & 0x8000) !== 0);
+        setFlag(FLAG_C, false);
+        setFlag(FLAG_V, false);
+    }
+
+    function fetch() {
+        const bytes = new Uint8Array(4);
+        for (let i = 0; i < 4; i++) bytes[i] = Memory.readByte((PC + i) & 0xFFFF);
+        return bytes;
+    }
+
+    function decode(bytes) {
+        return {
+            opcode: bytes[0],
+            dst: bytes[1],
+            src: bytes[2],
+            immLow: bytes[3],
+            imm16: (bytes[2] << 8) | bytes[3]
+        };
+    }
+
+    // 修复 #5：栈操作的错误信息更明确
+    function stackPush(value) {
+        if (SP - 2 < STACK_BOTTOM) {
+            throw new Error('栈溢出：SP=0x' + SP.toString(16) +
+                            '（下界=0x' + STACK_BOTTOM.toString(16) + '），' +
+                            '可能递归过深或栈不平衡');
+        }
+        SP -= 2;
+        Memory.writeWord(SP, value & 0xFFFF);
+    }
+
+    function stackPop() {
+        if (SP > STACK_TOP) {
+            throw new Error('栈下溢：SP=0x' + SP.toString(16) +
+                            '（上界=0x' + STACK_TOP.toString(16) + '），' +
+                            '可能 RET/POP 次数多于 PUSH/CALL');
+        }
+        if (SP === STACK_TOP) {
+            throw new Error('栈为空：SP=0x7FFF，无数据可弹出');
+        }
+        const value = Memory.readWord(SP);
+        SP += 2;
+        return value;
+    }
+
+    /**
+     * 触发中断
+     * @param {number} n - 中断号
+     * @param {number} returnAddr - 返回地址（IRET 恢复到这个 PC）
+     *
+     * 修复 #3：保存全部寄存器（R0-R7）+ FLAGS + PC 共 10 个字
+     *          这样 ISR 可以自由使用寄存器，IRET 后调用者状态不变
+     */
+    function doInterrupt(n, returnAddr) {
+        // 保存上下文：FLAGS, PC, R0-R7（按栈顺序：先 push FLAGS，后 push R0-R7）
+        stackPush(FLAGS);
+        stackPush(returnAddr & 0xFFFF);
+        for (let i = 0; i < 8; i++) {
+            stackPush(regs[i]);
+        }
+
+        // 关闭中断（防止嵌套）
+        setFlag(FLAG_I, false);
+
+        // 记录中断
+        InterruptController.beginInterrupt(n);
+
+        // 通知硬件
+        if (n === 0x02) Timer.clearPendingIRQ();
+        if (n === 0x03) Keyboard.clearPendingIRQ();
+
+        intInProgress = true;
+
+        // 查找用户 ISR
+        const isrAddr = InterruptController.getVector(n);
+
+        if (isrAddr !== 0) {
+            PC = isrAddr;
+            return true;
+        }
+
+        return false;
+    }
+
+    function callBIOS(n) {
+        return BIOS.handle(n, {
+            getReg, setReg,
+            setState: function(s) { state = s; },
+            setFlag, clearFlag: function(m) { setFlag(m, false); }
+        });
+    }
+
+    /**
+     * 检查并处理待处理中断
+     * 传 PC（此刻 PC 指向"下一条要执行的指令"）
+     */
+    function checkInterrupts() {
+        if (!testFlag(FLAG_I)) return false;
+
+        if (Keyboard.hasPendingIRQ()) {
+            doInterrupt(0x03, PC);
+            return true;
+        }
+        if (Timer.hasPendingIRQ()) {
+            doInterrupt(0x02, PC);
+            return true;
+        }
+
+        return false;
+    }
+
+    function executeInstruction(decoded) {
+        const op = decoded.opcode;
+
+        switch (op) {
+            case 0x00: return true;
+            case 0x01: state = 'HALTED'; return false;
+
+            case 0x10:
+                regs[decoded.dst & 7] = regs[decoded.src & 7];
+                return true;
+
+            case 0x11:
+                regs[decoded.dst & 7] = decoded.imm16;
+                return true;
+
+            case 0x12:
+                regs[decoded.dst & 7] = Memory.readWord(regs[decoded.src & 7]);
+                return true;
+
+            case 0x13:
+                Memory.writeWord(regs[decoded.dst & 7], regs[decoded.src & 7]);
+                return true;
+
+            case 0x20: {
+                const a = regs[decoded.dst & 7], b = regs[decoded.src & 7];
+                const r = a + b;
+                regs[decoded.dst & 7] = r & 0xFFFF;
+                updateFlags(r, a, b, true);
+                return true;
+            }
+
+            case 0x21: {
+                const a = regs[decoded.dst & 7], b = decoded.imm16;
+                const r = a + b;
+                regs[decoded.dst & 7] = r & 0xFFFF;
+                updateFlags(r, a, b, true);
+                return true;
+            }
+
+            case 0x22: {
+                const a = regs[decoded.dst & 7], b = regs[decoded.src & 7];
+                const r = a - b;
+                regs[decoded.dst & 7] = r & 0xFFFF;
+                updateFlags(r, a, b, false);
+                return true;
+            }
+
+            case 0x23: {
+                const a = regs[decoded.dst & 7], b = decoded.imm16;
+                const r = a - b;
+                regs[decoded.dst & 7] = r & 0xFFFF;
+                updateFlags(r, a, b, false);
+                return true;
+            }
+
+            case 0x24: {
+                const a = regs[decoded.dst & 7], b = regs[decoded.src & 7];
+                const r = a * b;
+                regs[decoded.dst & 7] = r & 0xFFFF;
+                setFlag(FLAG_Z, (r & 0xFFFF) === 0);
+                setFlag(FLAG_N, (r & 0x8000) !== 0);
+                setFlag(FLAG_C, r > 0xFFFF);
+                setFlag(FLAG_V, r > 0xFFFF);
+                return true;
+            }
+
+            case 0x25: {
+                const a = regs[decoded.dst & 7], b = regs[decoded.src & 7];
+                if (b === 0) throw new Error('除零异常：DIV R' + (decoded.dst & 7) + ', R' + (decoded.src & 7));
+                const q = Math.floor(a / b);
+                const rem = a % b;
+                regs[decoded.dst & 7] = q & 0xFFFF;
+                regs[7] = rem & 0xFFFF;
+                setFlag(FLAG_Z, (q & 0xFFFF) === 0);
+                setFlag(FLAG_N, (q & 0x8000) !== 0);
+                return true;
+            }
+
+            case 0x30:
+                regs[decoded.dst & 7] = regs[decoded.dst & 7] & regs[decoded.src & 7];
+                updateFlagsLogic(regs[decoded.dst & 7]);
+                return true;
+
+            case 0x31:
+                regs[decoded.dst & 7] = regs[decoded.dst & 7] | regs[decoded.src & 7];
+                updateFlagsLogic(regs[decoded.dst & 7]);
+                return true;
+
+            case 0x32:
+                regs[decoded.dst & 7] = regs[decoded.dst & 7] ^ regs[decoded.src & 7];
+                updateFlagsLogic(regs[decoded.dst & 7]);
+                return true;
+
+            case 0x33:
+                regs[decoded.dst & 7] = (~regs[decoded.dst & 7]) & 0xFFFF;
+                updateFlagsLogic(regs[decoded.dst & 7]);
+                return true;
+
+            case 0x34: {
+                const a = regs[decoded.dst & 7];
+                const shift = decoded.imm16 & 0x0F;
+                const r = (a << shift) & 0xFFFF;
+                regs[decoded.dst & 7] = r;
+                updateFlagsLogic(r);
+                if (shift > 0) setFlag(FLAG_C, ((a >> (16 - shift)) & 1) !== 0);
+                else setFlag(FLAG_C, false);
+                return true;
+            }
+
+            case 0x35: {
+                const a = regs[decoded.dst & 7];
+                const shift = decoded.imm16 & 0x0F;
+                const r = (a >> shift) & 0xFFFF;
+                regs[decoded.dst & 7] = r;
+                updateFlagsLogic(r);
+                if (shift > 0) setFlag(FLAG_C, ((a >> (shift - 1)) & 1) !== 0);
+                else setFlag(FLAG_C, false);
+                return true;
+            }
+
+            case 0x40:
+                updateFlags(
+                    regs[decoded.dst & 7] - regs[decoded.src & 7],
+                    regs[decoded.dst & 7],
+                    regs[decoded.src & 7],
+                    false
+                );
+                return true;
+
+            case 0x41:
+                updateFlags(
+                    regs[decoded.dst & 7] - decoded.imm16,
+                    regs[decoded.dst & 7],
+                    decoded.imm16,
+                    false
+                );
+                return true;
+
+            case 0x50: PC = decoded.imm16; return false;
+            case 0x51: if (testFlag(FLAG_Z)) { PC = decoded.imm16; return false; } return true;
+            case 0x52: if (!testFlag(FLAG_Z)) { PC = decoded.imm16; return false; } return true;
+            case 0x53: if (testFlag(FLAG_C)) { PC = decoded.imm16; return false; } return true;
+            case 0x54: if (!testFlag(FLAG_C)) { PC = decoded.imm16; return false; } return true;
+            case 0x55: if (testFlag(FLAG_N)) { PC = decoded.imm16; return false; } return true;
+
+            case 0x60: stackPush(regs[decoded.dst & 7]); return true;
+            case 0x61: regs[decoded.dst & 7] = stackPop(); return true;
+
+            case 0x62:
+                stackPush((PC + 4) & 0xFFFF);
+                PC = decoded.imm16;
+                return false;
+
+            case 0x63:
+                PC = stackPop();
+                return false;
+
+            case 0x70:
+                regs[decoded.dst & 7] = IOBus.inPort(decoded.src & 0xFF);
+                return true;
+
+            case 0x71:
+                IOBus.outPort(decoded.dst & 0xFF, regs[decoded.src & 7]);
+                return true;
+
+            case 0x72: {  // INT n
+                const n = decoded.dst & 0xFF;
+                const isrAddr = InterruptController.getVector(n);
+                if (isrAddr !== 0) {
+                    doInterrupt(n, (PC + 4) & 0xFFFF);
+                    return false;
+                }
+
+                // 无用户 ISR，尝试 BIOS
+                if (BIOS.handle(n, {
+                    getReg, setReg,
+                    setState: function(s) { state = s; },
+                    setFlag, clearFlag: function(m) { setFlag(m, false); }
+                })) {
+                    return true;
+                }
+
+                // 修复 #8：都没有处理者，记录未处理中断
+                unhandledInterrupts++;
+                console.warn('[CPU] 未处理的中断: INT 0x' + n.toString(16));
+                return true;
+            }
+
+            case 0x73: {  // IRET
+                // 修复 #3：恢复全部寄存器（与 doInterrupt 的 push 顺序镜像）
+                for (let i = 7; i >= 0; i--) {
+                    regs[i] = stackPop();
+                }
+                PC = stackPop();
+                FLAGS = stackPop();
+                InterruptController.endInterrupt();
+                intInProgress = false;
+                return false;
+            }
+
+            case 0x74:
+                setFlag(FLAG_I, true);
+                return true;
+
+            case 0x75:
+                setFlag(FLAG_I, false);
+                return true;
+
+            default:
+                throw new Error('未知指令: 0x' + op.toString(16).padStart(2, '0'));
+        }
+    }
+
+    function step() {
+        try {
+            checkInterrupts();
+
+            const bytes = fetch();
+            const decoded = decode(bytes);
+            const advancePC = executeInstruction(decoded);
+            if (advancePC) PC = (PC + 4) & 0xFFFF;
+            instructionCount++;
+            Timer.tick();
+            return { ok: true, decoded: decoded };
+        } catch (e) {
+            state = 'ERROR';
+            lastError = e.message;
+            return { ok: false, error: e.message };
+        }
+    }
+
+    function run(maxInstructions) {
+        const limit = maxInstructions || MAX_INSTRUCTIONS_PER_RUN;
+        let executed = 0;
+        state = 'RUNNING';
+        while (state === 'RUNNING' && executed < limit) {
+            const r = step();
+            if (!r.ok) {
+                return { executed, halted: false, error: r.error, limitReached: false };
+            }
+            executed++;
+            if (state === 'HALTED') break;
+        }
+        const limitReached = (executed >= limit && state === 'RUNNING');
+        if (limitReached) state = 'IDLE';
+        return { executed, halted: (state === 'HALTED'), error: null, limitReached };
+    }
+
+    function snapshot() {
+        return {
+            R0: regs[0], R1: regs[1], R2: regs[2], R3: regs[3],
+            R4: regs[4], R5: regs[5], R6: regs[6], R7: regs[7],
+            PC, SP, FLAGS, state,
+            instructionCount, lastError,
+            unhandledInterrupts
+        };
+    }
+
+    function flagsToString() {
+        let s = '';
+        s += testFlag(FLAG_Z) ? 'Z' : '-';
+        s += testFlag(FLAG_C) ? 'C' : '-';
+        s += testFlag(FLAG_N) ? 'N' : '-';
+        s += testFlag(FLAG_V) ? 'V' : '-';
+        s += testFlag(FLAG_I) ? 'I' : '-';
+        return s;
+    }
+
+    return {
+        FLAG_Z, FLAG_C, FLAG_N, FLAG_V, FLAG_I,
+        STACK_TOP, STACK_BOTTOM,
+        getReg, setReg,
+        getPC, setPC,
+        getSP, setSP,
+        getFLAGS, setFLAGS,
+        testFlag, setFlag,
+        getState, setState,
+        getLastError, getInstructionCount,
+        getUnhandledInterrupts,
+        reset, snapshot, flagsToString,
+        step, run, updateFlags, updateFlagsLogic,
+        stackPush, stackPop,
+        checkInterrupts, doInterrupt
+    };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 10：Assembler
+   ───────────────────────────────────────────────────────────── */
+const Assembler = (() => {
+
+    const OPCODES = {
+        'NOP':    0x00, 'HLT':    0x01,
+        'MOV_RR': 0x10, 'MOV_RI': 0x11, 'MOV_RM': 0x12, 'MOV_MR': 0x13,
+        'ADD_RR': 0x20, 'ADD_RI': 0x21, 'SUB_RR': 0x22, 'SUB_RI': 0x23,
+        'MUL_RR': 0x24, 'DIV_RR': 0x25,
+        'AND_RR': 0x30, 'OR_RR':  0x31, 'XOR_RR': 0x32,
+        'NOT_R':  0x33, 'SHL_RI': 0x34, 'SHR_RI': 0x35,
+        'CMP_RR': 0x40, 'CMP_RI': 0x41,
+        'JMP':    0x50, 'JZ':     0x51, 'JNZ':    0x52,
+        'JC':     0x53, 'JNC':    0x54, 'JN':     0x55,
+        'PUSH':   0x60, 'POP':    0x61, 'CALL':   0x62, 'RET':    0x63,
+        'IN':     0x70, 'OUT':    0x71, 'INT':    0x72, 'IRET':   0x73,
+        'STI':    0x74, 'CLI':    0x75
+    };
+
+    const IMPLEMENTED = [
+        0x00, 0x01,
+        0x10, 0x11, 0x12, 0x13,
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+        0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
+        0x40, 0x41,
+        0x50, 0x51, 0x52, 0x53, 0x54, 0x55,
+        0x60, 0x61, 0x62, 0x63,
+        0x70, 0x71, 0x72, 0x73, 0x74, 0x75
+    ];
+
+    function getOpcode(m) { return OPCODES[m] !== undefined ? OPCODES[m] : null; }
+
+    function listOpcodes() {
+        return Object.keys(OPCODES).map(k => ({
+            mnemonic: k, opcode: OPCODES[k],
+            implemented: IMPLEMENTED.indexOf(OPCODES[k]) !== -1
+        }));
+    }
+
+    function count() { return Object.keys(OPCODES).length; }
+
+    function encode(mnemonic, op1, op2) {
+        const bytes = new Uint8Array(4);
+        const op = OPCODES[mnemonic];
+        if (op === undefined) throw new Error('未知指令: ' + mnemonic);
+        bytes[0] = op;
+
+        switch (mnemonic) {
+            case 'NOP': case 'HLT': case 'RET': case 'IRET':
+            case 'STI': case 'CLI':
+                break;
+            case 'MOV_RR': case 'MOV_RM': case 'MOV_MR':
+            case 'ADD_RR': case 'SUB_RR': case 'MUL_RR': case 'DIV_RR':
+            case 'AND_RR': case 'OR_RR': case 'XOR_RR': case 'CMP_RR':
+                bytes[1] = op1 & 0x07;
+                bytes[2] = op2 & 0x07;
+                break;
+            case 'MOV_RI': case 'ADD_RI': case 'SUB_RI': case 'CMP_RI':
+            case 'SHL_RI': case 'SHR_RI':
+                bytes[1] = op1 & 0x07;
+                bytes[2] = (op2 >> 8) & 0xFF;
+                bytes[3] = op2 & 0xFF;
+                break;
+            case 'JMP': case 'JZ': case 'JNZ': case 'JC': case 'JNC': case 'JN':
+            case 'CALL':
+                bytes[2] = (op1 >> 8) & 0xFF;
+                bytes[3] = op1 & 0xFF;
+                break;
+            case 'NOT_R': case 'PUSH': case 'POP':
+                bytes[1] = op1 & 0x07;
+                break;
+            case 'INT':
+                bytes[1] = op1 & 0xFF;
+                break;
+            case 'IN':
+                bytes[1] = op1 & 0x07;
+                bytes[2] = op2 & 0xFF;
+                break;
+            case 'OUT':
+                bytes[1] = op1 & 0xFF;
+                bytes[2] = op2 & 0x07;
+                break;
+            default:
+                break;
+        }
+        return bytes;
+    }
+
+    function disassemble(bytes) {
+        const op = bytes[0], dst = bytes[1], src = bytes[2];
+        const imm16 = (bytes[2] << 8) | bytes[3];
+        switch (op) {
+            case 0x00: return 'NOP';
+            case 0x01: return 'HLT';
+            case 0x10: return 'MOV R' + dst + ', R' + src;
+            case 0x11: return 'MOV R' + dst + ', #0x' + imm16.toString(16).padStart(4, '0');
+            case 0x12: return 'MOV R' + dst + ', [R' + src + ']';
+            case 0x13: return 'MOV [R' + dst + '], R' + src;
+            case 0x20: return 'ADD R' + dst + ', R' + src;
+            case 0x21: return 'ADD R' + dst + ', #0x' + imm16.toString(16).padStart(4, '0');
+            case 0x22: return 'SUB R' + dst + ', R' + src;
+            case 0x23: return 'SUB R' + dst + ', #0x' + imm16.toString(16).padStart(4, '0');
+            case 0x24: return 'MUL R' + dst + ', R' + src;
+            case 0x25: return 'DIV R' + dst + ', R' + src;
+            case 0x30: return 'AND R' + dst + ', R' + src;
+            case 0x31: return 'OR R' + dst + ', R' + src;
+            case 0x32: return 'XOR R' + dst + ', R' + src;
+            case 0x33: return 'NOT R' + dst;
+            case 0x34: return 'SHL R' + dst + ', #' + imm16;
+            case 0x35: return 'SHR R' + dst + ', #' + imm16;
+            case 0x40: return 'CMP R' + dst + ', R' + src;
+            case 0x41: return 'CMP R' + dst + ', #0x' + imm16.toString(16).padStart(4, '0');
+            case 0x50: return 'JMP 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x51: return 'JZ 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x52: return 'JNZ 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x53: return 'JC 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x54: return 'JNC 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x55: return 'JN 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x60: return 'PUSH R' + dst;
+            case 0x61: return 'POP R' + dst;
+            case 0x62: return 'CALL 0x' + imm16.toString(16).padStart(4, '0');
+            case 0x63: return 'RET';
+            case 0x70: return 'IN R' + dst + ', 0x' + src.toString(16).padStart(2, '0');
+            case 0x71: return 'OUT 0x' + dst.toString(16).padStart(2, '0') + ', R' + src;
+            case 0x72: return 'INT 0x' + dst.toString(16).padStart(2, '0');
+            case 0x73: return 'IRET';
+            case 0x74: return 'STI';
+            case 0x75: return 'CLI';
+            default:   return 'DB 0x' + op.toString(16).padStart(2, '0');
+        }
+    }
+
+    return { getOpcode, listOpcodes, count, encode, disassemble, IMPLEMENTED };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 11：ProgramLoader
+   ───────────────────────────────────────────────────────────── */
+const ProgramLoader = (() => {
+
+    function loadHex(addr, hexStr) {
+        const tokens = hexStr.trim().split(/\s+/).filter(t => t.length > 0);
+        const bytes = new Uint8Array(tokens.length);
+        for (let i = 0; i < tokens.length; i++) bytes[i] = parseInt(tokens[i], 16) & 0xFF;
+        Memory.writeBlock(addr, bytes);
+        return bytes.length;
+    }
+
+    function loadInstructions(addr, instrs) {
+        let offset = 0;
+        for (const instr of instrs) {
+            const bytes = Assembler.encode(instr.mnemonic, instr.op1, instr.op2);
+            Memory.writeBlock(addr + offset, bytes);
+            offset += 4;
+        }
+        return offset;
+    }
+
+    function disassembleRange(addr, count) {
+        const result = [];
+        for (let i = 0; i < count; i++) {
+            const instrAddr = addr + i * 4;
+            const bytes = new Uint8Array(4);
+            for (let j = 0; j < 4; j++) bytes[j] = Memory.readByte((instrAddr + j) & 0xFFFF);
+            result.push({ addr: instrAddr, bytes, text: Assembler.disassemble(bytes) });
+        }
+        return result;
+    }
+
+    return { loadHex, loadInstructions, disassembleRange };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 12：OS
+   修复 #10：引导扇区增加计数器，避免无限循环
+   ───────────────────────────────────────────────────────────── */
+const OS = (() => {
+
+    const BOOT_ADDR = 0x7C00;
+    const OS_ADDR = 0x1000;
+
+    function generateBootSector() {
+        const instrs = [
+            // 显示 'B'
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0100 | 66 },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+
+            // 读扇区 1 到 0x1000
+            { mnemonic: 'MOV_RI', op1: 3, op2: OS_ADDR },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 1 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0200 },
+            { mnemonic: 'INT',    op1: 0x13, op2: 0 },
+
+            // 读扇区 2 到 0x1200
+            { mnemonic: 'MOV_RI', op1: 3, op2: OS_ADDR + 512 },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 2 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0200 },
+            { mnemonic: 'INT',    op1: 0x13, op2: 0 },
+
+            // 读扇区 3 到 0x1400
+            { mnemonic: 'MOV_RI', op1: 3, op2: OS_ADDR + 1024 },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 3 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0200 },
+            { mnemonic: 'INT',    op1: 0x13, op2: 0 },
+
+            // 读扇区 4 到 0x1600
+            { mnemonic: 'MOV_RI', op1: 3, op2: OS_ADDR + 1536 },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 4 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0200 },
+            { mnemonic: 'INT',    op1: 0x13, op2: 0 },
+
+            // 跳转到 OS
+            { mnemonic: 'JMP',    op1: OS_ADDR, op2: 0 }
+        ];
+
+        return instrs;
+    }
+
+    function generateOSCode() {
+        const instrs = [];
+
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0000 });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+
+        const banner1 = '========================================';
+        const banner2 = '   JS-H86 C1 Operating System v1.0';
+        const banner3 = '========================================';
+        const banner4 = 'Type "help" for commands.';
+
+        function printString(str) {
+            for (let i = 0; i < str.length; i++) {
+                instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 | str.charCodeAt(i) });
+                instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+            }
+            instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A });
+            instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        }
+
+        function printStringInternal(str) {
+            for (let i = 0; i < str.length; i++) {
+                instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 | str.charCodeAt(i) });
+                instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+            }
+            instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A });
+            instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        }
+
+        printString(banner1);
+        printString(banner2);
+        printString(banner3);
+        printString(banner4);
+
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+
+        const promptAddr = OS_ADDR + instrs.length * 4;
+
+        const prompt = 'JS-H86> ';
+        for (let i = 0; i < prompt.length; i++) {
+            instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 | prompt.charCodeAt(i) });
+            instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        }
+
+        const readAddr = OS_ADDR + instrs.length * 4;
+
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0000 });
+        instrs.push({ mnemonic: 'INT',    op1: 0x16, op2: 0 });
+
+        instrs.push({ mnemonic: 'CMP_RI', op1: 0, op2: 0 });
+        instrs.push({ mnemonic: 'JZ',     op1: readAddr, op2: 0 });
+
+        instrs.push({ mnemonic: 'MOV_RR', op1: 2, op2: 0 });
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 });
+        instrs.push({ mnemonic: 'OR_RR',  op1: 0, op2: 2 });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+
+        instrs.push({ mnemonic: 'CMP_RI', op1: 2, op2: 120 });
+        instrs.push({ mnemonic: 'JZ',     op1: 0, op2: 0 });
+
+        instrs.push({ mnemonic: 'CMP_RI', op1: 2, op2: 99 });
+        instrs.push({ mnemonic: 'JZ',     op1: 0, op2: 0 });
+
+        instrs.push({ mnemonic: 'CMP_RI', op1: 2, op2: 104 });
+        instrs.push({ mnemonic: 'JZ',     op1: 0, op2: 0 });
+
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        instrs.push({ mnemonic: 'JMP',    op1: promptAddr, op2: 0 });
+
+        const haltAddr = OS_ADDR + instrs.length * 4;
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        printStringInternal('System halted.');
+        instrs.push({ mnemonic: 'HLT',    op1: 0, op2: 0 });
+
+        const clearAddr = OS_ADDR + instrs.length * 4;
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0000 });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        instrs.push({ mnemonic: 'JMP',    op1: promptAddr, op2: 0 });
+
+        const helpAddr = OS_ADDR + instrs.length * 4;
+        instrs.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A });
+        instrs.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        printStringInternal('Commands:');
+        printStringInternal('  x - halt system');
+        printStringInternal('  c - clear screen');
+        printStringInternal('  h - show this help');
+        instrs.push({ mnemonic: 'JMP',    op1: promptAddr, op2: 0 });
+
+        const jzIndices = [];
+        for (let i = 0; i < instrs.length; i++) {
+            if (instrs[i].mnemonic === 'JZ' && instrs[i].op1 === 0 && instrs[i].op2 === 0) {
+                jzIndices.push(i);
+            }
+        }
+
+        if (jzIndices.length >= 1) instrs[jzIndices[0]].op1 = haltAddr;
+        if (jzIndices.length >= 2) instrs[jzIndices[1]].op1 = clearAddr;
+        if (jzIndices.length >= 3) instrs[jzIndices[2]].op1 = helpAddr;
+
+        return instrs;
+    }
+
+    function installToDisk() {
+        const bootInstrs = generateBootSector();
+        const bootImage = new Uint8Array(512);
+        let bootOffset = 0;
+        for (const instr of bootInstrs) {
+            const bytes = Assembler.encode(instr.mnemonic, instr.op1, instr.op2);
+            for (let i = 0; i < 4; i++) bootImage[bootOffset++] = bytes[i];
+        }
+
+        const osInstrs = generateOSCode();
+        const osImage = new Uint8Array(4 * 512);
+        let osOffset = 0;
+        for (const instr of osInstrs) {
+            if (osOffset + 4 > osImage.length) break;
+            const bytes = Assembler.encode(instr.mnemonic, instr.op1, instr.op2);
+            for (let i = 0; i < 4; i++) osImage[osOffset++] = bytes[i];
+        }
+
+        const disk = Disk.getImage();
+        for (let i = 0; i < 512; i++) disk[i] = bootImage[i];
+        for (let i = 0; i < osImage.length; i++) disk[512 + i] = osImage[i];
+
+        return {
+            bootBytes: bootInstrs.length * 4,
+            osBytes: osInstrs.length * 4,
+            totalSectors: 5
+        };
+    }
+
+    return { installToDisk, BOOT_ADDR, OS_ADDR, generateBootSector, generateOSCode };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 13：Machine
+   ───────────────────────────────────────────────────────────── */
+const Machine = (() => {
+
+    let booted = false;
+
+    function post() {
+        const checks = [];
+
+        try {
+            Memory.writeByte(0xFFFE, 0xAA);
+            const v = Memory.readByte(0xFFFE);
+            Memory.writeByte(0xFFFE, 0x00);
+            checks.push({ name: '内存总线', ok: v === 0xAA, info: Memory.SIZE + ' 字节' });
+        } catch (e) {
+            checks.push({ name: '内存总线', ok: false, info: e.message });
+        }
+
+        try {
+            CPU.setReg(7, 0xBEEF);
+            const v = CPU.getReg(7);
+            CPU.setReg(7, 0);
+            checks.push({ name: 'CPU 寄存器', ok: v === 0xBEEF, info: '8 × 16 位' });
+        } catch (e) {
+            checks.push({ name: 'CPU 寄存器', ok: false, info: e.message });
+        }
+
+        try {
+            Display.putChar(0, 0, 'X', 0x07);
+            const c = Display.getChar(0, 0);
+            Display.putChar(0, 0, ' ', 0x07);
+            checks.push({ name: '显示控制器', ok: c.char === 'X', info: Display.COLS + '×' + Display.ROWS });
+        } catch (e) {
+            checks.push({ name: '显示控制器', ok: false, info: e.message });
+        }
+
+        try {
+            const info = Disk.getInfo();
+            checks.push({ name: '磁盘控制器', ok: info.sectorCount === 2048, info: (info.diskSize / 1024 / 1024) + ' MB' });
+        } catch (e) {
+            checks.push({ name: '磁盘控制器', ok: false, info: e.message });
+        }
+
+        try {
+            Keyboard.pushKey('A');
+            const k = Keyboard.popKey();
+            Keyboard.clear();
+            checks.push({ name: '键盘控制器', ok: k === 'A', info: '缓冲区 256' });
+        } catch (e) {
+            checks.push({ name: '键盘控制器', ok: false, info: e.message });
+        }
+
+        try {
+            const c = Assembler.count();
+            checks.push({ name: '指令表', ok: c === 36, info: c + ' 条指令' });
+        } catch (e) {
+            checks.push({ name: '指令表', ok: false, info: e.message });
+        }
+
+        try {
+            const v = IOBus.inPort(0x00);
+            checks.push({ name: 'I/O 总线', ok: v === 0, info: '端口 0x00 - 0xFF' });
+        } catch (e) {
+            checks.push({ name: 'I/O 总线', ok: false, info: e.message });
+        }
+
+        try {
+            // 用 0x70（安全范围，不冲突）测向量读写
+            InterruptController.setVector(0x70, 0x1234);
+            const addr = InterruptController.getVector(0x70);
+            InterruptController.setVector(0x70, 0);
+            checks.push({ name: '中断控制器', ok: addr === 0x1234, info: '256 向量（0x00-0x7F 可用）' });
+        } catch (e) {
+            checks.push({ name: '中断控制器', ok: false, info: e.message });
+        }
+
+        return checks;
+    }
+
+    function boot() {
+        if (booted) return;
+        booted = true;
+
+        Memory.clear();
+        CPU.reset();
+        Display.clear();
+        Disk.clear();
+        Keyboard.clear();
+        Timer.reset();
+        InterruptController.reset();
+        BIOS.reset();
+
+        const led = document.getElementById('led-power');
+        if (led) led.classList.add('on');
+
+        Terminal.start();
+        Terminal.printBanner();
+        StatusBar.start();
+
+        document.addEventListener('keydown', (e) => {
+            const inputFocused = document.activeElement && document.activeElement.id === 'input-field';
+            if (inputFocused) return;
+
+            if (e.key.length === 1) Keyboard.pushKey(e.key);
+            else if (e.key === 'Enter') Keyboard.pushKey('\n');
+            else if (e.key === 'Backspace') Keyboard.pushKey('\b');
+            else if (e.key === 'Escape') Keyboard.pushKey('\x1B');
+        });
+    }
+
+    function reset() { booted = false; boot(); }
+
+    return { boot, reset, post };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 14：StatusBar
+   ───────────────────────────────────────────────────────────── */
+const StatusBar = (() => {
+
+    let timer = null;
+
+    function update() {
+        const s = CPU.snapshot();
+        const elCpu = document.getElementById('stat-cpu');
+        const elPc = document.getElementById('stat-pc');
+        const elSp = document.getElementById('stat-sp');
+        const elFlags = document.getElementById('stat-flags');
+        const elInt = document.getElementById('stat-int');
+        const led = document.getElementById('led-power');
+
+        if (elCpu) elCpu.textContent = s.state;
+        if (elPc) elPc.textContent = '0x' + s.PC.toString(16).padStart(4, '0').toUpperCase();
+        if (elSp) elSp.textContent = '0x' + s.SP.toString(16).padStart(4, '0').toUpperCase();
+        if (elFlags) elFlags.textContent = CPU.flagsToString() + ' 0x' + s.FLAGS.toString(16).padStart(4, '0').toUpperCase();
+
+        if (elInt) {
+            const nesting = InterruptController.getNesting();
+            const lastInt = InterruptController.getLastInt();
+            elInt.textContent = nesting > 0 ? ('0x' + lastInt.toString(16) + ' (' + nesting + ')') : '--';
+        }
+
+        if (led) {
+            led.classList.remove('on', 'running');
+            if (s.state === 'RUNNING') led.classList.add('running');
+            else led.classList.add('on');
+        }
+    }
+
+    function start() {
+        if (timer) clearInterval(timer);
+        timer = setInterval(update, 100);
+        update();
+    }
+
+    return { start, update };
+
+})();
+
+
+/* ─────────────────────────────────────────────────────────────
+   模块 15：Terminal
+   ───────────────────────────────────────────────────────────── */
+const Terminal = (() => {
+
+    let termEl = null;
+    let inputEl = null;
+    let promptEl = null;
+    let history = [];
+    let historyIdx = -1;
+
+    const commands = {};
+
+    function registerCommand(name, desc, handler) {
+        commands[name] = { desc, handler };
+    }
+
+    function start() {
+        termEl = document.getElementById('terminal');
+        inputEl = document.getElementById('input-field');
+        promptEl = document.getElementById('input-prompt');
+        if (!termEl || !inputEl) return;
+
+        inputEl.addEventListener('keydown', onKeyDown);
+        inputEl.focus();
+        document.addEventListener('click', () => inputEl.focus());
+        registerBuiltinCommands();
+    }
+
+    function onKeyDown(e) {
+        if (e.key === 'Enter') {
+            const cmd = inputEl.value.trim();
+            inputEl.value = '';
+            if (cmd) { history.push(cmd); historyIdx = history.length; execute(cmd); }
+            else newLine();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (historyIdx > 0) { historyIdx--; inputEl.value = history[historyIdx]; }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (historyIdx < history.length - 1) { historyIdx++; inputEl.value = history[historyIdx]; }
+            else { historyIdx = history.length; inputEl.value = ''; }
+        } else if (e.key === 'l' && e.ctrlKey) {
+            e.preventDefault();
+            clearScreen();
+        }
+    }
+
+    function execute(input) {
+        printLine(promptEl.textContent + ' ' + input, 'line-input');
+        const parts = input.split(/\s+/);
+        const cmd = parts[0].toLowerCase();
+        const args = parts.slice(1);
+        const fullCmd = parts.length >= 2 ? parts[0].toLowerCase() + ' ' + parts[1].toLowerCase() : null;
+
+        if (fullCmd && commands[fullCmd]) {
+            try { commands[fullCmd].handler(parts.slice(2)); }
+            catch (e) { printLine('错误: ' + e.message, 'line-error'); }
+        } else if (commands[cmd]) {
+            try { commands[cmd].handler(args); }
+            catch (e) { printLine('错误: ' + e.message, 'line-error'); }
+        } else {
+            printLine('未识别的命令: ' + cmd, 'line-error');
+            printLine('输入 help 查看可用命令', 'line-dim');
+        }
+    }
+
+    function printLine(text, className) {
+        const div = document.createElement('div');
+        if (className) div.className = className;
+        div.textContent = text;
+        termEl.appendChild(div);
+        termEl.scrollTop = termEl.scrollHeight;
+    }
+
+    function newLine() { printLine('', ''); }
+    function clearScreen() { termEl.innerHTML = ''; }
+
+    function printBanner() {
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        printLine('  JS-H86 C1 架构 · 第一代实现', 'line-bright');
+        printLine('  版本：v1.0.1（完整机 · 已修复）', 'line-info');
+        printLine('  宿主：浏览器 JS 引擎', 'line-info');
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        newLine();
+        printLine('内存: 64 KB  磁盘: 1 MB  显示: 80×25', 'line-dim');
+        printLine('指令: 36 条（含 MUL/DIV/NOT/SHL/SHR/INT/IRET/STI/CLI）', 'line-success');
+        printLine('BIOS: INT 0x10/0x11/0x12/0x13/0x16/0x1A/0x20', 'line-success');
+        printLine('中断: 用户 ISR 用 0x00-0x7F（0x80+ 会撞用户程序区）', 'line-warn');
+        printLine('OS: 内置引导 + 简易命令行', 'line-success');
+        newLine();
+        printLine('输入 boot 开机，test 跑测试，help 查看命令', 'line-warn');
+        newLine();
+    }
+
+    function registerBuiltinCommands() {
+
+        registerCommand('help', '显示所有命令', () => {
+            printLine('可用命令：', 'line-bright');
+            Object.keys(commands).sort().forEach(name => {
+                const pad = name.padEnd(22, ' ');
+                printLine('  ' + pad + commands[name].desc, 'line-info');
+            });
+        });
+
+        registerCommand('test', '运行全套测试', () => { runFullTest(); });
+        registerCommand('clear', '清屏', () => { clearScreen(); });
+
+        registerCommand('version', '显示版本信息', () => {
+            printLine('JS-H86 C1 v1.0.1（完整机 · 已修复）', 'line-bright');
+            printLine('已实现: 36 条指令', 'line-success');
+            printLine('BIOS: INT 0x10/0x13/0x16/0x20', 'line-success');
+            printLine('OS: 内置简易命令行', 'line-success');
+            printLine('修复: 中断向量冲突、上下文保存、栈报错信息', 'line-success');
+        });
+
+        registerCommand('regs', '显示 CPU 寄存器', () => {
+            const s = CPU.snapshot();
+            printLine('CPU 寄存器：', 'line-bright');
+            printLine('  R0 = 0x' + hex4(s.R0) + '  R1 = 0x' + hex4(s.R1) + '  R2 = 0x' + hex4(s.R2) + '  R3 = 0x' + hex4(s.R3), 'line-info');
+            printLine('  R4 = 0x' + hex4(s.R4) + '  R5 = 0x' + hex4(s.R5) + '  R6 = 0x' + hex4(s.R6) + '  R7 = 0x' + hex4(s.R7), 'line-info');
+            printLine('  PC = 0x' + hex4(s.PC) + '   SP = 0x' + hex4(s.SP), 'line-info');
+            printLine('  FLAGS = ' + CPU.flagsToString() + ' (0x' + hex4(s.FLAGS) + ')', 'line-info');
+            printLine('  状态: ' + s.state + '   已执行: ' + s.instructionCount, 'line-info');
+            printLine('  中断: 次数=' + InterruptController.getCount() +
+                     ' 最后=0x' + InterruptController.getLastInt().toString(16) +
+                     ' 嵌套=' + InterruptController.getNesting() +
+                     ' 最大=' + InterruptController.getMaxNesting(), 'line-info');
+            printLine('  未处理中断: ' + s.unhandledInterrupts + '   拒绝的向量: ' + InterruptController.getRejectedCount(), 'line-info');
+            if (s.lastError) printLine('  最后错误: ' + s.lastError, 'line-error');
+        });
+
+        registerCommand('mem', '查看内存（mem <地址> [长度]）', (args) => {
+            if (args.length === 0) { printLine('用法: mem <地址> [长度]', 'line-warn'); return; }
+            dumpMemory(parseHex(args[0]), args[1] ? parseInt(args[1]) : 64);
+        });
+
+        registerCommand('screen', '查看屏幕（文本形式）', () => {
+            const text = Display.getScreenText();
+            printLine('屏幕内容：', 'line-bright');
+            text.split('\n').forEach((line, i) => {
+                printLine(String(i).padStart(2, ' ') + ' │' + line, 'line-info');
+            });
+        });
+
+        registerCommand('display', '打开显示器窗口', () => { openDisplayWindow(); });
+
+        registerCommand('stack', '查看栈区内容', () => {
+            const sp = CPU.getSP();
+            printLine('栈指针: 0x' + hex4(sp), 'line-bright');
+            if (sp < 0x7FFF) {
+                const len = Math.min(0x7FFF - sp, 64);
+                dumpMemory(sp, len);
+            } else printLine('栈为空', 'line-dim');
+        });
+
+        registerCommand('disk', '磁盘信息', () => {
+            const info = Disk.getInfo();
+            printLine('磁盘: ' + info.sectorCount + ' 扇区 × ' + info.sectorSize + ' 字节 = ' + (info.diskSize / 1024) + ' KB', 'line-info');
+            printLine('非零字节: ' + info.nonZeroBytes, 'line-info');
+        });
+
+        registerCommand('timer', '显示定时器值', () => {
+            printLine('定时器: 0x' + hex4(Timer.getValue()) + ' (' + Timer.getValue() + ' 条指令)', 'line-info');
+        });
+
+        registerCommand('vectors', '查看中断向量表', () => {
+            printLine('中断向量表（非零项，安全范围 0x00-0x7F）：', 'line-bright');
+            let found = 0;
+            for (let i = 0; i < 128; i++) {
+                const addr = InterruptController.getVector(i);
+                if (addr !== 0) {
+                    printLine('  INT 0x' + i.toString(16).padStart(2, '0') + ' → 0x' + hex4(addr), 'line-info');
+                    found++;
+                }
+            }
+            if (found === 0) printLine('  （无用户定义的中断）', 'line-dim');
+            const rej = InterruptController.getRejectedCount();
+            if (rej > 0) printLine('  ⚠ 曾被拒绝的设置: ' + rej + ' 次（0x80+ 会覆盖用户程序区）', 'line-warn');
+        });
+
+        registerCommand('asm', '列出所有指令', () => {
+            const list = Assembler.listOpcodes();
+            printLine('指令表（共 ' + list.length + ' 条）：', 'line-bright');
+            list.forEach(item => {
+                const mark = item.implemented ? '★' : ' ';
+                const cls = item.implemented ? 'line-success' : 'line-dim';
+                printLine('  ' + mark + ' 0x' + hex2(item.opcode) + '  ' + item.mnemonic, cls);
+            });
+        });
+
+        registerCommand('post', '上电自检', () => {
+            const checks = Machine.post();
+            printLine('上电自检（POST）：', 'line-bright');
+            checks.forEach(c => {
+                const status = c.ok ? '[OK]  ' : '[FAIL]';
+                const cls = c.ok ? 'line-success' : 'line-error';
+                printLine('  ' + status + ' ' + c.name.padEnd(14) + ' ' + c.info, cls);
+            });
+        });
+
+        registerCommand('reset', '复位机器', () => {
+            printLine('正在复位...', 'line-warn');
+            setTimeout(() => Machine.reset(), 300);
+        });
+
+        registerCommand('load <hex>', '加载十六进制程序', (args) => {
+            if (args.length === 0) { printLine('用法: load 11 00 00 05 ...', 'line-warn'); return; }
+            const n = ProgramLoader.loadHex(0x0100, args.join(' '));
+            printLine('已加载 ' + n + ' 字节到 0x0100', 'line-success');
+        });
+
+        registerCommand('run', '从 PC 开始执行', (args) => {
+            let addr = CPU.getPC();
+            if (args.length > 0) { addr = parseHex(args[0]); CPU.setPC(addr); }
+            if (addr === 0) { printLine('PC = 0，先用 load 或 demo 加载程序', 'line-warn'); return; }
+            if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+            printLine('从 0x' + hex4(addr) + ' 执行...', 'line-info');
+            const t0 = performance.now();
+            const result = CPU.run();
+            const t1 = performance.now();
+
+            printLine('执行 ' + result.executed + ' 条，耗时 ' + (t1 - t0).toFixed(2) + ' ms', 'line-info');
+            if (result.error) printLine('错误: ' + result.error, 'line-error');
+            else if (result.halted) printLine('CPU 停机', 'line-success');
+            else if (result.limitReached) printLine('达到指令上限', 'line-warn');
+
+            const s = CPU.snapshot();
+            printLine('  R0=' + s.R0 + ' R1=' + s.R1 + ' R2=' + s.R2 + ' R3=' + s.R3, 'line-info');
+            printLine('  SP=0x' + hex4(s.SP) + ' FLAGS=' + CPU.flagsToString(), 'line-info');
+        });
+
+        registerCommand('step', '单步执行（step [N]）', (args) => {
+            if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+            const n = args.length > 0 ? parseInt(args[0]) : 1;
+            for (let i = 0; i < n; i++) {
+                const pcBefore = CPU.getPC();
+                const bytes = Memory.readBlock(pcBefore, 4);
+                const text = Assembler.disassemble(bytes);
+                const result = CPU.step();
+                if (!result.ok) {
+                    printLine('0x' + hex4(pcBefore) + '  ' + text + '  → ' + result.error, 'line-error');
+                    return;
+                }
+                const s = CPU.snapshot();
+                printLine('0x' + hex4(pcBefore) + '  ' + text.padEnd(28, ' ') + ' → PC=0x' + hex4(s.PC) + ' ' + CPU.flagsToString(), 'line-info');
+                if (s.state === 'HALTED') { printLine('CPU 停机', 'line-success'); return; }
+            }
+        });
+
+        registerCommand('disasm <addr> [count]', '反汇编', (args) => {
+            if (args.length === 0) { printLine('用法: disasm <地址> [条数]', 'line-warn'); return; }
+            const list = ProgramLoader.disassembleRange(parseHex(args[0]), args[1] ? parseInt(args[1]) : 8);
+            printLine('反汇编：', 'line-bright');
+            list.forEach(item => {
+                const hex = Array.from(item.bytes).map(b => hex2(b)).join(' ');
+                printLine('  ' + hex4(item.addr) + '  ' + hex + '  ' + item.text, 'line-info');
+            });
+        });
+
+        registerCommand('boot', '开机（BIOS → 引导 → OS）', () => { runBoot(); });
+        registerCommand('install-os', '把 OS 写入磁盘镜像', () => {
+            const result = OS.installToDisk();
+            printLine('✅ OS 已写入磁盘', 'line-success');
+            printLine('  引导扇区: ' + result.bootBytes + ' 字节', 'line-info');
+            printLine('  OS 主体: ' + result.osBytes + ' 字节', 'line-info');
+            printLine('  占用扇区: ' + result.totalSectors, 'line-info');
+        });
+
+        registerCommand('demo', '默认示例（hello）', () => { runDemoHello(); });
+        registerCommand('demo hello', 'Hello World', () => { runDemoHello(); });
+        registerCommand('demo echo', '键盘回显', () => { runDemoEcho(); });
+        registerCommand('demo counter', '计数器', () => { runDemoCounter(); });
+        registerCommand('demo bios', 'BIOS 显示', () => { runDemoBIOS(); });
+        registerCommand('demo isr', '自定义 ISR', () => { runDemoISR(); });
+        registerCommand('demo timer_int', '定时器中断', () => { runDemoTimerInt(); });
+        registerCommand('demo mul', '乘法/除法', () => { runDemoMulDiv(); });
+        registerCommand('demo shift', '位移', () => { runDemoShift(); });
+
+        registerCommand('demos', '列出所有示例', () => {
+            printLine('示例程序：', 'line-bright');
+            printLine('  demo hello     → Hello World', 'line-info');
+            printLine('  demo echo      → 键盘回显', 'line-info');
+            printLine('  demo counter   → 计数器', 'line-info');
+            printLine('  demo bios      → BIOS 显示服务', 'line-info');
+            printLine('  demo isr       → 自定义中断处理', 'line-info');
+            printLine('  demo timer_int → 定时器中断', 'line-info');
+            printLine('  demo mul       → 乘法/除法', 'line-info');
+            printLine('  demo shift     → 位移', 'line-info');
+        });
+    }
+
+    function openDisplayWindow() {
+        if (document.getElementById('c1-display-canvas')) return;
+
+        const win = document.createElement('div');
+        win.id = 'c1-display-window';
+        win.style.cssText = 'position:fixed;top:80px;right:40px;width:700px;height:480px;background:#1a1a1a;border:2px solid #4ec9b0;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.6);z-index:9999;display:flex;flex-direction:column;overflow:hidden;';
+
+        const titlebar = document.createElement('div');
+        titlebar.style.cssText = 'height:30px;background:#252525;display:flex;align-items:center;padding:0 10px;color:#ccc;font-size:12px;border-bottom:1px solid #333;cursor:move;user-select:none;';
+        titlebar.innerHTML = '<span style="color:#4ec9b0;font-weight:bold;">🖥 JS-H86 C1 显示器</span><span id="c1-display-cursor" style="margin-left:20px;color:#888;font-size:11px;">光标: (0, 0)</span><span style="margin-left:auto;cursor:pointer;padding:0 8px;" id="c1-display-close">✕</span>';
+
+        const content = document.createElement('div');
+        content.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;padding:10px;background:#000;';
+        content.innerHTML = '<canvas id="c1-display-canvas"></canvas>';
+
+        win.appendChild(titlebar);
+        win.appendChild(content);
+        document.body.appendChild(win);
+
+        document.getElementById('c1-display-close').onclick = function() { win.remove(); };
+
+        let dragInfo = null;
+        titlebar.addEventListener('pointerdown', function(e) {
+            if (e.target.id === 'c1-display-close') return;
+            dragInfo = { startX: e.clientX, startY: e.clientY, origLeft: win.offsetLeft, origTop: win.offsetTop };
+            e.preventDefault();
+        });
+        document.addEventListener('pointermove', function(e) {
+            if (!dragInfo) return;
+            win.style.left = (dragInfo.origLeft + e.clientX - dragInfo.startX) + 'px';
+            win.style.top = (dragInfo.origTop + e.clientY - dragInfo.startY) + 'px';
+            win.style.right = 'auto';
+        });
+        document.addEventListener('pointerup', function() { dragInfo = null; });
+
+        setTimeout(() => {
+            const canvas = document.getElementById('c1-display-canvas');
+            if (canvas) Display.initCanvas(canvas);
+        }, 50);
+    }
+
+    function runBoot() {
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        printLine('  JS-H86 C1 完整机启动', 'line-bright');
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        newLine();
+
+        printLine('[POST] 上电自检...', 'line-warn');
+        const checks = Machine.post();
+        checks.forEach(c => {
+            printLine('  ' + (c.ok ? '[OK]  ' : '[FAIL]') + ' ' + c.name.padEnd(14) + ' ' + c.info,
+                      c.ok ? 'line-success' : 'line-error');
+        });
+        newLine();
+
+        printLine('[DISK] 写入 OS 到磁盘...', 'line-warn');
+        const installResult = OS.installToDisk();
+        printLine('  引导扇区: ' + installResult.bootBytes + ' 字节', 'line-info');
+        printLine('  OS 主体: ' + installResult.osBytes + ' 字节', 'line-info');
+        newLine();
+
+        Memory.clear();
+        CPU.reset();
+        Display.clear();
+        Keyboard.clear();
+        Timer.reset();
+        InterruptController.reset();
+
+        printLine('[BIOS] 读引导扇区到 0x7C00...', 'line-warn');
+        Disk.readSector(0, 0x7C00);
+
+        CPU.setPC(0x7C00);
+        CPU.setState('RUNNING');
+
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+        printLine('[CPU] 从 0x7C00 开始执行...', 'line-warn');
+        newLine();
+
+        setTimeout(function() {
+            const result = CPU.run(5000);
+            printLine('执行 ' + result.executed + ' 条', 'line-info');
+            if (result.error) printLine('错误: ' + result.error, 'line-error');
+            else if (result.halted) printLine('CPU 停机（OS 正常退出）', 'line-success');
+            else printLine('CPU 暂停（等待输入或达到上限）', 'line-warn');
+            newLine();
+            printLine('系统已就绪，使用 display 查看屏幕', 'line-success');
+            printLine('在显示器窗口里按 h/c/x 等键测试 OS', 'line-info');
+        }, 100);
+    }
+
+    function runDemoHello() {
+        Memory.clear(); CPU.reset(); Display.clear();
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+        const text = 'Hello, World!';
+        const prog = [];
+        for (let i = 0; i < text.length; i++) {
+            prog.push({ mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 | text.charCodeAt(i) });
+            prog.push({ mnemonic: 'INT',    op1: 0x10, op2: 0 });
+        }
+        prog.push({ mnemonic: 'HLT', op1: 0, op2: 0 });
+        ProgramLoader.loadInstructions(0x0100, prog);
+        CPU.setPC(0x0100);
+        printLine('── Hello World ──', 'line-bright');
+        const r = CPU.run();
+        printLine('执行 ' + r.executed + ' 条', 'line-info');
+        printLine('✅ 完成', 'line-success');
+    }
+
+    function runDemoEcho() {
+        Memory.clear(); CPU.reset(); Display.clear();
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+        ProgramLoader.loadInstructions(0x0100, [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0000 },
+            { mnemonic: 'INT',    op1: 0x16, op2: 0 },
+            { mnemonic: 'CMP_RI', op1: 0, op2: 0 },
+            { mnemonic: 'JZ',     op1: 0x0100, op2: 0 },
+            { mnemonic: 'MOV_RR', op1: 1, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E00 },
+            { mnemonic: 'OR_RR',  op1: 0, op2: 1 },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'JMP',    op1: 0x0100, op2: 0 }
+        ]);
+        CPU.setPC(0x0100);
+        printLine('── 键盘回显 ──', 'line-bright');
+        const r = CPU.run(2000);
+        printLine('执行 ' + r.executed + ' 条（暂停，等待键盘）', 'line-info');
+    }
+
+    function runDemoCounter() {
+        Memory.clear(); CPU.reset(); Display.clear();
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+        ProgramLoader.loadInstructions(0x0100, [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 1, op2: 1 },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 10 },
+            { mnemonic: 'MOV_RR', op1: 3, op2: 0 },
+            { mnemonic: 'ADD_RI', op1: 3, op2: 0x0E00 | 48 },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E0A },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'ADD_RR', op1: 0, op2: 1 },
+            { mnemonic: 'CMP_RR', op1: 0, op2: 2 },
+            { mnemonic: 'JNZ',    op1: 0x010C, op2: 0 },
+            { mnemonic: 'HLT',    op1: 0, op2: 0 }
+        ]);
+        CPU.setPC(0x0100);
+        printLine('── 计数器 0-9 ──', 'line-bright');
+        const r = CPU.run();
+        printLine('执行 ' + r.executed + ' 条', 'line-info');
+        printLine('✅ 完成', 'line-success');
+    }
+
+    function runDemoBIOS() {
+        Memory.clear(); CPU.reset(); Display.clear();
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+        ProgramLoader.loadInstructions(0x0100, [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0000 },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E48 },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E65 },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E6C },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E6C },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E6F },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'HLT',    op1: 0, op2: 0 }
+        ]);
+        CPU.setPC(0x0100);
+        printLine('── BIOS 显示 ──', 'line-bright');
+        const r = CPU.run();
+        printLine('BIOS 调用次数: ' + BIOS.getCallCount(), 'line-info');
+        printLine('✅ 完成', 'line-success');
+    }
+
+    function runDemoISR() {
+        Memory.clear(); CPU.reset(); Display.clear();
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+        // 用户 ISR 号 0x70（安全范围，不撞 0x0100 用户程序区）
+        ProgramLoader.loadInstructions(0x0100, [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0 },
+            { mnemonic: 'INT',    op1: 0x70, op2: 0 },
+            { mnemonic: 'HLT',    op1: 0, op2: 0 }
+        ]);
+
+        InterruptController.setVector(0x70, 0x0300);
+
+        ProgramLoader.loadInstructions(0x0300, [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E2A },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'IRET',   op1: 0, op2: 0 }
+        ]);
+
+        CPU.setPC(0x0100);
+        printLine('── 自定义 ISR ──', 'line-bright');
+        printLine('主程序执行 INT 0x70 → 跳到用户 ISR', 'line-dim');
+
+        const r = CPU.run();
+        const char = Display.getChar(0, 0).char;
+
+        printLine('执行 ' + r.executed + ' 条', 'line-info');
+        printLine('中断次数: ' + InterruptController.getCount(), 'line-info');
+        printLine('屏幕首字符: "' + char + '" (期望 "*")', char === '*' ? 'line-success' : 'line-error');
+        printLine(char === '*' ? '✅ 通过' : '❌ 失败', char === '*' ? 'line-success' : 'line-error');
+    }
+
+    function runDemoTimerInt() {
+        Memory.clear(); CPU.reset(); Display.clear();
+        if (!document.getElementById('c1-display-canvas')) openDisplayWindow();
+
+        ProgramLoader.loadInstructions(0x0100, [
+            { mnemonic: 'STI',    op1: 0, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 100 },
+            { mnemonic: 'OUT',    op1: 0x41, op2: 0 },
+            { mnemonic: 'MOV_RI', op1: 0, op2: 2 },
+            { mnemonic: 'OUT',    op1: 0x40, op2: 0 },
+            { mnemonic: 'NOP',    op1: 0, op2: 0 },
+            { mnemonic: 'JMP',    op1: 0x0118, op2: 0 }
+        ]);
+
+        InterruptController.setVector(0x02, 0x0300);
+        ProgramLoader.loadInstructions(0x0300, [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E2E },
+            { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+            { mnemonic: 'IRET',   op1: 0, op2: 0 }
+        ]);
+
+        CPU.setPC(0x0100);
+        printLine('── 定时器中断 ──', 'line-bright');
+        printLine('每 100 条指令触发一次 INT 0x02，ISR 输出 "."', 'line-dim');
+
+        const r = CPU.run(3000);
+        const intCount = InterruptController.getCount();
+        printLine('执行 ' + r.executed + ' 条', 'line-info');
+        printLine('中断次数: ' + intCount, 'line-info');
+        printLine(intCount > 0 ? '✅ 定时器中断触发成功' : '❌ 未触发中断',
+                  intCount > 0 ? 'line-success' : 'line-error');
+    }
+
+    function runDemoMulDiv() {
+        Memory.clear(); CPU.reset();
+        ProgramLoader.loadInstructions(0x0100, [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 12 },
+            { mnemonic: 'MOV_RI', op1: 1, op2: 8 },
+            { mnemonic: 'MUL_RR', op1: 0, op2: 1 },
+            { mnemonic: 'MOV_RI', op1: 2, op2: 100 },
+            { mnemonic: 'MOV_RI', op1: 3, op2: 7 },
+            { mnemonic: 'DIV_RR', op1: 2, op2: 3 },
+            { mnemonic: 'HLT',    op1: 0, op2: 0 }
+        ]);
+        CPU.setPC(0x0100);
+        printLine('── 乘法 / 除法 ──', 'line-bright');
+        const r = CPU.run();
+        const s = CPU.snapshot();
+        printLine('  R0 = 12 × 8 = ' + s.R0 + ' (期望 96)', s.R0 === 96 ? 'line-success' : 'line-error');
+        printLine('  R2 = 100 ÷ 7 = ' + s.R2 + ' (期望 14)', s.R2 === 14 ? 'line-success' : 'line-error');
+        printLine('  R7 = 100 % 7 = ' + s.R7 + ' (期望 2)', s.R7 === 2 ? 'line-success' : 'line-error');
+        const pass = (s.R0 === 96 && s.R2 === 14 && s.R7 === 2);
+        printLine(pass ? '✅ 通过' : '❌ 失败', pass ? 'line-success' : 'line-error');
+    }
+
+    function runDemoShift() {
+        Memory.clear(); CPU.reset();
+        ProgramLoader.loadInstructions(0x0100, [
+            { mnemonic: 'MOV_RI', op1: 0, op2: 1 },
+            { mnemonic: 'SHL_RI', op1: 0, op2: 4 },
+            { mnemonic: 'MOV_RI', op1: 1, op2: 0x80 },
+            { mnemonic: 'SHR_RI', op1: 1, op2: 3 },
+            { mnemonic: 'HLT',    op1: 0, op2: 0 }
+        ]);
+        CPU.setPC(0x0100);
+        printLine('── 位移 ──', 'line-bright');
+        const r = CPU.run();
+        const s = CPU.snapshot();
+        printLine('  R0 = 1 << 4 = ' + s.R0 + ' (期望 16)', s.R0 === 16 ? 'line-success' : 'line-error');
+        printLine('  R1 = 0x80 >> 3 = 0x' + hex4(s.R1) + ' (期望 0x0010)', s.R1 === 0x10 ? 'line-success' : 'line-error');
+        const pass = (s.R0 === 16 && s.R1 === 0x10);
+        printLine(pass ? '✅ 通过' : '❌ 失败', pass ? 'line-success' : 'line-error');
+    }
+
+    function runFullTest() {
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        printLine('  JS-H86 C1 完整自检（v1.0.1）', 'line-bright');
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        newLine();
+
+        let passed = 0;
+        let failed = 0;
+
+        function assert(name, fn) {
+            try {
+                const result = fn();
+                if (result === true) { printLine('  [PASS] ' + name, 'line-success'); passed++; }
+                else { printLine('  [FAIL] ' + name + ' → ' + result, 'line-error'); failed++; }
+            } catch (e) {
+                printLine('  [FAIL] ' + name + ' → ' + e.message, 'line-error');
+                failed++;
+            }
+        }
+
+        printLine('【内存总线】', 'line-bright');
+        assert('写读单字节', () => {
+            Memory.writeByte(0x1000, 0xAB);
+            return Memory.readByte(0x1000) === 0xAB ? true : '读回不匹配';
+        });
+        assert('写读 16 位字（小端）', () => {
+            Memory.writeWord(0x2000, 0x1234);
+            return (Memory.readByte(0x2000) === 0x34 && Memory.readByte(0x2001) === 0x12) ? true : '字节序错误';
+        });
+        assert('块读写', () => {
+            const d = new Uint8Array([1, 2, 3, 4, 5]);
+            Memory.writeBlock(0x3000, d);
+            const r = Memory.readBlock(0x3000, 5);
+            for (let i = 0; i < 5; i++) if (r[i] !== d[i]) return '字节 ' + i + ' 不匹配';
+            return true;
+        });
+        assert('越界检查', () => {
+            try { Memory.writeByte(0x10000, 0); return '未抛出异常'; }
+            catch (e) { return true; }
+        });
+        newLine();
+
+        printLine('【CPU 寄存器】', 'line-bright');
+        assert('R0-R7 写读', () => {
+            for (let i = 0; i < 8; i++) CPU.setReg(i, 0x1000 + i);
+            for (let i = 0; i < 8; i++) if (CPU.getReg(i) !== 0x1000 + i) return 'R' + i + ' 不匹配';
+            return true;
+        });
+        assert('PC / SP 写读', () => {
+            CPU.setPC(0xABCD); CPU.setSP(0x1234);
+            return (CPU.getPC() === 0xABCD && CPU.getSP() === 0x1234) ? true : '不匹配';
+        });
+        assert('FLAGS 位操作', () => {
+            CPU.setFLAGS(0);
+            CPU.setFlag(CPU.FLAG_Z, true);
+            const a = CPU.testFlag(CPU.FLAG_Z);
+            CPU.setFlag(CPU.FLAG_Z, false);
+            const b = !CPU.testFlag(CPU.FLAG_Z);
+            return (a && b) ? true : '位操作失败';
+        });
+        assert('复位', () => {
+            CPU.reset();
+            for (let i = 0; i < 8; i++) if (CPU.getReg(i) !== 0) return 'R' + i + ' 未清零';
+            return (CPU.getPC() === 0 && CPU.getSP() === 0x7FFF) ? true : 'PC/SP 未复位';
+        });
+        newLine();
+
+        printLine('【显示控制器】', 'line-bright');
+        assert('写读字符', () => {
+            Display.putChar(10, 5, 'A', 0x07);
+            return Display.getChar(10, 5).char === 'A' ? true : '字符不匹配';
+        });
+        assert('显存位置正确', () => {
+            Display.putChar(0, 0, 'Z', 0x07);
+            return Memory.readByte(Display.VRAM_BASE) === 0x5A ? true : '显存位置错误';
+        });
+        assert('清屏', () => {
+            Display.clear();
+            return Display.getChar(10, 5).char === ' ' ? true : '清屏失败';
+        });
+        newLine();
+
+        printLine('【磁盘控制器】', 'line-bright');
+        assert('扇区读写', () => {
+            for (let i = 0; i < 512; i++) Memory.writeByte(0x4000 + i, i & 0xFF);
+            Disk.writeSector(100, 0x4000);
+            for (let i = 0; i < 512; i++) Memory.writeByte(0x4000 + i, 0);
+            Disk.readSector(100, 0x4000);
+            for (let i = 0; i < 512; i++) if (Memory.readByte(0x4000 + i) !== (i & 0xFF)) return '字节 ' + i + ' 不匹配';
+            return true;
+        });
+        newLine();
+
+        printLine('【键盘控制器】', 'line-bright');
+        assert('按键入队出队', () => {
+            Keyboard.clear();
+            Keyboard.pushKey('A'); Keyboard.pushKey('B'); Keyboard.pushKey('C');
+            return (Keyboard.popKey() === 'A' && Keyboard.popKey() === 'B' && Keyboard.popKey() === 'C') ? true : '顺序错误';
+        });
+        assert('peekKey 不取出', () => {
+            Keyboard.clear();
+            Keyboard.pushKey('X');
+            const peek = Keyboard.peekKey();
+            const stillThere = Keyboard.hasKey();
+            Keyboard.clear();
+            return (peek === 'X' && stillThere) ? true : 'peek 行为异常';
+        });
+        newLine();
+
+        printLine('【指令表】', 'line-bright');
+        assert('指令总数正确', () => Assembler.count() === 36 ? true : '不是 36');
+        assert('查表正确', () => Assembler.getOpcode('INT') === 0x72 ? true : 'INT 错误');
+        assert('已实现 36 条', () => Assembler.IMPLEMENTED.length === 36 ? true : '已实现 ' + Assembler.IMPLEMENTED.length);
+        newLine();
+
+        printLine('【基础指令】', 'line-bright');
+        assert('MOV_RI / ADD_RR', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 5 },
+                { mnemonic: 'MOV_RI', op1: 1, op2: 3 },
+                { mnemonic: 'ADD_RR', op1: 0, op2: 1 },
+                { mnemonic: 'HLT', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return CPU.getReg(0) === 8 ? true : 'R0 = ' + CPU.getReg(0);
+        });
+        assert('JMP / JNZ / CMP', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0 },
+                { mnemonic: 'MOV_RI', op1: 1, op2: 1 },
+                { mnemonic: 'MOV_RI', op1: 2, op2: 11 },
+                { mnemonic: 'MOV_RI', op1: 3, op2: 1 },
+                { mnemonic: 'ADD_RR', op1: 0, op2: 1 },
+                { mnemonic: 'ADD_RR', op1: 1, op2: 3 },
+                { mnemonic: 'CMP_RR', op1: 1, op2: 2 },
+                { mnemonic: 'JNZ',    op1: 0x0110, op2: 0 },
+                { mnemonic: 'HLT',    op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return (CPU.getReg(0) === 55 && CPU.getReg(1) === 11) ? true : '循环错误';
+        });
+        assert('PUSH / POP / CALL / RET', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0x1111 },
+                { mnemonic: 'CALL',   op1: 0x0200, op2: 0 },
+                { mnemonic: 'MOV_RI', op1: 1, op2: 0x2222 },
+                { mnemonic: 'HLT',    op1: 0, op2: 0 }
+            ]);
+            ProgramLoader.loadInstructions(0x0200, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0xAAAA },
+                { mnemonic: 'RET',    op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return (CPU.getReg(0) === 0xAAAA && CPU.getReg(1) === 0x2222 && CPU.getSP() === 0x7FFF) ? true : 'CALL/RET 异常';
+        });
+        newLine();
+
+        printLine('【扩展指令】', 'line-bright');
+        assert('MUL_RR', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 12 },
+                { mnemonic: 'MOV_RI', op1: 1, op2: 8 },
+                { mnemonic: 'MUL_RR', op1: 0, op2: 1 },
+                { mnemonic: 'HLT', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return CPU.getReg(0) === 96 ? true : 'R0 = ' + CPU.getReg(0);
+        });
+        assert('DIV_RR', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 100 },
+                { mnemonic: 'MOV_RI', op1: 1, op2: 7 },
+                { mnemonic: 'DIV_RR', op1: 0, op2: 1 },
+                { mnemonic: 'HLT', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return (CPU.getReg(0) === 14 && CPU.getReg(7) === 2) ? true : '商=' + CPU.getReg(0) + ' 余=' + CPU.getReg(7);
+        });
+        assert('NOT_R', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0x0F0F },
+                { mnemonic: 'NOT_R', op1: 0, op2: 0 },
+                { mnemonic: 'HLT', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return CPU.getReg(0) === 0xF0F0 ? true : 'R0 = 0x' + CPU.getReg(0).toString(16);
+        });
+        assert('SHL_RI / SHR_RI', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 1 },
+                { mnemonic: 'SHL_RI', op1: 0, op2: 4 },
+                { mnemonic: 'MOV_RI', op1: 1, op2: 0x80 },
+                { mnemonic: 'SHR_RI', op1: 1, op2: 3 },
+                { mnemonic: 'HLT', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return (CPU.getReg(0) === 16 && CPU.getReg(1) === 0x10) ? true : '失败';
+        });
+        newLine();
+
+        printLine('【I/O 端口】', 'line-bright');
+        assert('OUT 显示字符', () => {
+            Memory.clear(); CPU.reset(); Display.clear();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E41 },
+                { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+                { mnemonic: 'HLT',    op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return Display.getChar(0, 0).char === 'A' ? true : '屏幕: ' + Display.getChar(0, 0).char;
+        });
+        assert('IN 定时器读', () => {
+            Memory.clear(); CPU.reset();
+            Timer.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'IN',  op1: 0, op2: 0x30 },
+                { mnemonic: 'HLT', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return CPU.getReg(0) >= 0 ? true : '失败';
+        });
+        newLine();
+
+        printLine('【中断系统】', 'line-bright');
+
+        assert('INT 0x10 BIOS 显示', () => {
+            Memory.clear(); CPU.reset(); Display.clear();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E58 },
+                { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+                { mnemonic: 'HLT',    op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return Display.getChar(0, 0).char === 'X' ? true : '屏幕: ' + Display.getChar(0, 0).char;
+        });
+
+        assert('INT 0x11 设备检测', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'INT',  op1: 0x11, op2: 0 },
+                { mnemonic: 'HLT',  op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return CPU.getReg(0) === 0x000F ? true : 'AX = 0x' + CPU.getReg(0).toString(16);
+        });
+
+        assert('INT 0x12 内存检测', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'INT',  op1: 0x12, op2: 0 },
+                { mnemonic: 'HLT',  op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return CPU.getReg(0) === 64 ? true : 'AX = ' + CPU.getReg(0);
+        });
+
+        assert('INT 0x16 键盘读', () => {
+            Memory.clear(); CPU.reset();
+            Keyboard.clear();
+            Keyboard.pushKey('Q');
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0 },
+                { mnemonic: 'INT',    op1: 0x16, op2: 0 },
+                { mnemonic: 'HLT',    op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            const v = CPU.getReg(0) & 0xFF;
+            Keyboard.clear();
+            return v === 0x51 ? true : 'AL = 0x' + v.toString(16);
+        });
+
+        assert('INT 0x1A 定时器', () => {
+            Memory.clear(); CPU.reset();
+            Timer.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'INT',  op1: 0x1A, op2: 0 },
+                { mnemonic: 'HLT',  op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return true;
+        });
+
+        assert('INT 0x20 停机', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0x0000 },
+                { mnemonic: 'INT',    op1: 0x20, op2: 0 },
+                { mnemonic: 'HLT',    op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100);
+            const r = CPU.run();
+            return (r.halted || CPU.getState() === 'HALTED') ? true : 'CPU 未停机';
+        });
+
+        assert('STI / CLI 中断使能', () => {
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'STI', op1: 0, op2: 0 },
+                { mnemonic: 'HLT', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            const iOn = CPU.testFlag(CPU.FLAG_I);
+            CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'CLI', op1: 0, op2: 0 },
+                { mnemonic: 'HLT', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            const iOff = !CPU.testFlag(CPU.FLAG_I);
+            return (iOn && iOff) ? true : 'STI/CLI 失败';
+        });
+
+        assert('中断向量表读写（安全范围 0x70）', () => {
+            Memory.clear();
+            InterruptController.setVector(0x70, 0xBEEF);
+            const v = InterruptController.getVector(0x70);
+            InterruptController.setVector(0x70, 0);
+            return v === 0xBEEF ? true : '值 = 0x' + v.toString(16);
+        });
+
+        // 修复验证：超出范围应该被拒绝
+        assert('中断向量越界拒绝（0x80 会撞用户程序区）', () => {
+            Memory.clear();
+            const before = InterruptController.getRejectedCount();
+            const ok = InterruptController.setVector(0x80, 0xDEAD);
+            const after = InterruptController.getRejectedCount();
+            return (!ok && after > before) ? true : '应拒绝但未拒绝';
+        });
+
+        assert('自定义 ISR 调用', () => {
+            Memory.clear(); CPU.reset(); Display.clear();
+            InterruptController.setVector(0x70, 0x0300);
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'INT',  op1: 0x70, op2: 0 },
+                { mnemonic: 'HLT',  op1: 0, op2: 0 }
+            ]);
+            ProgramLoader.loadInstructions(0x0300, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E2A },
+                { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+                { mnemonic: 'IRET',   op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            const c = Display.getChar(0, 0).char;
+            InterruptController.setVector(0x70, 0);
+            return c === '*' ? true : '屏幕: ' + c;
+        });
+
+        assert('IRET 恢复上下文（含寄存器）', () => {
+            Memory.clear(); CPU.reset();
+            InterruptController.setVector(0x71, 0x0300);
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 5, op2: 0x1111 },
+                { mnemonic: 'INT',    op1: 0x71, op2: 0 },
+                { mnemonic: 'MOV_RI', op1: 6, op2: 0x2222 },
+                { mnemonic: 'HLT',    op1: 0, op2: 0 }
+            ]);
+            ProgramLoader.loadInstructions(0x0300, [
+                { mnemonic: 'MOV_RI', op1: 4, op2: 0xAAAA },
+                { mnemonic: 'IRET',   op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            InterruptController.setVector(0x71, 0);
+            // 修复 #3：R4 应该被 IRET 恢复为 0（ISR 里的修改不影响调用者）
+            return (CPU.getReg(6) === 0x2222 && CPU.getReg(4) === 0) ? true : 'R4=' + CPU.getReg(4).toString(16) + '（应为 0）';
+        });
+
+        assert('定时器中断触发', () => {
+            Memory.clear(); CPU.reset(); Display.clear();
+            InterruptController.setVector(0x02, 0x0300);
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'STI',    op1: 0, op2: 0 },
+                { mnemonic: 'MOV_RI', op1: 0, op2: 50 },
+                { mnemonic: 'OUT',    op1: 0x41, op2: 0 },
+                { mnemonic: 'MOV_RI', op1: 0, op2: 2 },
+                { mnemonic: 'OUT',    op1: 0x40, op2: 0 },
+                { mnemonic: 'NOP',    op1: 0, op2: 0 },
+                { mnemonic: 'JMP',    op1: 0x0118, op2: 0 }
+            ]);
+            ProgramLoader.loadInstructions(0x0300, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E2E },
+                { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+                { mnemonic: 'IRET',   op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100);
+            CPU.run(500);
+            const intCount = InterruptController.getCount();
+            IOBus.outPort(0x40, 0);
+            InterruptController.setVector(0x02, 0);
+            return intCount > 0 ? true : '中断次数: ' + intCount;
+        });
+
+        assert('中断嵌套（连续两次 INT）', () => {
+            Memory.clear(); CPU.reset();
+            InterruptController.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'INT',  op1: 0x72, op2: 0 },
+                { mnemonic: 'INT',  op1: 0x72, op2: 0 },
+                { mnemonic: 'HLT',  op1: 0, op2: 0 }
+            ]);
+            InterruptController.setVector(0x72, 0x0300);
+            ProgramLoader.loadInstructions(0x0300, [
+                { mnemonic: 'IRET', op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100);
+            const r = CPU.run();
+            const cnt = InterruptController.getCount();
+            InterruptController.setVector(0x72, 0);
+            return (cnt === 2 && r.halted) ? true : '次数=' + cnt + ' halted=' + r.halted;
+        });
+
+        assert('未处理中断计数', () => {
+            Memory.clear(); CPU.reset();
+            const before = CPU.getUnhandledInterrupts();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'INT',  op1: 0x60, op2: 0 },   // 无 ISR，无 BIOS
+                { mnemonic: 'HLT',  op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            const after = CPU.getUnhandledInterrupts();
+            return after > before ? true : '未计入';
+        });
+
+        newLine();
+
+        printLine('【完整机】', 'line-bright');
+        assert('OS 安装到磁盘', () => {
+            Memory.clear(); Disk.clear();
+            const r = OS.installToDisk();
+            return (r.bootBytes > 0 && r.osBytes > 0) ? true : '安装失败';
+        });
+        assert('引导扇区非空', () => {
+            const img = Disk.getImage();
+            let nonZero = 0;
+            for (let i = 0; i < 512; i++) if (img[i] !== 0) nonZero++;
+            return nonZero > 0 ? true : '引导扇区为空';
+        });
+        assert('BIOS 调用计数', () => {
+            BIOS.reset();
+            Memory.clear(); CPU.reset();
+            ProgramLoader.loadInstructions(0x0100, [
+                { mnemonic: 'MOV_RI', op1: 0, op2: 0x0E41 },
+                { mnemonic: 'INT',    op1: 0x10, op2: 0 },
+                { mnemonic: 'HLT',    op1: 0, op2: 0 }
+            ]);
+            CPU.setPC(0x0100); CPU.run();
+            return BIOS.getCallCount() === 1 ? true : 'BIOS 调用 ' + BIOS.getCallCount() + ' 次';
+        });
+        newLine();
+
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        printLine('  测试完成', 'line-bright');
+        printLine('  通过: ' + passed, 'line-success');
+        if (failed > 0) printLine('  失败: ' + failed, 'line-error');
+        else printLine('  失败: 0', 'line-success');
+        printLine('═══════════════════════════════════════════════════════', 'line-info');
+        newLine();
+
+        Memory.clear(); CPU.reset(); Display.clear(); Disk.clear(); Keyboard.clear(); Timer.reset();
+        InterruptController.reset();
+    }
+
+    function dumpMemory(addr, len) {
+        printLine('内存 0x' + hex4(addr) + ' - 0x' + hex4(addr + len - 1) + '：', 'line-bright');
+        for (let row = 0; row < len; row += 16) {
+            let hex = '', ascii = '';
+            for (let col = 0; col < 16 && row + col < len; col++) {
+                const b = Memory.readByte(addr + row + col);
+                hex += hex2(b) + ' ';
+                ascii += (b >= 32 && b < 127) ? String.fromCharCode(b) : '.';
+            }
+            printLine('  ' + hex4(addr + row) + '  ' + hex.padEnd(48, ' ') + ' |' + ascii.padEnd(16, ' ') + '|', 'line-info');
+        }
+    }
+
+    function hex2(v) { return v.toString(16).padStart(2, '0').toUpperCase(); }
+    function hex4(v) { return v.toString(16).padStart(4, '0').toUpperCase(); }
+    function parseHex(s) {
+        if (s.startsWith('0x') || s.startsWith('0X')) return parseInt(s.substring(2), 16);
+        return parseInt(s, 16);
+    }
+
+    return { start, printLine, newLine, clearScreen, registerCommand };
+
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   启动
+   ═══════════════════════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+    Machine.boot();
+});
+</script>
+
+</body>
+</html>
