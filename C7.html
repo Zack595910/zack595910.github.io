@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C7 · 浏览器 PC（v86）</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#0a0a0a; color:#ccc;
+    font-family:'Consolas','Courier New',monospace; }
+  #app { display:flex; flex-direction:column; width:100%; height:100%; }
+
+  #status { height:26px; background:#1a1a1a; border-bottom:1px solid #333; display:flex;
+    align-items:center; padding:0 10px; font-size:12px; color:#888; gap:14px; flex-shrink:0; }
+  #status .brand { color:#4ec9b0; font-weight:bold; }
+  #status .val { color:#4ec9b0; }
+  #status .spacer { flex:1; }
+  #status .led { width:8px; height:8px; border-radius:50%; background:#333; }
+  #status .led.on { background:#4ec9b0; box-shadow:0 0 6px #4ec9b0; }
+  #status .led.run { background:#dcdcaa; box-shadow:0 0 6px #dcdcaa; }
+
+  #screenWrap { flex:1; display:flex; align-items:center; justify-content:center;
+    background:#000; overflow:hidden; position:relative; }
+  #screenWrap > div { max-width:100%; max-height:100%; }
+  #screenWrap canvas { image-rendering:pixelated; background:#000; display:block;
+    max-width:100%; max-height:100%; outline:none; }
+
+  #configPanel { position:absolute; inset:0; background:rgba(10,10,10,0.96); z-index:10;
+    display:flex; align-items:center; justify-content:center; overflow:auto; }
+  #configPanel .card { width:560px; max-width:92vw; background:#151515;
+    border:1px solid #333; border-radius:8px; padding:20px 24px; }
+  #configPanel h2 { font-size:16px; color:#4ec9b0; margin-bottom:4px; }
+  #configPanel .sub { font-size:11px; color:#666; margin-bottom:16px; }
+  .row { display:flex; align-items:center; margin-bottom:10px; gap:10px; }
+  .row label { width:110px; font-size:12px; color:#999; flex-shrink:0; }
+  .row select, .row input[type=text], .row input[type=file] {
+    flex:1; background:#252525; color:#ccc; border:1px solid #444; border-radius:4px;
+    padding:4px 8px; font-family:inherit; font-size:12px; }
+  .row .hint { font-size:10px; color:#666; width:100%; margin-top:2px; }
+  .btns { display:flex; gap:10px; margin-top:16px; }
+  .btns button { flex:1; background:#252525; color:#ccc; border:1px solid #444;
+    border-radius:4px; padding:8px; font-family:inherit; font-size:13px; cursor:pointer; }
+  .btns button:hover { background:#333; }
+  .btns button.primary { background:#1d3a34; border-color:#4ec9b0; color:#4ec9b0; }
+  .btns button.primary:hover { background:#244a42; }
+  .btns button.danger { border-color:#a33; color:#f88; }
+
+  #toolbar { height:34px; background:#141414; border-top:1px solid #333; display:none;
+    align-items:center; padding:0 8px; gap:8px; font-size:12px; flex-shrink:0; }
+  #toolbar button { background:#252525; color:#ccc; border:1px solid #444;
+    border-radius:4px; padding:3px 10px; font-family:inherit; font-size:12px; cursor:pointer; }
+  #toolbar button:hover { background:#333; }
+
+  #log { height:110px; background:#0a0a0a; border-top:1px solid #333; overflow-y:auto;
+    padding:4px 8px; font-size:11px; color:#6a9955; flex-shrink:0; white-space:pre-wrap;
+    display:none; }
+  #log .err { color:#f44747; }
+  #log .warn { color:#dcdcaa; }
+
+  #bootHint { position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
+    font-size:11px; color:#555; z-index:5; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="status">
+    <span class="brand">C7</span>
+    <span>v86 <span class="val">ready</span></span>
+    <span>系统 <span class="val" id="stat-sys">—</span></span>
+    <span>存储 <span class="val" id="stat-store">—</span></span>
+    <span class="spacer"></span>
+    <span class="led" id="led"></span>
+    <span>POWER</span>
+  </div>
+
+  <div id="screenWrap">
+    <div id="configPanel">
+      <div class="card">
+        <h2>C7 · 开机配置</h2>
+        <div class="sub">选择镜像与内存，点击“启动”进入系统。配置会保存，下次自动载入。</div>
+
+        <div class="row">
+          <label>内存</label>
+          <select id="cfg-mem">
+            <option value="16">16 MB</option>
+            <option value="32">32 MB</option>
+            <option value="64" selected>64 MB</option>
+            <option value="128">128 MB</option>
+            <option value="256">256 MB</option>
+            <option value="512">512 MB</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label>软盘 A:</label>
+          <select id="cfg-fda-type">
+            <option value="none" selected>不挂载</option>
+            <option value="local">本地文件…</option>
+            <option value="cached">从已缓存镜像…</option>
+          </select>
+        </div>
+        <div class="row" id="row-fda-file" style="display:none;">
+          <label></label>
+          <input type="file" id="cfg-fda-file" accept=".img,.ima">
+        </div>
+        <div class="row" id="row-fda-cache" style="display:none;">
+          <label></label>
+          <select id="cfg-fda-cache"></select>
+        </div>
+
+        <div class="row">
+          <label>硬盘 C:</label>
+          <select id="cfg-hda-type">
+            <option value="none" selected>不挂载</option>
+            <option value="local">本地文件…</option>
+            <option value="cached">从已缓存镜像…</option>
+            <option value="new">新建空硬盘（存于浏览器数据）…</option>
+          </select>
+        </div>
+        <div class="row" id="row-hda-file" style="display:none;">
+          <label></label>
+          <input type="file" id="cfg-hda-file" accept=".img,.vhd">
+        </div>
+        <div class="row" id="row-hda-cache" style="display:none;">
+          <label></label>
+          <select id="cfg-hda-cache"></select>
+        </div>
+        <div class="row" id="row-hda-new" style="display:none;">
+          <label>新建大小</label>
+          <select id="cfg-hda-size">
+            <option value="64">64 MB</option>
+            <option value="256">256 MB</option>
+            <option value="512">512 MB</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label>光盘 D:</label>
+          <select id="cfg-cdrom-type">
+            <option value="none" selected>不挂载</option>
+            <option value="local">本地文件…</option>
+            <option value="cached">从已缓存镜像…</option>
+            <option value="win101">Windows 1.01（下载并缓存）</option>
+          </select>
+        </div>
+        <div class="row" id="row-cdrom-file" style="display:none;">
+          <label></label>
+          <input type="file" id="cfg-cdrom-file" accept=".iso">
+        </div>
+        <div class="row" id="row-cdrom-cache" style="display:none;">
+          <label></label>
+          <select id="cfg-cdrom-cache"></select>
+        </div>
+
+        <div class="row">
+          <label>启动顺序</label>
+          <select id="cfg-boot">
+            <option value="fd">软盘 → 硬盘 → 光盘</option>
+            <option value="hd" selected>硬盘 → 软盘 → 光盘</option>
+            <option value="cd">光盘 → 硬盘 → 软盘</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label>网络</label>
+          <select id="cfg-net">
+            <option value="off" selected>关闭</option>
+            <option value="corsproxy">启用（corsproxy.io）</option>
+          </select>
+        </div>
+
+        <div class="btns">
+          <button id="btn-start" class="primary">启动</button>
+          <button id="btn-clear" class="danger">清空存储</button>
+        </div>
+        <div class="btns" style="margin-top:10px;">
+          <button id="btn-download-win101">下载 Windows 1.01 镜像</button>
+        </div>
+        <div class="btns" style="margin-top:10px;">
+          <button id="btn-reset-defaults">恢复默认配置</button>
+        </div>
+      </div>
+    </div>
+    <div id="bootHint">点“启动”开始</div>
+  </div>
+
+  <div id="toolbar">
+    <button id="btn-pause">暂停</button>
+    <button id="btn-resume">继续</button>
+    <button id="btn-reset">复位</button>
+    <button id="btn-shutdown">关机（回配置）</button>
+    <span style="color:#666;margin-left:auto;">C7 · v86 host</span>
+  </div>
+
+  <div id="log"></div>
+</div>
+
+<script src="./libv86.js"></script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+//  常量
+// ═══════════════════════════════════════════════════════════
+const CORSPROXY_KEY = '301c7ba4';
+const RELAY_URL = `fetch:https://corsproxy.io/?key=${CORSPROXY_KEY}&url=`;
+const WIN101_URL = 'https://copy.sh/v86/images/windows101.img';
+
+const DB_NAME = 'c7_store_v1';
+const DB_VERSION = 1;
+const STORE_IMAGES = 'images';
+const STORE_CONFIG = 'config';
+const STORE_LOGS = 'logs';
+const LOG_MAX = 500;
+
+// ═══════════════════════════════════════════════════════════
+//  日志
+// ═══════════════════════════════════════════════════════════
+const logEl = document.getElementById('log');
+let logBuf = [];
+
+function log(msg, cls) {
+  const line = { ts: Date.now(), text: String(msg), cls: cls || '' };
+  logBuf.push(line);
+  if (logBuf.length > LOG_MAX) logBuf.shift();
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.textContent = msg;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+  Storage.saveLog(line).catch(()=>{});
+  while (logEl.children.length > LOG_MAX) logEl.removeChild(logEl.firstChild);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  IndexedDB 存储
+// ═══════════════════════════════════════════════════════════
+const Storage = (() => {
+  let db = null;
+
+  function open() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const d = e.target.result;
+        if (!d.objectStoreNames.contains(STORE_IMAGES)) d.createObjectStore(STORE_IMAGES, { keyPath: 'name' });
+        if (!d.objectStoreNames.contains(STORE_CONFIG)) d.createObjectStore(STORE_CONFIG, { keyPath: 'key' });
+        if (!d.objectStoreNames.contains(STORE_LOGS)) d.createObjectStore(STORE_LOGS, { keyPath: 'ts' });
+      };
+      req.onsuccess = () => { db = req.result; resolve(); };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function tx(store, mode) { return db.transaction(store, mode).objectStore(store); }
+  function reqP(req) { return new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); }); }
+
+  async function saveImage(name, data, type) {
+    const rec = { name, size: data.blob ? data.blob.size : (data.size || 0), type: type || 'fda', ts: Date.now(), ...data };
+    await reqP(tx(STORE_IMAGES, 'readwrite').put(rec));
+  }
+  async function getImage(name) { return reqP(tx(STORE_IMAGES, 'readonly').get(name)); }
+  async function listImages() { return reqP(tx(STORE_IMAGES, 'readonly').getAll()); }
+  async function deleteImage(name) { return reqP(tx(STORE_IMAGES, 'readwrite').delete(name)); }
+
+  async function saveConfig(cfg) { await reqP(tx(STORE_CONFIG, 'readwrite').put({ key: 'main', value: cfg })); }
+  async function loadConfig() { const r = await reqP(tx(STORE_CONFIG, 'readonly').get('main')); return r ? r.value : null; }
+
+  async function saveLog(entry) {
+    await reqP(tx(STORE_LOGS, 'readwrite').put(entry));
+    const all = await reqP(tx(STORE_LOGS, 'readonly').getAllKeys());
+    if (all.length > LOG_MAX * 2) {
+      const t = tx(STORE_LOGS, 'readwrite');
+      all.sort((a,b)=>a-b).slice(0, all.length - LOG_MAX).forEach(k => t.delete(k));
+    }
+  }
+  async function loadLogs() { return reqP(tx(STORE_LOGS, 'readonly').getAll()); }
+
+  async function clearAll() {
+    for (const s of [STORE_IMAGES, STORE_CONFIG, STORE_LOGS]) {
+      await reqP(tx(s, 'readwrite').clear());
+    }
+  }
+
+  async function usage() {
+    try {
+      const est = await navigator.storage.estimate();
+      return { used: est.usage || 0, quota: est.quota || 0 };
+    } catch { return { used: 0, quota: 0 }; }
+  }
+
+  return { open, saveImage, getImage, listImages, deleteImage,
+           saveConfig, loadConfig, saveLog, loadLogs, clearAll, usage };
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  UI 引用
+// ═══════════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const screenWrap = $('screenWrap');
+const configPanel = $('configPanel');
+const toolbar = $('toolbar');
+const bootHint = $('bootHint');
+
+const cfgMem = $('cfg-mem');
+const cfgFdaType = $('cfg-fda-type'), cfgFdaFile = $('cfg-fda-file'), cfgFdaCache = $('cfg-fda-cache');
+const cfgHdaType = $('cfg-hda-type'), cfgHdaFile = $('cfg-hda-file'), cfgHdaCache = $('cfg-hda-cache'), cfgHdaSize = $('cfg-hda-size');
+const cfgCdType = $('cfg-cdrom-type'), cfgCdFile = $('cfg-cdrom-file'), cfgCdCache = $('cfg-cdrom-cache');
+const cfgBoot = $('cfg-boot'), cfgNet = $('cfg-net');
+
+const rowFdaFile = $('row-fda-file'), rowFdaCache = $('row-fda-cache');
+const rowHdaFile = $('row-hda-file'), rowHdaCache = $('row-hda-cache'), rowHdaNew = $('row-hda-new');
+const rowCdFile = $('row-cdrom-file'), rowCdCache = $('row-cdrom-cache');
+
+// ═══════════════════════════════════════════════════════════
+//  配置
+// ═══════════════════════════════════════════════════════════
+const DEFAULT_CFG = {
+  mem: 64,
+  fdaType: 'none', fdaName: '',
+  hdaType: 'none', hdaName: '', hdaSize: 64,
+  cdromType: 'none', cdromName: '',
+  boot: 'hd',
+  net: 'off',
+};
+
+let cfg = { ...DEFAULT_CFG };
+
+function readCfgFromUI() {
+  return {
+    mem: parseInt(cfgMem.value, 10),
+    fdaType: cfgFdaType.value,
+    fdaName: cfgFdaType.value === 'cached' ? cfgFdaCache.value : '',
+    hdaType: cfgHdaType.value,
+    hdaName: cfgHdaType.value === 'cached' ? cfgHdaCache.value : '',
+    hdaSize: parseInt(cfgHdaSize.value, 10),
+    cdromType: cfgCdType.value,
+    cdromName: cfgCdType.value === 'cached' ? cfgCdCache.value : '',
+    boot: cfgBoot.value,
+    net: cfgNet.value,
+  };
+}
+
+function writeCfgToUI(c) {
+  cfgMem.value = String(c.mem || 64);
+  cfgFdaType.value = c.fdaType || 'none';
+  cfgHdaType.value = c.hdaType || 'none';
+  cfgHdaSize.value = String(c.hdaSize || 64);
+  cfgCdType.value = c.cdromType || 'none';
+  cfgBoot.value = c.boot || 'hd';
+  cfgNet.value = c.net || 'off';
+  updateTypeRows();
+}
+
+function updateTypeRows() {
+  rowFdaFile.style.display = (cfgFdaType.value === 'local') ? 'flex' : 'none';
+  rowFdaCache.style.display = (cfgFdaType.value === 'cached') ? 'flex' : 'none';
+
+  rowHdaFile.style.display = (cfgHdaType.value === 'local') ? 'flex' : 'none';
+  rowHdaCache.style.display = (cfgHdaType.value === 'cached') ? 'flex' : 'none';
+  rowHdaNew.style.display = (cfgHdaType.value === 'new') ? 'flex' : 'none';
+
+  rowCdFile.style.display = (cfgCdType.value === 'local') ? 'flex' : 'none';
+  rowCdCache.style.display = (cfgCdType.value === 'cached') ? 'flex' : 'none';
+}
+
+[cfgFdaType, cfgHdaType, cfgCdType].forEach(s => s.addEventListener('change', () => {
+  updateTypeRows();
+}));
+
+// ═══════════════════════════════════════════════════════════
+//  镜像列表
+// ═══════════════════════════════════════════════════════════
+async function populateCacheSelects() {
+  const imgs = await Storage.listImages();
+  for (const sel of [cfgFdaCache, cfgHdaCache, cfgCdCache]) {
+    sel.innerHTML = '';
+    if (!imgs.length) {
+      const o = document.createElement('option'); o.value = ''; o.textContent = '(无缓存镜像)'; sel.appendChild(o);
+      continue;
+    }
+    for (const im of imgs) {
+      const o = document.createElement('option');
+      o.value = im.name;
+      o.textContent = `${im.name} · ${fmtSize(im.size)} · ${im.type}`;
+      sel.appendChild(o);
+    }
+  }
+}
+
+function fmtSize(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  if (n < 1024*1024*1024) return (n/1024/1024).toFixed(1) + ' MB';
+  return (n/1024/1024/1024).toFixed(2) + ' GB';
+}
+
+async function refreshStorageStatus() {
+  const u = await Storage.usage();
+  $('stat-store').textContent = fmtSize(u.used) + ' / ' + fmtSize(u.quota);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  镜像加载
+// ═══════════════════════════════════════════════════════════
+async function ensureImageForType(type) {
+  const uiType = type === 'fda' ? cfgFdaType.value
+               : type === 'hda' ? cfgHdaType.value
+               : cfgCdType.value;
+  const uiFile = type === 'fda' ? cfgFdaFile.files[0]
+               : type === 'hda' ? cfgHdaFile.files[0]
+               : cfgCdFile.files[0];
+  const uiCacheName = type === 'fda' ? cfgFdaCache.value
+                    : type === 'hda' ? cfgHdaCache.value
+                    : cfgCdCache.value;
+
+  if (uiType === 'none') return null;
+
+  if (uiType === 'local') {
+    if (!uiFile) throw new Error(`请选择${labelOf(type)}本地文件`);
+    return { file: uiFile };
+  }
+
+  if (uiType === 'cached') {
+    if (!uiCacheName) throw new Error(`没有已缓存的${labelOf(type)}镜像`);
+    const rec = await Storage.getImage(uiCacheName);
+    if (!rec) throw new Error(`缓存镜像 ${uiCacheName} 不存在`);
+    if (rec.blob) return { buffer: await rec.blob.arrayBuffer(), name: rec.name };
+    if (rec.handle) {
+      const f = await rec.handle.getFile();
+      return { file: f, name: rec.name };
+    }
+    throw new Error('缓存镜像缺少数据');
+  }
+
+  // ★ 修改点：新建硬盘改为纯 IndexedDB 存储，不弹保存对话框
+  if (uiType === 'new') {
+    if (type !== 'hda') throw new Error('只有硬盘支持新建');
+    const sizeMB = parseInt(cfgHdaSize.value, 10) || 64;
+    const name = `hdd_${sizeMB}mb_${Date.now()}.img`;
+    const bytes = new Uint8Array(sizeMB * 1024 * 1024);
+    await Storage.saveImage(name, { blob: new Blob([bytes]) }, 'hda');
+    log(`已新建 ${sizeMB} MB 空硬盘（存于浏览器数据）: ${name}`, 'warn');
+    await populateCacheSelects();
+    return { buffer: bytes.buffer, name };
+  }
+
+  if (uiType === 'win101') {
+    throw new Error('win101 只能用于光盘');
+  }
+
+  throw new Error('未知类型 ' + uiType);
+}
+
+function labelOf(t) { return t === 'fda' ? '软盘' : t === 'hda' ? '硬盘' : '光盘'; }
+
+// ═══════════════════════════════════════════════════════════
+//  下载 Windows 1.01
+// ═══════════════════════════════════════════════════════════
+async function downloadWin101() {
+  log('开始下载 Windows 1.01 镜像…');
+  const resp = await fetch(WIN101_URL);
+  if (!resp.ok) throw new Error('下载失败 HTTP ' + resp.status);
+  const blob = await resp.blob();
+  await Storage.saveImage('windows101.img', { blob }, 'fda');
+  log('Windows 1.01 已缓存（' + fmtSize(blob.size) + '）');
+  await populateCacheSelects();
+  cfgFdaType.value = 'cached';
+  updateTypeRows();
+  cfgFdaCache.value = 'windows101.img';
+  cfgCdType.value = 'cached';
+  updateTypeRows();
+  cfgCdCache.value = 'windows101.img';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  v86 生命周期
+// ═══════════════════════════════════════════════════════════
+let emulator = null;
+
+function destroyEmulator() {
+  if (emulator) {
+    try { emulator.destroy(); } catch(e) {}
+    emulator = null;
+  }
+  const old = screenWrap.querySelector('.v86_screen');
+  if (old) old.remove();
+  const oldCanvas = screenWrap.querySelector('canvas');
+  if (oldCanvas) oldCanvas.remove();
+}
+
+function buildOptions(fda, hda, cd) {
+  const memMB = cfgMem.value | 0;
+  const opts = {
+    wasm_path: './v86.wasm',
+    memory_size: memMB * 1024 * 1024,
+    vga_memory_size: 4 * 1024 * 1024,
+    bios: { url: './seabios.bin' },
+    vga_bios: { url: './vgabios.bin' },
+    autostart: true,
+  };
+
+  if (fda) {
+    if (fda.buffer) opts.fda = { buffer: new Blob([fda.buffer]) };
+    else if (fda.file) opts.fda = { buffer: fda.file };
+  }
+  if (hda) {
+    if (hda.buffer) opts.hda = { buffer: new Blob([hda.buffer]) };
+    else if (hda.file) opts.hda = { buffer: hda.file };
+  }
+  if (cd) {
+    if (cd.buffer) opts.cdrom = { buffer: new Blob([cd.buffer]) };
+    else if (cd.file) opts.cdrom = { buffer: cd.file };
+  }
+
+  const boot = cfgBoot.value;
+  if (boot === 'fd') opts.boot_order = 0x213;
+  else if (boot === 'cd') opts.boot_order = 0x231;
+  else opts.boot_order = 0x132;
+
+  if (cfgNet.value === 'corsproxy') {
+    opts.net_device = { type: 'ne2k', relay_url: RELAY_URL };
+  }
+
+  return opts;
+}
+
+async function startMachine() {
+  const memMB = cfgMem.value | 0;
+  log(`── 启动（内存 ${memMB} MB） ──`);
+
+  let fda = null, hda = null, cd = null;
+  try { fda = await ensureImageForType('fda'); } catch(e) { log('软盘: ' + e.message, 'err'); return; }
+  try { hda = await ensureImageForType('hda'); } catch(e) { log('硬盘: ' + e.message, 'err'); return; }
+  try { cd  = await ensureImageForType('cdrom'); } catch(e) { log('光盘: ' + e.message, 'err'); return; }
+
+  cfg = readCfgFromUI();
+  await Storage.saveConfig(cfg);
+
+  destroyEmulator();
+
+  const opts = buildOptions(fda, hda, cd);
+
+  const screenDiv = document.createElement('div');
+  screenDiv.className = 'v86_screen';
+  screenDiv.tabIndex = 0;
+  screenWrap.insertBefore(screenDiv, bootHint);
+  opts.screen_container = screenDiv;
+
+  try {
+    emulator = new V86(opts);
+  } catch (e) {
+    log('v86 初始化失败: ' + e.message, 'err');
+    return;
+  }
+
+  emulator.add_listener('emulator-ready', () => {
+    log('v86 已就绪');
+    configPanel.style.display = 'none';
+    toolbar.style.display = 'flex';
+    logEl.style.display = 'block';
+    bootHint.style.display = 'none';
+    $('stat-sys').textContent = describeSystem();
+    setLed('run');
+    try { screenDiv.focus(); } catch(e) {}
+  });
+  emulator.add_listener('emulator-stopped', () => { setLed('on'); log('emulator-stopped', 'warn'); });
+
+  bindInput(screenDiv);
+
+  setLed('run');
+  $('stat-sys').textContent = describeSystem();
+}
+
+function describeSystem() {
+  const parts = [];
+  if (cfgFdaType.value !== 'none') parts.push('A:');
+  if (cfgHdaType.value !== 'none') parts.push('C:');
+  if (cfgCdType.value !== 'none') parts.push('D:');
+  return parts.length ? parts.join(' ') : '无盘';
+}
+
+function setLed(kind) {
+  const led = $('led');
+  led.className = 'led';
+  if (kind === 'run') led.classList.add('run');
+  else if (kind === 'on') led.classList.add('on');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  键鼠转发
+// ═══════════════════════════════════════════════════════════
+const SCANCODE_MAP = {
+  'Escape':0x01,'Digit1':0x02,'Digit2':0x03,'Digit3':0x04,'Digit4':0x05,'Digit5':0x06,'Digit6':0x07,'Digit7':0x08,'Digit8':0x09,'Digit9':0x0A,'Digit0':0x0B,'Minus':0x0C,'Equal':0x0D,'Backspace':0x0E,'Tab':0x0F,
+  'KeyQ':0x10,'KeyW':0x11,'KeyE':0x12,'KeyR':0x13,'KeyT':0x14,'KeyY':0x15,'KeyU':0x16,'KeyI':0x17,'KeyO':0x18,'KeyP':0x19,'BracketLeft':0x1A,'BracketRight':0x1B,'Enter':0x1C,'ControlLeft':0x1D,
+  'KeyA':0x1E,'KeyS':0x1F,'KeyD':0x20,'KeyF':0x21,'KeyG':0x22,'KeyH':0x23,'KeyJ':0x24,'KeyK':0x25,'KeyL':0x26,'Semicolon':0x27,'Quote':0x28,'Backquote':0x29,'ShiftLeft':0x2A,'Backslash':0x2B,
+  'KeyZ':0x2C,'KeyX':0x2D,'KeyC':0x2E,'KeyV':0x2F,'KeyB':0x30,'KeyN':0x31,'KeyM':0x32,'Comma':0x33,'Period':0x34,'Slash':0x35,'ShiftRight':0x36,'NumpadMultiply':0x37,'AltLeft':0x38,'Space':0x39,
+  'CapsLock':0x3A,'F1':0x3B,'F2':0x3C,'F3':0x3D,'F4':0x3E,'F5':0x3F,'F6':0x40,'F7':0x41,'F8':0x42,'F9':0x43,'F10':0x44,'NumLock':0x45,'ScrollLock':0x46,
+  'Numpad7':0x47,'Numpad8':0x48,'Numpad9':0x49,'NumpadSubtract':0x4A,'Numpad4':0x4B,'Numpad5':0x4C,'Numpad6':0x4D,'NumpadAdd':0x4E,'Numpad1':0x4F,'Numpad2':0x50,'Numpad3':0x51,'Numpad0':0x52,'NumpadDecimal':0x53,'F11':0x57,'F12':0x58
+};
+
+function bindInput(el) {
+  if (el._c7bound) return;
+  el._c7bound = true;
+
+  el.addEventListener('keydown', (e) => {
+    if (!emulator) return;
+    const sc = SCANCODE_MAP[e.code];
+    if (sc !== undefined) {
+      try { emulator.keyboard_send_scancodes([sc]); } catch(err) {}
+      e.preventDefault();
+    }
+  });
+
+  el.addEventListener('keyup', (e) => {
+    if (!emulator) return;
+    const sc = SCANCODE_MAP[e.code];
+    if (sc !== undefined) {
+      try { emulator.keyboard_send_scancodes([sc | 0x80]); } catch(err) {}
+      e.preventDefault();
+    }
+  });
+
+  el.addEventListener('mousemove', (e) => {
+    if (!emulator) return;
+    try { emulator.mouse_set_status([0, 0, (e.buttons & 1) ? 1 : 0, (e.buttons & 4) ? 1 : 0, (e.buttons & 2) ? 1 : 0, 0]); } catch(err) {}
+  });
+
+  el.addEventListener('mousedown', (e) => {
+    if (!emulator) return;
+    try { emulator.mouse_set_status([0, 0, (e.buttons & 1) ? 1 : 0, (e.buttons & 4) ? 1 : 0, (e.buttons & 2) ? 1 : 0, 0]); } catch(err) {}
+    e.preventDefault();
+  });
+
+  el.addEventListener('mouseup', () => {
+    if (!emulator) return;
+    try { emulator.mouse_set_status([0, 0, 0, 0, 0, 0]); } catch(err) {}
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  工具栏事件
+// ═══════════════════════════════════════════════════════════
+$('btn-pause').onclick = () => { if (emulator) { try { emulator.stop(); } catch(e){} setLed('on'); log('已暂停'); } };
+$('btn-resume').onclick = () => { if (emulator) { try { emulator.run(); } catch(e){} setLed('run'); log('已继续'); } };
+$('btn-reset').onclick = () => { if (emulator) { try { emulator.restart(); } catch(e){} log('复位'); } };
+$('btn-shutdown').onclick = () => {
+  log('关机，返回配置');
+  destroyEmulator();
+  toolbar.style.display = 'none';
+  logEl.style.display = 'none';
+  configPanel.style.display = 'flex';
+  bootHint.style.display = 'block';
+  $('stat-sys').textContent = '—';
+  setLed('');
+  refreshStorageStatus();
+};
+
+$('btn-start').onclick = () => { startMachine(); };
+$('btn-clear').onclick = async () => {
+  if (!confirm('确定清空所有已缓存镜像、配置和日志？')) return;
+  await Storage.clearAll();
+  logBuf = [];
+  logEl.innerHTML = '';
+  await populateCacheSelects();
+  await refreshStorageStatus();
+  log('已清空存储', 'warn');
+};
+$('btn-download-win101').onclick = async () => {
+  try { await downloadWin101(); log('已下载并设为 A: 与 D:', 'warn'); }
+  catch(e) { log('下载失败: ' + e.message, 'err'); }
+};
+$('btn-reset-defaults').onclick = () => {
+  cfg = { ...DEFAULT_CFG };
+  writeCfgToUI(cfg);
+  updateTypeRows();
+  log('已恢复默认配置', 'warn');
+};
+
+// ═══════════════════════════════════════════════════════════
+//  初始化
+// ═══════════════════════════════════════════════════════════
+(async function init() {
+  try { await Storage.open(); }
+  catch (e) { log('IndexedDB 打开失败: ' + e.message, 'err'); }
+
+  try {
+    const saved = await Storage.loadConfig();
+    if (saved) cfg = { ...DEFAULT_CFG, ...saved };
+  } catch (e) { log('读取配置失败: ' + e.message, 'err'); }
+
+  writeCfgToUI(cfg);
+  await populateCacheSelects();
+  await refreshStorageStatus();
+
+  try {
+    const logs = await Storage.loadLogs();
+    logs.sort((a,b)=>a.ts-b.ts).forEach(l => {
+      const div = document.createElement('div');
+      if (l.cls) div.className = l.cls;
+      div.textContent = l.text;
+      logEl.appendChild(div);
+      logBuf.push(l);
+    });
+    while (logEl.children.length > LOG_MAX) logEl.removeChild(logEl.firstChild);
+    logEl.scrollTop = logEl.scrollHeight;
+  } catch(e) {}
+
+  log('C7 就绪（v86 host）');
+  log('提示：先选盘或点“下载 Windows 1.01 镜像”，再点“启动”。');
+
+  screenWrap.addEventListener('click', () => {
+    const c = screenWrap.querySelector('canvas');
+    if (c) c.focus();
+  });
+
+  setInterval(refreshStorageStatus, 5000);
+})();
+
+</script>
+</body>
+</html>
