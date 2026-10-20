@@ -44,7 +44,6 @@
   .btns button.primary:hover { background:#244a42; }
   .btns button.danger { border-color:#a33; color:#f88; }
 
-  /* 运行中工具栏 */
   #toolbar { height:34px; background:#141414; border-top:1px solid #333; display:none;
     align-items:center; padding:0 8px; gap:8px; font-size:12px; flex-shrink:0; }
   #toolbar button, #toolbar label { background:#252525; color:#ccc; border:1px solid #444;
@@ -62,7 +61,6 @@
   #bootHint { position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
     font-size:11px; color:#555; z-index:5; }
 
-  /* 下载进度条 */
   #progressWrap { display:none; width:100%; margin-top:8px; background:#111; border:1px solid #333; border-radius:4px; padding:2px; height:16px; position:relative; overflow:hidden; }
   #progressBar { height:100%; width:0%; background:#4ec9b0; transition:width 0.1s; }
   #progressText { position:absolute; top:0; left:0; width:100%; text-align:center; font-size:10px; line-height:12px; color:#fff; text-shadow:1px 1px 1px #000; }
@@ -148,7 +146,6 @@
             <option value="none" selected>不挂载</option>
             <option value="local">本地文件…</option>
             <option value="cached">从已缓存镜像…</option>
-            <option value="win101">Windows 1.01（下载并缓存）</option>
           </select>
         </div>
         <div class="row" id="row-cdrom-file" style="display:none;">
@@ -462,10 +459,6 @@ async function ensureImageForType(type) {
     return { buffer: bytes.buffer, name };
   }
 
-  if (uiType === 'win101') {
-    throw new Error('win101 只能用于光盘');
-  }
-
   throw new Error('未知类型 ' + uiType);
 }
 
@@ -543,10 +536,10 @@ async function downloadWin101() {
 let emulator = null;
 
 function destroyEmulator() {
-  if (emulator) {
-    try { emulator.destroy(); } catch(e) {}
-    emulator = null;
+  if (emulator && typeof emulator.destroy === 'function') {
+    try { emulator.destroy(); } catch(e) { console.warn(e); }
   }
+  emulator = null;
   const old = screenWrap.querySelector('.v86_screen');
   if (old) old.remove();
   const oldCanvas = screenWrap.querySelector('canvas');
@@ -564,14 +557,19 @@ function buildOptions(fda, hda, cd) {
     autostart: true,
   };
 
-  if (fda && fda.buffer) opts.fda = { buffer: new Blob([fda.buffer]) };
-  if (fda && fda.file) opts.fda = { buffer: fda.file };
-
-  if (hda && hda.buffer) opts.hda = { buffer: new Blob([hda.buffer]) };
-  if (hda && hda.file) opts.hda = { buffer: hda.file };
-
-  if (cd && cd.buffer) opts.cdrom = { buffer: new Blob([cd.buffer]) };
-  if (cd && cd.file) opts.cdrom = { buffer: cd.file };
+  // ★ 修复：不使用 Blob 包装，直接把 ArrayBuffer 或 File 交给 v86
+  if (fda) {
+    if (fda.buffer) opts.fda = { buffer: fda.buffer };
+    else if (fda.file) opts.fda = { buffer: fda.file };
+  }
+  if (hda) {
+    if (hda.buffer) opts.hda = { buffer: hda.buffer };
+    else if (hda.file) opts.hda = { buffer: hda.file };
+  }
+  if (cd) {
+    if (cd.buffer) opts.cdrom = { buffer: cd.buffer };
+    else if (cd.file) opts.cdrom = { buffer: cd.file };
+  }
 
   const boot = cfgBoot.value;
   if (boot === 'fd') opts.boot_order = 0x213;
@@ -726,7 +724,7 @@ $('hotswap-fda').addEventListener('change', async (e) => {
   } catch (err) {
     log(`[热插拔] 更换软盘失败: ${err.message}`, 'err');
   }
-  e.target.value = ''; // 允许重复选同一个文件
+  e.target.value = '';
 });
 
 // ★ 运行中热插拔光盘
