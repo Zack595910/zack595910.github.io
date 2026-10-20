@@ -36,7 +36,6 @@
   .row select, .row input[type=text], .row input[type=file] {
     flex:1; background:#252525; color:#ccc; border:1px solid #444; border-radius:4px;
     padding:4px 8px; font-family:inherit; font-size:12px; }
-  .row .hint { font-size:10px; color:#666; width:100%; margin-top:2px; }
   .btns { display:flex; gap:10px; margin-top:16px; }
   .btns button { flex:1; background:#252525; color:#ccc; border:1px solid #444;
     border-radius:4px; padding:8px; font-family:inherit; font-size:13px; cursor:pointer; }
@@ -45,11 +44,14 @@
   .btns button.primary:hover { background:#244a42; }
   .btns button.danger { border-color:#a33; color:#f88; }
 
+  /* 运行中工具栏 */
   #toolbar { height:34px; background:#141414; border-top:1px solid #333; display:none;
     align-items:center; padding:0 8px; gap:8px; font-size:12px; flex-shrink:0; }
-  #toolbar button { background:#252525; color:#ccc; border:1px solid #444;
+  #toolbar button, #toolbar label { background:#252525; color:#ccc; border:1px solid #444;
     border-radius:4px; padding:3px 10px; font-family:inherit; font-size:12px; cursor:pointer; }
-  #toolbar button:hover { background:#333; }
+  #toolbar button:hover, #toolbar label:hover { background:#333; }
+  #toolbar .tool-sep { width:1px; height:20px; background:#444; margin:0 6px; }
+  #toolbar .file-input { display:none; }
 
   #log { height:110px; background:#0a0a0a; border-top:1px solid #333; overflow-y:auto;
     padding:4px 8px; font-size:11px; color:#6a9955; flex-shrink:0; white-space:pre-wrap;
@@ -59,6 +61,11 @@
 
   #bootHint { position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
     font-size:11px; color:#555; z-index:5; }
+
+  /* 下载进度条 */
+  #progressWrap { display:none; width:100%; margin-top:8px; background:#111; border:1px solid #333; border-radius:4px; padding:2px; height:16px; position:relative; overflow:hidden; }
+  #progressBar { height:100%; width:0%; background:#4ec9b0; transition:width 0.1s; }
+  #progressText { position:absolute; top:0; left:0; width:100%; text-align:center; font-size:10px; line-height:12px; color:#fff; text-shadow:1px 1px 1px #000; }
 </style>
 </head>
 <body>
@@ -177,6 +184,10 @@
         <div class="btns" style="margin-top:10px;">
           <button id="btn-download-win101">下载 Windows 1.01 镜像</button>
         </div>
+        <div id="progressWrap">
+          <div id="progressBar"></div>
+          <div id="progressText">0%</div>
+        </div>
         <div class="btns" style="margin-top:10px;">
           <button id="btn-reset-defaults">恢复默认配置</button>
         </div>
@@ -190,6 +201,11 @@
     <button id="btn-resume">继续</button>
     <button id="btn-reset">复位</button>
     <button id="btn-shutdown">关机（回配置）</button>
+    <div class="tool-sep"></div>
+    <label for="hotswap-fda">换软盘 A:</label>
+    <input type="file" id="hotswap-fda" class="file-input" accept=".img,.ima">
+    <label for="hotswap-cdrom">换光盘 D:</label>
+    <input type="file" id="hotswap-cdrom" class="file-input" accept=".iso">
     <span style="color:#666;margin-left:auto;">C7 · v86 host</span>
   </div>
 
@@ -435,7 +451,6 @@ async function ensureImageForType(type) {
     throw new Error('缓存镜像缺少数据');
   }
 
-  // ★ 修改点：新建硬盘改为纯 IndexedDB 存储，不弹保存对话框
   if (uiType === 'new') {
     if (type !== 'hda') throw new Error('只有硬盘支持新建');
     const sizeMB = parseInt(cfgHdaSize.value, 10) || 64;
@@ -460,19 +475,66 @@ function labelOf(t) { return t === 'fda' ? '软盘' : t === 'hda' ? '硬盘' : '
 //  下载 Windows 1.01
 // ═══════════════════════════════════════════════════════════
 async function downloadWin101() {
-  log('开始下载 Windows 1.01 镜像…');
-  const resp = await fetch(WIN101_URL);
-  if (!resp.ok) throw new Error('下载失败 HTTP ' + resp.status);
-  const blob = await resp.blob();
-  await Storage.saveImage('windows101.img', { blob }, 'fda');
-  log('Windows 1.01 已缓存（' + fmtSize(blob.size) + '）');
-  await populateCacheSelects();
-  cfgFdaType.value = 'cached';
-  updateTypeRows();
-  cfgFdaCache.value = 'windows101.img';
-  cfgCdType.value = 'cached';
-  updateTypeRows();
-  cfgCdCache.value = 'windows101.img';
+  const btn = $('btn-download-win101');
+  const wrap = $('progressWrap');
+  const bar = $('progressBar');
+  const txt = $('progressText');
+
+  btn.disabled = true;
+  wrap.style.display = 'block';
+  bar.style.width = '0%';
+  txt.textContent = '连接中…';
+
+  try {
+    log('开始下载 Windows 1.01 镜像…');
+    const resp = await fetch(WIN101_URL);
+    if (!resp.ok) throw new Error('下载失败 HTTP ' + resp.status);
+
+    const contentLength = resp.headers.get('content-length');
+    const total = parseInt(contentLength, 10);
+    let loaded = 0;
+    const chunks = [];
+
+    const reader = resp.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      chunks.push(value);
+      loaded += value.length;
+
+      if (total) {
+        const percent = Math.round((loaded / total) * 100);
+        bar.style.width = percent + '%';
+        txt.textContent = percent + '% (' + fmtSize(loaded) + ' / ' + fmtSize(total) + ')';
+      } else {
+        txt.textContent = '已下载 ' + fmtSize(loaded);
+      }
+    }
+
+    const blob = new Blob(chunks, { type: 'application/octet-stream' });
+    await Storage.saveImage('windows101.img', { blob }, 'fda');
+    log('Windows 1.01 已缓存（' + fmtSize(blob.size) + '）');
+
+    bar.style.width = '100%';
+    txt.textContent = '完成';
+
+    await populateCacheSelects();
+    cfgFdaType.value = 'cached';
+    updateTypeRows();
+    cfgFdaCache.value = 'windows101.img';
+    cfgCdType.value = 'cached';
+    updateTypeRows();
+    cfgCdCache.value = 'windows101.img';
+
+    setTimeout(() => { wrap.style.display = 'none'; }, 1500);
+  } catch (e) {
+    log('下载失败: ' + e.message, 'err');
+    txt.textContent = '下载失败';
+    bar.style.backgroundColor = '#f44747';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -502,18 +564,14 @@ function buildOptions(fda, hda, cd) {
     autostart: true,
   };
 
-  if (fda) {
-    if (fda.buffer) opts.fda = { buffer: new Blob([fda.buffer]) };
-    else if (fda.file) opts.fda = { buffer: fda.file };
-  }
-  if (hda) {
-    if (hda.buffer) opts.hda = { buffer: new Blob([hda.buffer]) };
-    else if (hda.file) opts.hda = { buffer: hda.file };
-  }
-  if (cd) {
-    if (cd.buffer) opts.cdrom = { buffer: new Blob([cd.buffer]) };
-    else if (cd.file) opts.cdrom = { buffer: cd.file };
-  }
+  if (fda && fda.buffer) opts.fda = { buffer: new Blob([fda.buffer]) };
+  if (fda && fda.file) opts.fda = { buffer: fda.file };
+
+  if (hda && hda.buffer) opts.hda = { buffer: new Blob([hda.buffer]) };
+  if (hda && hda.file) opts.hda = { buffer: hda.file };
+
+  if (cd && cd.buffer) opts.cdrom = { buffer: new Blob([cd.buffer]) };
+  if (cd && cd.file) opts.cdrom = { buffer: cd.file };
 
   const boot = cfgBoot.value;
   if (boot === 'fd') opts.boot_order = 0x213;
@@ -641,7 +699,7 @@ function bindInput(el) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  工具栏事件
+//  工具栏事件 + 热插拔
 // ═══════════════════════════════════════════════════════════
 $('btn-pause').onclick = () => { if (emulator) { try { emulator.stop(); } catch(e){} setLed('on'); log('已暂停'); } };
 $('btn-resume').onclick = () => { if (emulator) { try { emulator.run(); } catch(e){} setLed('run'); log('已继续'); } };
@@ -657,6 +715,32 @@ $('btn-shutdown').onclick = () => {
   setLed('');
   refreshStorageStatus();
 };
+
+// ★ 运行中热插拔软盘
+$('hotswap-fda').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f || !emulator) return;
+  try {
+    await emulator.set_fda({ buffer: f });
+    log(`[热插拔] 软盘 A: 已变更为 ${f.name} (${fmtSize(f.size)})`, 'warn');
+  } catch (err) {
+    log(`[热插拔] 更换软盘失败: ${err.message}`, 'err');
+  }
+  e.target.value = ''; // 允许重复选同一个文件
+});
+
+// ★ 运行中热插拔光盘
+$('hotswap-cdrom').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f || !emulator) return;
+  try {
+    await emulator.set_cdrom({ buffer: f });
+    log(`[热插拔] 光盘 D: 已变更为 ${f.name} (${fmtSize(f.size)})`, 'warn');
+  } catch (err) {
+    log(`[热插拔] 更换光盘失败: ${err.message}`, 'err');
+  }
+  e.target.value = '';
+});
 
 $('btn-start').onclick = () => { startMachine(); };
 $('btn-clear').onclick = async () => {
