@@ -625,7 +625,7 @@ function buildOptions(fda, hda, cd) {
     autostart: true
   };
   
-  // 核心：把原生的 File/Blob 对象直接交给 v86，不转换 ArrayBuffer，绝不卡死
+  // ★ 回归原始：直接用 file 对象，不转二进制，不包 Blob
   if (fda && fda.file) opts.fda = { buffer: fda.file };
   if (hda && hda.file) opts.hda = { buffer: hda.file };
   if (cd && cd.file) opts.cdrom = { buffer: cd.file };
@@ -636,7 +636,7 @@ function buildOptions(fda, hda, cd) {
   return opts;
 }
 
-async function startMachine() {
+function startMachine() {
   if (isShutdown) {
     isShutdown = false;
     $('shutdownText').style.display = 'none';
@@ -645,14 +645,15 @@ async function startMachine() {
 
   let fda = null, hda = null, cd = null;
   try { 
-    fda = await ensureImageForType('fda'); 
-    hda = await ensureImageForType('hda'); 
-    cd  = await ensureImageForType('cdrom'); 
+    fda = ensureImageForType('fda'); 
+    hda = ensureImageForType('hda'); 
+    cd  = ensureImageForType('cdrom'); 
   } catch(e) { 
     log(e.message, 'err'); alert(e.message); return; 
   }
 
-  cfg = readCfgFromUI(); await Storage.saveConfig(cfg);
+  // 注意：这里去掉了所有 async/await，全部用同步方式处理，绝对不卡 UI
+  cfg = readCfgFromUI(); Storage.saveConfig(cfg);
   destroyEmulator();
 
   const opts = buildOptions(fda, hda, cd);
