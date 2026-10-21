@@ -51,10 +51,6 @@
   .btns button.primary:hover { background:#244a42; }
   .btns button.danger { border-color:#a33; color:#f88; }
 
-  #bootProgressWrap { display:none; width:100%; margin-top:10px; background:#111; border:1px solid #333; border-radius:4px; padding:2px; height:16px; position:relative; overflow:hidden; }
-  #bootProgressBar { height:100%; width:0%; background:#4ec9b0; transition:width 0.1s; }
-  #bootProgressText { position:absolute; top:0; left:0; width:100%; text-align:center; font-size:10px; line-height:12px; color:#fff; text-shadow:1px 1px 1px #000; }
-
   #toolbar { height:40px; background:#141414; border-top:1px solid #333; display:none;
     align-items:center; padding:0 8px; gap:8px; font-size:12px; flex-shrink:0; }
   #toolbar button { background:#252525; color:#ccc; border:1px solid #444;
@@ -220,10 +216,6 @@
           <button id="btn-open-downloader">📥 下载管理器</button>
           <button id="btn-open-files">🗂️ 文件管理器</button>
         </div>
-        <div id="bootProgressWrap">
-          <div id="bootProgressBar"></div>
-          <div id="bootProgressText">0%</div>
-        </div>
         
         <div class="btns" style="margin-top:20px; border-top:1px solid #333; padding-top:15px;">
           <button id="btn-clear" class="danger">清空所有存储</button>
@@ -241,7 +233,7 @@
     <button id="btn-pause">暂停</button>
     <button id="btn-resume">继续</button>
     <button id="btn-reset">复位</button>
-    <button id="btn-config">修改配置</button>
+    <button id="btn-config">修改配置（回主界面）</button>
     <span style="color:#666;margin-left:auto;">C7 · v86 host</span>
   </div>
 
@@ -477,16 +469,6 @@ window.deleteFile = async function(name) {
   }
 };
 
-// 核心工具：将 File/Blob 转换为纯 ArrayBuffer
-function fileToArrayBuffer(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('读取文件失败'));
-    reader.readAsArrayBuffer(file);
-  });
-}
-
 $('btn-dl-start').onclick = async () => {
   const url = $('dl-url').value.trim();
   const type = $('dl-type').value;
@@ -636,16 +618,17 @@ function destroyEmulator() {
   const oldCanvas = screenWrap.querySelector('canvas'); if (oldCanvas) oldCanvas.remove();
 }
 
-async function buildOptions(fda, hda, cd) {
+function buildOptions(fda, hda, cd) {
   const opts = {
     wasm_path: './v86.wasm', memory_size: (cfgMem.value | 0) * 1024 * 1024,
     vga_memory_size: 4 * 1024 * 1024, bios: { url: './seabios.bin' }, vga_bios: { url: './vgabios.bin' },
     autostart: true
   };
   
-  if (fda && fda.file) opts.fda = { buffer: await fileToArrayBuffer(fda.file) };
-  if (hda && hda.file) opts.hda = { buffer: await fileToArrayBuffer(hda.file) };
-  if (cd && cd.file) opts.cdrom = { buffer: await fileToArrayBuffer(cd.file) };
+  // 核心：把原生的 File/Blob 对象直接交给 v86，不转换 ArrayBuffer，绝不卡死
+  if (fda && fda.file) opts.fda = { buffer: fda.file };
+  if (hda && hda.file) opts.hda = { buffer: hda.file };
+  if (cd && cd.file) opts.cdrom = { buffer: cd.file };
   
   const boot = cfgBoot.value;
   if (boot === 'fd') opts.boot_order = 0x213; else if (boot === 'cd') opts.boot_order = 0x231; else opts.boot_order = 0x132;
@@ -660,48 +643,29 @@ async function startMachine() {
     $('btn-power').textContent = '开机';
   }
 
-  const wrap = $('bootProgressWrap'), bar = $('bootProgressBar'), txt = $('bootProgressText');
-  wrap.style.display = 'block'; bar.style.width = '5%'; txt.textContent = '准备镜像…';
-  
-  await new Promise(r => setTimeout(r, 50));
-
   let fda = null, hda = null, cd = null;
   try { 
-    bar.style.width = '10%'; txt.textContent = '查找软盘…';
     fda = await ensureImageForType('fda'); 
-    bar.style.width = '20%'; txt.textContent = '查找硬盘…';
     hda = await ensureImageForType('hda'); 
-    bar.style.width = '30%'; txt.textContent = '查找光盘…';
     cd  = await ensureImageForType('cdrom'); 
   } catch(e) { 
-    wrap.style.display = 'none'; log(e.message, 'err'); alert(e.message); return; 
+    log(e.message, 'err'); alert(e.message); return; 
   }
 
   cfg = readCfgFromUI(); await Storage.saveConfig(cfg);
   destroyEmulator();
 
-  bar.style.width = '40%'; txt.textContent = '读取镜像数据 (ArrayBuffer)…';
-  let opts;
-  try {
-    opts = await buildOptions(fda, hda, cd);
-  } catch (e) {
-    wrap.style.display = 'none'; log('读取镜像失败: ' + e.message, 'err'); alert('读取镜像失败'); return;
-  }
-
+  const opts = buildOptions(fda, hda, cd);
   const screenDiv = document.createElement('div'); screenDiv.className = 'v86_screen'; screenDiv.tabIndex = 0;
   screenWrap.insertBefore(screenDiv, bootHint); opts.screen_container = screenDiv;
 
   try {
-    bar.style.width = '80%'; txt.textContent = '启动 v86 引擎…';
     emulator = new V86(opts);
   } catch (e) {
-    wrap.style.display = 'none'; log('v86 初始化失败: ' + e.message, 'err'); alert('v86 启动失败，请查看控制台。'); return;
+    log('v86 初始化失败: ' + e.message, 'err'); alert('v86 启动失败，请查看控制台。'); return;
   }
 
   emulator.add_listener('emulator-ready', () => {
-    bar.style.width = '100%'; txt.textContent = '就绪';
-    setTimeout(() => { wrap.style.display = 'none'; }, 500);
-    
     configPanel.style.display = 'none'; toolbar.style.display = 'flex'; logEl.style.display = 'block'; bootHint.style.display = 'none';
     $('stat-sys').textContent = '运行中'; setLed('run'); try { screenDiv.focus(); } catch(e) {}
     $('btn-power').textContent = '关机'; $('btn-power').style.display = 'inline-block';
@@ -750,21 +714,18 @@ $('btn-power').onclick = () => {
   }
 };
 
-// 修改配置并返回
 $('btn-config').onclick = () => {
   destroyEmulator(); isShutdown = false;
   toolbar.style.display = 'none'; logEl.style.display = 'none';
   configPanel.style.display = 'flex'; bootHint.style.display = 'block';
   $('stat-sys').textContent = '未启动'; $('shutdownText').style.display = 'none';
   setLed('');
-  log('回到主界面，可以修改盘片或内存');
+  log('返回主界面，请换盘后点击“启动”');
 };
 
 $('btn-pause').onclick = () => { if (emulator) { try { emulator.stop(); } catch(e){} setLed('on'); log('已暂停'); } };
 $('btn-resume').onclick = () => { if (emulator) { try { emulator.run(); } catch(e){} setLed('run'); log('已继续'); } };
 $('btn-reset').onclick = () => { if (emulator) { try { emulator.restart(); } catch(e){} log('复位'); } };
-
-// 移除了原先的热插拔文件选择器，回归最稳定的配置面板挂载法
 
 $('btn-start').onclick = () => { startMachine(); };
 $('btn-clear').onclick = async () => { if (!confirm('确定清空所有已缓存镜像、配置和日志？')) return; await Storage.clearAll(); logBuf = []; logEl.innerHTML = ''; await populateCacheSelects(); renderFileManager(); log('已清空存储', 'warn'); };
