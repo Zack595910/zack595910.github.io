@@ -10,7 +10,6 @@
     font-family:'Consolas','Courier New',monospace; user-select:none; }
   #app { display:flex; flex-direction:column; width:100%; height:100%; }
 
-  /* 状态栏 */
   #status { height:28px; background:#1a1a1a; border-bottom:1px solid #333; display:flex;
     align-items:center; padding:0 10px; font-size:12px; color:#888; gap:16px; flex-shrink:0; }
   #status .brand { color:#4ec9b0; font-weight:bold; }
@@ -22,14 +21,12 @@
   #status .led.io { background:#569cd6; box-shadow:0 0 6px #569cd6; transition:opacity 0.1s; opacity:0; }
   #status .led.io.active { opacity:1; }
 
-  /* 屏幕区 */
   #screenWrap { flex:1; display:flex; align-items:center; justify-content:center;
     background:#000; overflow:hidden; position:relative; }
   #screenWrap > div { max-width:100%; max-height:100%; }
   #screenWrap canvas { image-rendering:pixelated; background:#000; display:block;
     max-width:100%; max-height:100%; outline:none; }
 
-  /* 配置面板 */
   #configPanel { position:absolute; inset:0; background:rgba(10,10,10,0.96); z-index:10;
     display:flex; align-items:center; justify-content:center; overflow:auto; }
   #configPanel .card { width:600px; max-width:94vw; background:#151515;
@@ -54,12 +51,10 @@
   .btns button.primary:hover { background:#244a42; }
   .btns button.danger { border-color:#a33; color:#f88; }
 
-  /* 主界面进度条 */
   #bootProgressWrap { display:none; width:100%; margin-top:10px; background:#111; border:1px solid #333; border-radius:4px; padding:2px; height:16px; position:relative; overflow:hidden; }
   #bootProgressBar { height:100%; width:0%; background:#4ec9b0; transition:width 0.1s; }
   #bootProgressText { position:absolute; top:0; left:0; width:100%; text-align:center; font-size:10px; line-height:12px; color:#fff; text-shadow:1px 1px 1px #000; }
 
-  /* 运行中工具栏 */
   #toolbar { height:40px; background:#141414; border-top:1px solid #333; display:none;
     align-items:center; padding:0 8px; gap:8px; font-size:12px; flex-shrink:0; }
   #toolbar button, #toolbar label { background:#252525; color:#ccc; border:1px solid #444;
@@ -68,17 +63,14 @@
   #toolbar .tool-sep { width:1px; height:20px; background:#444; margin:0 6px; }
   #toolbar .file-input { display:none; }
   
-  /* 关机提示 */
   #shutdownText { display:none; color:#666; font-size:16px; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); }
 
-  /* 日志区 */
   #log { height:110px; background:#0a0a0a; border-top:1px solid #333; overflow-y:auto;
     padding:4px 8px; font-size:11px; color:#6a9955; flex-shrink:0; white-space:pre-wrap;
     display:none; user-select:text; }
   #log .err { color:#f44747; }
   #log .warn { color:#dcdcaa; }
 
-  /* 弹窗系统 (下载管理 / 文件管理) */
   .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100;
     display:none; align-items:center; justify-content:center; }
   .modal-content { background:#181818; border:1px solid #444; border-radius:8px;
@@ -88,7 +80,6 @@
   .modal-close:hover { color:#fff; }
   .modal-body { padding:16px; overflow-y:auto; flex:1; }
   
-  /* 列表样式 */
   .file-list { width:100%; border-collapse:collapse; font-size:12px; }
   .file-list th { text-align:left; padding:6px; border-bottom:1px solid #444; color:#888; font-weight:normal; }
   .file-list td { padding:6px; border-bottom:1px solid #222; color:#ccc; }
@@ -98,7 +89,6 @@
   .action-btn.danger { border-color:#a33; color:#f88; }
   .action-btn.danger:hover { background:#522; }
 
-  /* 虚拟键盘 */
   #vKeyboard { position:fixed; z-index:999; background:rgba(20,20,20,0.95); border:2px solid #444;
     border-radius:6px; display:none; flex-direction:column; padding:6px; resize:both; overflow:hidden;
     min-width:320px; min-height:160px; box-shadow:0 4px 20px rgba(0,0,0,0.8); }
@@ -164,22 +154,39 @@
           <label>硬盘 C:</label>
           <select id="cfg-hda-type">
             <option value="none" selected>不挂载</option>
-            <option value="create">新建本地文件并挂载…</option>
+            <option value="create_idb">新建空硬盘（存于浏览器 IDB）…</option>
+            <option value="create_fs">新建本地文件（选择路径）…</option>
             <option value="local">挂载本地已有文件…</option>
             <option value="cached">从已缓存镜像…</option>
           </select>
         </div>
-        <div class="row" id="row-hda-create" style="display:none;">
+        
+        <!-- 新建至 IDB -->
+        <div class="row" id="row-hda-create-idb" style="display:none;">
           <label></label>
           <div class="hda-controls">
-            <select id="cfg-hda-new-size" style="flex:1;">
+            <select id="cfg-hda-idb-size" style="flex:1;">
               <option value="64">64 MB</option>
               <option value="256">256 MB</option>
               <option value="512">512 MB</option>
             </select>
-            <button id="btn-create-hda">选择路径并创建</button>
+            <button id="btn-create-hda-idb">创建并存入 IDB</button>
           </div>
         </div>
+        
+        <!-- 新建至本地文件 -->
+        <div class="row" id="row-hda-create-fs" style="display:none;">
+          <label></label>
+          <div class="hda-controls">
+            <select id="cfg-hda-fs-size" style="flex:1;">
+              <option value="64">64 MB</option>
+              <option value="256">256 MB</option>
+              <option value="512">512 MB</option>
+            </select>
+            <button id="btn-create-hda-fs">选择路径并创建</button>
+          </div>
+        </div>
+
         <div class="row" id="row-hda-file" style="display:none;">
           <label></label>
           <input type="file" id="cfg-hda-file" accept=".img,.vhd">
@@ -262,15 +269,11 @@
   <div id="log"></div>
 </div>
 
-<!-- 虚拟键盘 -->
 <div id="vKeyboard">
   <div id="vk-drag-handle">=== 拖动移动键盘 ===</div>
-  <div id="vk-keys">
-    <!-- 键位由JS生成 -->
-  </div>
+  <div id="vk-keys"></div>
 </div>
 
-<!-- 下载管理器 Modal -->
 <div id="downloadModal" class="modal-overlay">
   <div class="modal-content">
     <div class="modal-header">
@@ -298,7 +301,6 @@
   </div>
 </div>
 
-<!-- 文件管理器 Modal -->
 <div id="fileModal" class="modal-overlay">
   <div class="modal-content">
     <div class="modal-header">
@@ -319,9 +321,6 @@
 <script>
 'use strict';
 
-// ═══════════════════════════════════════════════════════════
-//  常量与全局
-// ═══════════════════════════════════════════════════════════
 const CORSPROXY_KEY = '301c7ba4';
 const RELAY_URL = `fetch:https://corsproxy.io/?key=${CORSPROXY_KEY}&url=`;
 
@@ -335,14 +334,12 @@ const LOG_MAX = 500;
 let emulator = null;
 let isShutdown = false;
 let currentConfig = {};
-let localHdaHandle = null;
+let localHdaHandle = null; // 本地文件句柄
+let localHdaFile = null;   // 本地文件对象
 
 const logEl = document.getElementById('log');
 let logBuf = [];
 
-// ═══════════════════════════════════════════════════════════
-//  日志系统
-// ═══════════════════════════════════════════════════════════
 function log(msg, cls) {
   const line = { ts: Date.now(), text: String(msg), cls: cls || '' };
   logBuf.push(line);
@@ -356,9 +353,6 @@ function log(msg, cls) {
   while (logEl.children.length > LOG_MAX) logEl.removeChild(logEl.firstChild);
 }
 
-// ═══════════════════════════════════════════════════════════
-//  存储 (IndexedDB)
-// ═══════════════════════════════════════════════════════════
 const Storage = (() => {
   let db = null;
   function open() {
@@ -403,37 +397,24 @@ const Storage = (() => {
       await reqP(tx(s, 'readwrite').clear());
     }
   }
-  
-  async function usage() {
-    try {
-      const est = await navigator.storage.estimate();
-      return { used: est.usage || 0, quota: est.quota || 0 };
-    } catch { return { used: 0, quota: 0 }; }
-  }
-  
-  return { open, saveImage, getImage, listImages, deleteImage, saveConfig, loadConfig, saveLog, loadLogs, clearAll, usage };
+  return { open, saveImage, getImage, listImages, deleteImage, saveConfig, loadConfig, saveLog, loadLogs, clearAll };
 })();
 
-// ═══════════════════════════════════════════════════════════
-//  UI 元素
-// ═══════════════════════════════════════════════════════════
 const $ = id => document.getElementById(id);
 const screenWrap = $('screenWrap'), configPanel = $('configPanel'), toolbar = $('toolbar'), bootHint = $('bootHint');
 const cfgMem = $('cfg-mem'), cfgBoot = $('cfg-boot'), cfgNet = $('cfg-net');
 const cfgFdaType = $('cfg-fda-type'), cfgFdaFile = $('cfg-fda-file'), cfgFdaCache = $('cfg-fda-cache');
-const cfgHdaType = $('cfg-hda-type'), cfgHdaFile = $('cfg-hda-file'), cfgHdaCache = $('cfg-hda-cache'), cfgHdaNewSize = $('cfg-hda-new-size');
+const cfgHdaType = $('cfg-hda-type'), cfgHdaFile = $('cfg-hda-file'), cfgHdaCache = $('cfg-hda-cache');
+const cfgHdaIdbSize = $('cfg-hda-idb-size'), cfgHdaFsSize = $('cfg-hda-fs-size');
 const cfgCdType = $('cfg-cdrom-type'), cfgCdFile = $('cfg-cdrom-file'), cfgCdCache = $('cfg-cdrom-cache');
 
 const rowFdaFile = $('row-fda-file'), rowFdaCache = $('row-fda-cache');
-const rowHdaCreate = $('row-hda-create'), rowHdaFile = $('row-hda-file'), rowHdaCache = $('row-hda-cache');
+const rowHdaCreateIdb = $('row-hda-create-idb'), rowHdaCreateFs = $('row-hda-create-fs'), rowHdaFile = $('row-hda-file'), rowHdaCache = $('row-hda-cache');
 const rowCdFile = $('row-cdrom-file'), rowCdCache = $('row-cdrom-cache');
 
-const DEFAULT_CFG = { mem: 64, fdaType: 'none', fdaName: '', hdaType: 'none', hdaName: '', hdaNewSize: 64, cdromType: 'none', cdromName: '', boot: 'hd', net: 'off' };
+const DEFAULT_CFG = { mem: 64, fdaType: 'none', fdaName: '', hdaType: 'none', hdaName: '', cdromType: 'none', cdromName: '', boot: 'hd', net: 'off' };
 let cfg = { ...DEFAULT_CFG };
 
-// ═══════════════════════════════════════════════════════════
-//  基础辅助
-// ═══════════════════════════════════════════════════════════
 function fmtSize(n) {
   if (!n) return '0 B'; if (n < 1024) return n + ' B'; if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
   if (n < 1024*1024*1024) return (n/1024/1024).toFixed(1) + ' MB'; return (n/1024/1024/1024).toFixed(2) + ' GB';
@@ -442,20 +423,20 @@ function readCfgFromUI() {
   return {
     mem: parseInt(cfgMem.value, 10), boot: cfgBoot.value, net: cfgNet.value,
     fdaType: cfgFdaType.value, fdaName: cfgFdaType.value === 'cached' ? cfgFdaCache.value : '',
-    hdaType: cfgHdaType.value, hdaName: cfgHdaType.value === 'cached' ? cfgHdaCache.value : '', hdaNewSize: parseInt(cfgHdaNewSize.value, 10),
+    hdaType: cfgHdaType.value, hdaName: cfgHdaType.value === 'cached' ? cfgHdaCache.value : '',
     cdromType: cfgCdType.value, cdromName: cfgCdType.value === 'cached' ? cfgCdCache.value : ''
   };
 }
 function writeCfgToUI(c) {
   cfgMem.value = String(c.mem || 64); cfgBoot.value = c.boot || 'hd'; cfgNet.value = c.net || 'off';
   cfgFdaType.value = c.fdaType || 'none'; cfgHdaType.value = c.hdaType || 'none'; cfgCdType.value = c.cdromType || 'none';
-  cfgHdaNewSize.value = String(c.hdaNewSize || 64);
   updateTypeRows();
 }
 function updateTypeRows() {
   rowFdaFile.style.display = (cfgFdaType.value === 'local') ? 'flex' : 'none';
   rowFdaCache.style.display = (cfgFdaType.value === 'cached') ? 'flex' : 'none';
-  rowHdaCreate.style.display = (cfgHdaType.value === 'create') ? 'flex' : 'none';
+  rowHdaCreateIdb.style.display = (cfgHdaType.value === 'create_idb') ? 'flex' : 'none';
+  rowHdaCreateFs.style.display = (cfgHdaType.value === 'create_fs') ? 'flex' : 'none';
   rowHdaFile.style.display = (cfgHdaType.value === 'local') ? 'flex' : 'none';
   rowHdaCache.style.display = (cfgHdaType.value === 'cached') ? 'flex' : 'none';
   rowCdFile.style.display = (cfgCdType.value === 'local') ? 'flex' : 'none';
@@ -468,26 +449,18 @@ function updateMemStatus() {
 }
 cfgMem.addEventListener('change', updateMemStatus);
 
-// ═══════════════════════════════════════════════════════════
-//  Modal 控制
-// ═══════════════════════════════════════════════════════════
 window.closeModal = function(id) { $(id).style.display = 'none'; };
 function openModal(id) { $(id).style.display = 'flex'; }
 
-// ═══════════════════════════════════════════════════════════
-//  文件管理器
-// ═══════════════════════════════════════════════════════════
 async function renderFileManager() {
   const tb = $('file-table').querySelector('tbody');
   const empty = $('file-empty');
   tb.innerHTML = '';
-  
   try {
     const imgs = await Storage.listImages();
     if (imgs.length === 0) { empty.style.display = 'block'; return; }
     empty.style.display = 'none';
     
-    // 获取当前挂载的硬盘，防误删
     const activeHda = cfgHdaType.value === 'cached' ? cfgHdaCache.value : null;
     
     for (const im of imgs) {
@@ -512,7 +485,6 @@ window.deleteFile = async function(name) {
   const im = imgs.find(x => x.name === name);
   if (!im) return;
   
-  // 检测是否正在运行且被挂载
   const isActive = (cfgHdaType.value === 'cached' && cfgHdaCache.value === name) ||
                    (cfgCdType.value === 'cached' && cfgCdCache.value === name) ||
                    (cfgFdaType.value === 'cached' && cfgFdaCache.value === name);
@@ -535,7 +507,7 @@ window.deleteFile = async function(name) {
 };
 
 // ═══════════════════════════════════════════════════════════
-//  下载管理器
+//  下载器
 // ═══════════════════════════════════════════════════════════
 $('btn-dl-start').onclick = async () => {
   const url = $('dl-url').value.trim();
@@ -569,32 +541,16 @@ $('btn-dl-start').onclick = async () => {
     }
     
     const blob = new Blob(chunks, { type: 'application/octet-stream' });
+    if (blob.size < 1024) throw new Error('文件过小，可能下载到了错误页面。');
     
-    // 检查是否为压缩包
-    if (url.endsWith('.zip') || blob.type === 'application/zip') {
-      throw new Error('下载的是 ZIP 压缩包。当前版本请使用本地文件解压后上传，或后续版本支持在线解压。');
-    }
-    
-    // 简单校验大小
-    if (blob.size < 1024) {
-      throw new Error('文件过小，可能下载到了错误页面或空文件。');
-    }
-    
-    // 生成文件名
     let filename = 'downloaded.img';
-    try {
-      const u = new URL(url);
-      const p = u.pathname.split('/');
-      if (p.length > 0 && p[p.length-1]) filename = p[p.length-1];
-    } catch {}
-    
+    try { const u = new URL(url); const p = u.pathname.split('/'); if (p.length > 0 && p[p.length-1]) filename = p[p.length-1]; } catch {}
     if (type === 'cdrom' && !filename.endsWith('.iso')) filename += '.iso';
     
     await Storage.saveImage(filename, { blob }, type);
     log(`下载完成并存入存储: ${filename} (${fmtSize(blob.size)})`, 'success');
-    res.textContent = `✅ 下载成功: ${filename}\n已自动挂载到${type === 'cdrom' ? '光盘' : type === 'fda' ? '软盘' : '硬盘'}。`;
+    res.textContent = `✅ 下载成功: ${filename}\n已自动挂载到对应设备。`;
     
-    // 自动挂载
     if (type === 'cdrom') { cfgCdType.value = 'cached'; updateTypeRows(); cfgCdCache.value = filename; }
     if (type === 'fda') { cfgFdaType.value = 'cached'; updateTypeRows(); cfgFdaCache.value = filename; }
     if (type === 'hda') { cfgHdaType.value = 'cached'; updateTypeRows(); cfgHdaCache.value = filename; }
@@ -604,50 +560,64 @@ $('btn-dl-start').onclick = async () => {
     
   } catch (e) {
     log('下载失败: ' + e.message, 'err');
-    txt.textContent = '下载失败';
-    bar.style.backgroundColor = '#f44747';
-    res.textContent = '❌ 错误: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
+    txt.textContent = '下载失败'; bar.style.backgroundColor = '#f44747'; res.textContent = '❌ 错误: ' + e.message;
+  } finally { btn.disabled = false; }
 };
 
 // ═══════════════════════════════════════════════════════════
-//  硬盘本地创建
+//  硬盘创建
 // ═══════════════════════════════════════════════════════════
-$('btn-create-hda').onclick = async () => {
-  if (!window.showSaveFilePicker) return alert('当前浏览器不支持 File System Access API，请使用最新版 Edge/Chrome。');
-  const sizeMB = parseInt(cfgHdaNewSize.value, 10);
+$('btn-create-hda-idb').onclick = async () => {
+  const sizeMB = parseInt(cfgHdaIdbSize.value, 10);
+  const name = `hdd_${sizeMB}mb_${Date.now()}.img`;
+  try {
+    // 分块生成 Blob 以减少内存峰值
+    const chunkSize = 1024 * 1024;
+    const zeroChunk = new Uint8Array(chunkSize);
+    const blobParts = [];
+    for (let i = 0; i < sizeMB; i++) blobParts.push(zeroChunk);
+    const blob = new Blob(blobParts);
+    
+    await Storage.saveImage(name, { blob }, 'hda');
+    log(`已创建空硬盘并存入 IDB: ${name} (${sizeMB} MB)`, 'success');
+    
+    cfgHdaType.value = 'cached'; updateTypeRows();
+    await populateCacheSelects();
+    cfgHdaCache.value = name;
+  } catch (e) {
+    log('创建 IDB 硬盘失败: ' + e.message, 'err');
+  }
+};
+
+$('btn-create-hda-fs').onclick = async () => {
+  if (!window.showSaveFilePicker) return alert('当前浏览器不支持，请使用 Edge/Chrome。');
+  const sizeMB = parseInt(cfgHdaFsSize.value, 10);
   try {
     const handle = await window.showSaveFilePicker({
       suggestedName: `c7_hdd_${sizeMB}mb.img`,
       types: [{ description: 'Raw Disk Image', accept: { 'application/octet-stream': ['.img'] } }],
     });
-    // 分块写入防止卡死
     const writable = await handle.createWritable();
     const chunkSize = 1024 * 1024;
     const zeroChunk = new Uint8Array(chunkSize);
     for (let i = 0; i < sizeMB; i++) await writable.write(zeroChunk);
     await writable.close();
     localHdaHandle = handle;
+    localHdaFile = await handle.getFile();
     log(`已新建本地硬盘: ${handle.name} (${sizeMB} MB)`, 'success');
-    alert(`已成功创建本地硬盘文件: ${handle.name}`);
+    alert(`已成功创建本地硬盘: ${handle.name}`);
   } catch (e) {
-    if (e.name !== 'AbortError') log('新建硬盘失败: ' + e.message, 'err');
+    if (e.name !== 'AbortError') log('新建本地硬盘失败: ' + e.message, 'err');
   }
 };
 
-// ═══════════════════════════════════════════════════════════
-//  镜像选择辅助
-// ═══════════════════════════════════════════════════════════
 async function populateCacheSelects() {
   const imgs = await Storage.listImages();
   for (const [sel, type] of [[cfgFdaCache, 'fda'], [cfgHdaCache, 'hda'], [cfgCdCache, 'cdrom']]) {
     sel.innerHTML = '';
     const filtered = imgs.filter(x => x.type === type);
     if (filtered.length === 0) {
-      const o = document.createElement('option'); o.value = ''; o.textContent = '(无匹配镜像)'; sel.appendChild(o);
-      continue;
+      const o = document.createElement('option'); o.value = ''; o.textContent = '(无匹配镜像)'; sel.appendChild(o); continue;
     }
     for (const im of filtered) {
       const o = document.createElement('option'); o.value = im.name; o.textContent = `${im.name} · ${fmtSize(im.size)}`; sel.appendChild(o);
@@ -662,10 +632,12 @@ async function ensureImageForType(type) {
 
   if (uiType === 'none') return null;
   
-  if (uiType === 'create') {
-    if (!localHdaHandle) throw new Error('请先点击“选择路径并创建”');
-    const file = await localHdaHandle.getFile();
-    return { file };
+  if (uiType === 'create_fs') {
+    if (!localHdaFile) {
+      if (localHdaHandle) localHdaFile = await localHdaHandle.getFile();
+      else throw new Error('请先点击“选择路径并创建”或“挂载本地已有文件”');
+    }
+    return { file: localHdaFile };
   }
   if (uiType === 'local') {
     if (!uiFile) throw new Error(`请选择${labelOf(type)}本地文件`);
@@ -684,7 +656,7 @@ async function ensureImageForType(type) {
 function labelOf(t) { return t === 'fda' ? '软盘' : t === 'hda' ? '硬盘' : '光盘'; }
 
 // ═══════════════════════════════════════════════════════════
-//  v86 生命周期与进度条
+//  v86 生命周期
 // ═══════════════════════════════════════════════════════════
 function destroyEmulator() {
   if (emulator && typeof emulator.destroy === 'function') { try { emulator.destroy(); } catch(e) {} }
@@ -699,6 +671,8 @@ function buildOptions(fda, hda, cd) {
     vga_memory_size: 4 * 1024 * 1024, bios: { url: './seabios.bin' }, vga_bios: { url: './vgabios.bin' },
     autostart: true
   };
+  
+  // 核心修复：绝对不要把 File 重新包一层，直接透传
   if (fda && fda.file) opts.fda = { buffer: fda.file };
   if (hda && hda.file) opts.hda = { buffer: hda.file };
   if (cd && cd.file) opts.cdrom = { buffer: cd.file };
@@ -710,17 +684,15 @@ function buildOptions(fda, hda, cd) {
 }
 
 async function startMachine() {
-  if (isShutdown) { // 如果是从关机状态直接点开机
+  if (isShutdown) {
     isShutdown = false;
     $('shutdownText').style.display = 'none';
-    $('btn-power').style.display = 'none';
     $('btn-power').textContent = '开机';
   }
 
   const wrap = $('bootProgressWrap'), bar = $('bootProgressBar'), txt = $('bootProgressText');
   wrap.style.display = 'block'; bar.style.width = '5%'; txt.textContent = '准备镜像…';
   
-  // 短暂延时让 UI 刷新进度条
   await new Promise(r => setTimeout(r, 50));
 
   let fda = null, hda = null, cd = null;
@@ -763,10 +735,6 @@ async function startMachine() {
       clearTimeout(ioTimeout); ioTimeout = setTimeout(() => led.classList.remove('active'), 50);
     });
   });
-  
-  emulator.add_listener('emulator-stopped', () => {
-    log('v86 已停止', 'warn');
-  });
 
   bindInput(screenDiv); setLed('run'); $('stat-sys').textContent = '运行中';
   updateMemStatus();
@@ -774,9 +742,6 @@ async function startMachine() {
 
 function setLed(kind) { const led = $('led-power'); led.className = 'led'; if (kind === 'run') led.classList.add('run'); else if (kind === 'on') led.classList.add('on'); }
 
-// ═══════════════════════════════════════════════════════════
-//  键鼠映射
-// ═══════════════════════════════════════════════════════════
 const SCANCODE_MAP = {
   'Escape':0x01,'Digit1':0x02,'Digit2':0x03,'Digit3':0x04,'Digit4':0x05,'Digit5':0x06,'Digit6':0x07,'Digit7':0x08,'Digit8':0x09,'Digit9':0x0A,'Digit0':0x0B,'Minus':0x0C,'Equal':0x0D,'Backspace':0x0E,'Tab':0x0F,
   'KeyQ':0x10,'KeyW':0x11,'KeyE':0x12,'KeyR':0x13,'KeyT':0x14,'KeyY':0x15,'KeyU':0x16,'KeyI':0x17,'KeyO':0x18,'KeyP':0x19,'BracketLeft':0x1A,'BracketRight':0x1B,'Enter':0x1C,'ControlLeft':0x1D,
@@ -795,10 +760,10 @@ function bindInput(el) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  工具栏与热插拔
+//  工具栏与热插拔 (使用原生 File，完美修复)
 // ═══════════════════════════════════════════════════════════
 $('btn-power').onclick = () => {
-  if (emulator) { // 当前是运行中，点击执行“关机”
+  if (emulator) {
     destroyEmulator();
     isShutdown = true;
     $('stat-sys').textContent = '已关机';
@@ -806,7 +771,7 @@ $('btn-power').onclick = () => {
     $('btn-power').textContent = '开机';
     setLed('');
     log('已关机');
-  } else { // 当前是关机，点击执行“开机”
+  } else {
     startMachine();
   }
 };
@@ -823,23 +788,21 @@ $('btn-pause').onclick = () => { if (emulator) { try { emulator.stop(); } catch(
 $('btn-resume').onclick = () => { if (emulator) { try { emulator.run(); } catch(e){} setLed('run'); log('已继续'); } };
 $('btn-reset').onclick = () => { if (emulator) { try { emulator.restart(); } catch(e){} log('复位'); } };
 
-// 热插拔软盘 (完美修复：包装成 File)
 $('hotswap-fda').addEventListener('change', async (e) => {
   const f = e.target.files[0]; if (!f || !emulator) return;
-  try { await emulator.set_fda({ buffer: new File([f], f.name) }); log(`[热插拔] 软盘 A: 已变更为 ${f.name}`, 'warn'); } 
+  try { await emulator.set_fda({ buffer: f }); log(`[热插拔] 软盘 A: 已变更为 ${f.name}`, 'warn'); } 
   catch (err) { log(`[热插拔] 失败: ${err.message}`, 'err'); }
   e.target.value = '';
 });
-// 热插拔光盘
 $('hotswap-cdrom').addEventListener('change', async (e) => {
   const f = e.target.files[0]; if (!f || !emulator) return;
-  try { await emulator.set_cdrom({ buffer: new File([f], f.name) }); log(`[热插拔] 光盘 D: 已变更为 ${f.name}`, 'warn'); } 
+  try { await emulator.set_cdrom({ buffer: f }); log(`[热插拔] 光盘 D: 已变更为 ${f.name}`, 'warn'); } 
   catch (err) { log(`[热插拔] 失败: ${err.message}`, 'err'); }
   e.target.value = '';
 });
 
 // ═══════════════════════════════════════════════════════════
-//  虚拟键盘 (VK)
+//  虚拟键盘
 // ═══════════════════════════════════════════════════════════
 const vkEl = $('vKeyboard'), vkKeys = $('vk-keys');
 let vkVisible = false;
@@ -883,7 +846,6 @@ $('btn-toggle-vk').onclick = () => {
   $('btn-toggle-vk').style.background = vkVisible ? '#1d3a34' : '';
 };
 
-// 拖动与调整大小逻辑
 (function makeVKDraggable() {
   const handle = $('vk-drag-handle');
   let isDragging = false, startX, startY, origX, origY;
@@ -910,11 +872,10 @@ $('btn-toggle-vk').onclick = () => {
   });
 })();
 
-// 初始化键盘
 initVK();
 
 // ═══════════════════════════════════════════════════════════
-//  全局事件与初始化
+//  初始化
 // ═══════════════════════════════════════════════════════════
 $('btn-start').onclick = () => { startMachine(); };
 $('btn-clear').onclick = async () => { if (!confirm('确定清空所有已缓存镜像、配置和日志？')) return; await Storage.clearAll(); logBuf = []; logEl.innerHTML = ''; await populateCacheSelects(); renderFileManager(); log('已清空存储', 'warn'); };
@@ -924,13 +885,7 @@ $('btn-open-downloader').onclick = () => { openModal('downloadModal'); };
 $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(); };
 
 (async function init() {
-  // 尝试请求持久化存储，防止被浏览器清理
-  if (navigator.storage && navigator.storage.persist) {
-    navigator.storage.persist().then(granted => {
-      if (granted) console.log("存储已持久化");
-    });
-  }
-
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
   try { await Storage.open(); } catch (e) { log('IndexedDB 打开失败: ' + e.message, 'err'); }
   try { const saved = await Storage.loadConfig(); if (saved) cfg = { ...DEFAULT_CFG, ...saved }; } catch (e) { log('读取配置失败: ' + e.message, 'err'); }
   
@@ -950,7 +905,6 @@ $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(
   log('C7 就绪 (完整版)');
   screenWrap.addEventListener('click', () => { const c = screenWrap.querySelector('canvas'); if (c) c.focus(); });
 })();
-
 </script>
 </body>
 </html>
