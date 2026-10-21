@@ -57,11 +57,10 @@
 
   #toolbar { height:40px; background:#141414; border-top:1px solid #333; display:none;
     align-items:center; padding:0 8px; gap:8px; font-size:12px; flex-shrink:0; }
-  #toolbar button, #toolbar label { background:#252525; color:#ccc; border:1px solid #444;
+  #toolbar button { background:#252525; color:#ccc; border:1px solid #444;
     border-radius:4px; padding:4px 10px; font-family:inherit; font-size:12px; cursor:pointer; outline:none; }
-  #toolbar button:hover, #toolbar label:hover { background:#333; }
+  #toolbar button:hover { background:#333; }
   #toolbar .tool-sep { width:1px; height:20px; background:#444; margin:0 6px; }
-  #toolbar .file-input { display:none; }
   
   #shutdownText { display:none; color:#666; font-size:16px; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); }
 
@@ -88,18 +87,6 @@
   .action-btn:hover { background:#444; }
   .action-btn.danger { border-color:#a33; color:#f88; }
   .action-btn.danger:hover { background:#522; }
-
-  #vKeyboard { position:fixed; z-index:999; background:rgba(20,20,20,0.95); border:2px solid #444;
-    border-radius:6px; display:none; flex-direction:column; padding:6px; resize:both; overflow:hidden;
-    min-width:320px; min-height:160px; box-shadow:0 4px 20px rgba(0,0,0,0.8); }
-  #vKeyboard.dragging { opacity:0.8; }
-  #vk-drag-handle { height:20px; cursor:move; background:#222; border-radius:4px;
-    margin-bottom:6px; display:flex; align-items:center; justify-content:center; font-size:10px; color:#666; }
-  #vk-keys { display:flex; flex-wrap:wrap; gap:4px; flex:1; align-content:flex-start; overflow-y:auto; }
-  .vk-btn { background:#2a2a2a; color:#ccc; border:1px solid #444; border-radius:3px;
-    padding:6px; font-family:inherit; font-size:12px; cursor:pointer; user-select:none;
-    display:flex; align-items:center; justify-content:center; min-width:28px; height:28px; flex:1 0 28px; }
-  .vk-btn:active { background:#4ec9b0; color:#000; }
 </style>
 </head>
 <body>
@@ -255,21 +242,10 @@
     <button id="btn-resume">继续</button>
     <button id="btn-reset">复位</button>
     <button id="btn-config">修改配置</button>
-    <div class="tool-sep"></div>
-    <label for="hotswap-fda">换软盘 A:</label>
-    <input type="file" id="hotswap-fda" class="file-input" accept=".img,.ima">
-    <label for="hotswap-cdrom">换光盘 D:</label>
-    <input type="file" id="hotswap-cdrom" class="file-input" accept=".iso">
-    <button id="btn-toggle-vk">虚拟键盘</button>
     <span style="color:#666;margin-left:auto;">C7 · v86 host</span>
   </div>
 
   <div id="log"></div>
-</div>
-
-<div id="vKeyboard">
-  <div id="vk-drag-handle">=== 拖动移动键盘 ===</div>
-  <div id="vk-keys"></div>
 </div>
 
 <div id="downloadModal" class="modal-overlay">
@@ -501,7 +477,7 @@ window.deleteFile = async function(name) {
   }
 };
 
-// ★ 核心工具：将 File/Blob 转换为纯 ArrayBuffer
+// 核心工具：将 File/Blob 转换为纯 ArrayBuffer
 function fileToArrayBuffer(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -660,7 +636,6 @@ function destroyEmulator() {
   const oldCanvas = screenWrap.querySelector('canvas'); if (oldCanvas) oldCanvas.remove();
 }
 
-// ★ 启动配置构建：一律转 ArrayBuffer 喂给 v86，绝对不卡
 async function buildOptions(fda, hda, cd) {
   const opts = {
     wasm_path: './v86.wasm', memory_size: (cfgMem.value | 0) * 1024 * 1024,
@@ -775,107 +750,21 @@ $('btn-power').onclick = () => {
   }
 };
 
+// 修改配置并返回
 $('btn-config').onclick = () => {
   destroyEmulator(); isShutdown = false;
   toolbar.style.display = 'none'; logEl.style.display = 'none';
   configPanel.style.display = 'flex'; bootHint.style.display = 'block';
   $('stat-sys').textContent = '未启动'; $('shutdownText').style.display = 'none';
   setLed('');
+  log('回到主界面，可以修改盘片或内存');
 };
 
 $('btn-pause').onclick = () => { if (emulator) { try { emulator.stop(); } catch(e){} setLed('on'); log('已暂停'); } };
 $('btn-resume').onclick = () => { if (emulator) { try { emulator.run(); } catch(e){} setLed('run'); log('已继续'); } };
 $('btn-reset').onclick = () => { if (emulator) { try { emulator.restart(); } catch(e){} log('复位'); } };
 
-// ★ 热插拔新方法：转为 ArrayBuffer 后再传给 v86
-$('hotswap-fda').addEventListener('change', async (e) => {
-  const f = e.target.files[0]; if (!f || !emulator) return;
-  try { 
-    const buffer = await fileToArrayBuffer(f);
-    await emulator.set_fda({ buffer }); 
-    log(`[热插拔] 软盘 A: 已变更为 ${f.name}`, 'warn'); 
-  } catch (err) { log(`[热插拔] 失败: ${err.message}`, 'err'); }
-  e.target.value = '';
-});
-$('hotswap-cdrom').addEventListener('change', async (e) => {
-  const f = e.target.files[0]; if (!f || !emulator) return;
-  try { 
-    const buffer = await fileToArrayBuffer(f);
-    await emulator.set_cdrom({ buffer }); 
-    log(`[热插拔] 光盘 D: 已变更为 ${f.name}`, 'warn'); 
-  } catch (err) { log(`[热插拔] 失败: ${err.message}`, 'err'); }
-  e.target.value = '';
-});
-
-const vkEl = $('vKeyboard'), vkKeys = $('vk-keys');
-let vkVisible = false;
-
-function initVK() {
-  const layout = [
-    ['Escape','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'],
-    ['Backquote','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0','Minus','Equal','Backspace'],
-    ['Tab','KeyQ','KeyW','KeyE','KeyR','KeyT','KeyY','KeyU','KeyI','KeyO','KeyP','BracketLeft','BracketRight','Backslash'],
-    ['CapsLock','KeyA','KeyS','KeyD','KeyF','KeyG','KeyH','KeyJ','KeyK','KeyL','Semicolon','Quote','Enter'],
-    ['ShiftLeft','KeyZ','KeyX','KeyC','KeyV','KeyB','KeyN','KeyM','Comma','Period','Slash','ShiftRight'],
-    ['ControlLeft','AltLeft','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']
-  ];
-  
-  layout.forEach(row => {
-    const rowDiv = document.createElement('div');
-    rowDiv.style.display = 'flex'; rowDiv.style.width = '100%'; rowDiv.style.gap = '4px'; rowDiv.style.marginBottom = '4px';
-    row.forEach(code => {
-      const btn = document.createElement('button');
-      btn.className = 'vk-btn';
-      btn.textContent = code.replace('Key','').replace('Digit','').replace('Left','').replace('Right','').replace('Arrow','');
-      btn.onmousedown = (e) => { e.preventDefault(); sendVK(code); };
-      btn.ontouchstart = (e) => { e.preventDefault(); sendVK(code); };
-      rowDiv.appendChild(btn);
-    });
-    vkKeys.appendChild(rowDiv);
-  });
-}
-
-function sendVK(code) {
-  if (!emulator) return;
-  const sc = SCANCODE_MAP[code];
-  if (sc !== undefined) {
-    try { emulator.keyboard_send_scancodes([sc, sc | 0x80]); } catch(err) {}
-  }
-}
-
-$('btn-toggle-vk').onclick = () => {
-  vkVisible = !vkVisible;
-  vkEl.style.display = vkVisible ? 'flex' : 'none';
-  $('btn-toggle-vk').style.background = vkVisible ? '#1d3a34' : '';
-};
-
-(function makeVKDraggable() {
-  const handle = $('vk-drag-handle');
-  let isDragging = false, startX, startY, origX, origY;
-  
-  handle.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    startX = e.clientX; startY = e.clientY;
-    const rect = vkEl.getBoundingClientRect();
-    origX = rect.left; origY = rect.top;
-    vkEl.classList.add('dragging');
-    e.preventDefault();
-  });
-  
-  window.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    const dx = e.clientX - startX, dy = e.clientY - startY;
-    vkEl.style.left = (origX + dx) + 'px';
-    vkEl.style.top = (origY + dy) + 'px';
-    vkEl.style.bottom = 'auto'; vkEl.style.right = 'auto';
-  });
-  
-  window.addEventListener('mouseup', () => {
-    if (isDragging) { isDragging = false; vkEl.classList.remove('dragging'); }
-  });
-})();
-
-initVK();
+// 移除了原先的热插拔文件选择器，回归最稳定的配置面板挂载法
 
 $('btn-start').onclick = () => { startMachine(); };
 $('btn-clear').onclick = async () => { if (!confirm('确定清空所有已缓存镜像、配置和日志？')) return; await Storage.clearAll(); logBuf = []; logEl.innerHTML = ''; await populateCacheSelects(); renderFileManager(); log('已清空存储', 'warn'); };
@@ -902,7 +791,7 @@ $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(
     logEl.scrollTop = logEl.scrollHeight; 
   } catch(e) {}
 
-  log('C7 就绪 (完整版)');
+  log('C7 就绪 (稳定版)');
   screenWrap.addEventListener('click', () => { const c = screenWrap.querySelector('canvas'); if (c) c.focus(); });
 })();
 </script>
