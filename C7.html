@@ -334,8 +334,8 @@ const LOG_MAX = 500;
 let emulator = null;
 let isShutdown = false;
 let currentConfig = {};
-let localHdaHandle = null; // 本地文件句柄
-let localHdaFile = null;   // 本地文件对象
+let localHdaHandle = null;
+let localHdaFile = null;
 
 const logEl = document.getElementById('log');
 let logBuf = [];
@@ -506,9 +506,6 @@ window.deleteFile = async function(name) {
   }
 };
 
-// ═══════════════════════════════════════════════════════════
-//  下载器
-// ═══════════════════════════════════════════════════════════
 $('btn-dl-start').onclick = async () => {
   const url = $('dl-url').value.trim();
   const type = $('dl-type').value;
@@ -564,14 +561,10 @@ $('btn-dl-start').onclick = async () => {
   } finally { btn.disabled = false; }
 };
 
-// ═══════════════════════════════════════════════════════════
-//  硬盘创建
-// ═══════════════════════════════════════════════════════════
 $('btn-create-hda-idb').onclick = async () => {
   const sizeMB = parseInt(cfgHdaIdbSize.value, 10);
   const name = `hdd_${sizeMB}mb_${Date.now()}.img`;
   try {
-    // 分块生成 Blob 以减少内存峰值
     const chunkSize = 1024 * 1024;
     const zeroChunk = new Uint8Array(chunkSize);
     const blobParts = [];
@@ -655,9 +648,6 @@ async function ensureImageForType(type) {
 }
 function labelOf(t) { return t === 'fda' ? '软盘' : t === 'hda' ? '硬盘' : '光盘'; }
 
-// ═══════════════════════════════════════════════════════════
-//  v86 生命周期
-// ═══════════════════════════════════════════════════════════
 function destroyEmulator() {
   if (emulator && typeof emulator.destroy === 'function') { try { emulator.destroy(); } catch(e) {} }
   emulator = null;
@@ -672,7 +662,7 @@ function buildOptions(fda, hda, cd) {
     autostart: true
   };
   
-  // 核心修复：绝对不要把 File 重新包一层，直接透传
+  // 修复：不要将 File 对象再包装，直接传给 v86
   if (fda && fda.file) opts.fda = { buffer: fda.file };
   if (hda && hda.file) opts.hda = { buffer: hda.file };
   if (cd && cd.file) opts.cdrom = { buffer: cd.file };
@@ -759,9 +749,6 @@ function bindInput(el) {
   el.addEventListener('mouseup', () => { if (!emulator) return; try { emulator.mouse_set_status([0, 0, 0, 0, 0, 0]); } catch(err) {} });
 }
 
-// ═══════════════════════════════════════════════════════════
-//  工具栏与热插拔 (使用原生 File，完美修复)
-// ═══════════════════════════════════════════════════════════
 $('btn-power').onclick = () => {
   if (emulator) {
     destroyEmulator();
@@ -801,9 +788,6 @@ $('hotswap-cdrom').addEventListener('change', async (e) => {
   e.target.value = '';
 });
 
-// ═══════════════════════════════════════════════════════════
-//  虚拟键盘
-// ═══════════════════════════════════════════════════════════
 const vkEl = $('vKeyboard'), vkKeys = $('vk-keys');
 let vkVisible = false;
 
@@ -874,9 +858,6 @@ $('btn-toggle-vk').onclick = () => {
 
 initVK();
 
-// ═══════════════════════════════════════════════════════════
-//  初始化
-// ═══════════════════════════════════════════════════════════
 $('btn-start').onclick = () => { startMachine(); };
 $('btn-clear').onclick = async () => { if (!confirm('确定清空所有已缓存镜像、配置和日志？')) return; await Storage.clearAll(); logBuf = []; logEl.innerHTML = ''; await populateCacheSelects(); renderFileManager(); log('已清空存储', 'warn'); };
 $('btn-reset-defaults').onclick = () => { cfg = { ...DEFAULT_CFG }; writeCfgToUI(cfg); updateTypeRows(); log('已恢复默认配置', 'warn'); };
