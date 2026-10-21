@@ -161,7 +161,6 @@
           </select>
         </div>
         
-        <!-- 新建至 IDB -->
         <div class="row" id="row-hda-create-idb" style="display:none;">
           <label></label>
           <div class="hda-controls">
@@ -174,7 +173,6 @@
           </div>
         </div>
         
-        <!-- 新建至本地文件 -->
         <div class="row" id="row-hda-create-fs" style="display:none;">
           <label></label>
           <div class="hda-controls">
@@ -333,7 +331,6 @@ const LOG_MAX = 500;
 
 let emulator = null;
 let isShutdown = false;
-let currentConfig = {};
 let localHdaHandle = null;
 let localHdaFile = null;
 
@@ -461,8 +458,6 @@ async function renderFileManager() {
     if (imgs.length === 0) { empty.style.display = 'block'; return; }
     empty.style.display = 'none';
     
-    const activeHda = cfgHdaType.value === 'cached' ? cfgHdaCache.value : null;
-    
     for (const im of imgs) {
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -505,6 +500,16 @@ window.deleteFile = async function(name) {
     alert('删除失败: ' + e.message);
   }
 };
+
+// ★ 核心工具：将 File/Blob 转换为纯 ArrayBuffer
+function fileToArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('读取文件失败'));
+    reader.readAsArrayBuffer(file);
+  });
+}
 
 $('btn-dl-start').onclick = async () => {
   const url = $('dl-url').value.trim();
@@ -655,17 +660,17 @@ function destroyEmulator() {
   const oldCanvas = screenWrap.querySelector('canvas'); if (oldCanvas) oldCanvas.remove();
 }
 
-function buildOptions(fda, hda, cd) {
+// ★ 启动配置构建：一律转 ArrayBuffer 喂给 v86，绝对不卡
+async function buildOptions(fda, hda, cd) {
   const opts = {
     wasm_path: './v86.wasm', memory_size: (cfgMem.value | 0) * 1024 * 1024,
     vga_memory_size: 4 * 1024 * 1024, bios: { url: './seabios.bin' }, vga_bios: { url: './vgabios.bin' },
     autostart: true
   };
   
-  // 修复：不要将 File 对象再包装，直接传给 v86
-  if (fda && fda.file) opts.fda = { buffer: fda.file };
-  if (hda && hda.file) opts.hda = { buffer: hda.file };
-  if (cd && cd.file) opts.cdrom = { buffer: cd.file };
+  if (fda && fda.file) opts.fda = { buffer: await fileToArrayBuffer(fda.file) };
+  if (hda && hda.file) opts.hda = { buffer: await fileToArrayBuffer(hda.file) };
+  if (cd && cd.file) opts.cdrom = { buffer: await fileToArrayBuffer(cd.file) };
   
   const boot = cfgBoot.value;
   if (boot === 'fd') opts.boot_order = 0x213; else if (boot === 'cd') opts.boot_order = 0x231; else opts.boot_order = 0x132;
@@ -687,11 +692,11 @@ async function startMachine() {
 
   let fda = null, hda = null, cd = null;
   try { 
-    bar.style.width = '20%'; txt.textContent = '加载软盘…';
+    bar.style.width = '10%'; txt.textContent = '查找软盘…';
     fda = await ensureImageForType('fda'); 
-    bar.style.width = '40%'; txt.textContent = '加载硬盘…';
+    bar.style.width = '20%'; txt.textContent = '查找硬盘…';
     hda = await ensureImageForType('hda'); 
-    bar.style.width = '60%'; txt.textContent = '加载光盘…';
+    bar.style.width = '30%'; txt.textContent = '查找光盘…';
     cd  = await ensureImageForType('cdrom'); 
   } catch(e) { 
     wrap.style.display = 'none'; log(e.message, 'err'); alert(e.message); return; 
@@ -700,7 +705,14 @@ async function startMachine() {
   cfg = readCfgFromUI(); await Storage.saveConfig(cfg);
   destroyEmulator();
 
-  const opts = buildOptions(fda, hda, cd);
+  bar.style.width = '40%'; txt.textContent = '读取镜像数据 (ArrayBuffer)…';
+  let opts;
+  try {
+    opts = await buildOptions(fda, hda, cd);
+  } catch (e) {
+    wrap.style.display = 'none'; log('读取镜像失败: ' + e.message, 'err'); alert('读取镜像失败'); return;
+  }
+
   const screenDiv = document.createElement('div'); screenDiv.className = 'v86_screen'; screenDiv.tabIndex = 0;
   screenWrap.insertBefore(screenDiv, bootHint); opts.screen_container = screenDiv;
 
@@ -775,16 +787,23 @@ $('btn-pause').onclick = () => { if (emulator) { try { emulator.stop(); } catch(
 $('btn-resume').onclick = () => { if (emulator) { try { emulator.run(); } catch(e){} setLed('run'); log('已继续'); } };
 $('btn-reset').onclick = () => { if (emulator) { try { emulator.restart(); } catch(e){} log('复位'); } };
 
+// ★ 热插拔新方法：转为 ArrayBuffer 后再传给 v86
 $('hotswap-fda').addEventListener('change', async (e) => {
   const f = e.target.files[0]; if (!f || !emulator) return;
-  try { await emulator.set_fda({ buffer: f }); log(`[热插拔] 软盘 A: 已变更为 ${f.name}`, 'warn'); } 
-  catch (err) { log(`[热插拔] 失败: ${err.message}`, 'err'); }
+  try { 
+    const buffer = await fileToArrayBuffer(f);
+    await emulator.set_fda({ buffer }); 
+    log(`[热插拔] 软盘 A: 已变更为 ${f.name}`, 'warn'); 
+  } catch (err) { log(`[热插拔] 失败: ${err.message}`, 'err'); }
   e.target.value = '';
 });
 $('hotswap-cdrom').addEventListener('change', async (e) => {
   const f = e.target.files[0]; if (!f || !emulator) return;
-  try { await emulator.set_cdrom({ buffer: f }); log(`[热插拔] 光盘 D: 已变更为 ${f.name}`, 'warn'); } 
-  catch (err) { log(`[热插拔] 失败: ${err.message}`, 'err'); }
+  try { 
+    const buffer = await fileToArrayBuffer(f);
+    await emulator.set_cdrom({ buffer }); 
+    log(`[热插拔] 光盘 D: 已变更为 ${f.name}`, 'warn'); 
+  } catch (err) { log(`[热插拔] 失败: ${err.message}`, 'err'); }
   e.target.value = '';
 });
 
