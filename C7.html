@@ -60,6 +60,15 @@
   
   #shutdownText { display:none; color:#666; font-size:16px; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); }
 
+  /* 保存进度条遮罩 */
+  #saveOverlay { position:absolute; inset:0; background:rgba(0,0,0,0.8); z-index:99;
+    display:none; flex-direction:column; align-items:center; justify-content:center; }
+  #saveBox { background:#151515; border:1px solid #444; border-radius:8px; padding:20px 40px; text-align:center; }
+  #saveText { margin-bottom:12px; font-size:14px; color:#4ec9b0; }
+  #saveProgress { width:300px; height:16px; background:#111; border:1px solid #333; border-radius:4px; overflow:hidden; margin:0 auto; }
+  #saveBar { height:100%; width:0%; background:#4ec9b0; transition:width 0.1s; }
+  #saveTip { font-size:11px; color:#888; margin-top:8px; }
+
   #log { height:110px; background:#0a0a0a; border-top:1px solid #333; overflow-y:auto;
     padding:4px 8px; font-size:11px; color:#6a9955; flex-shrink:0; white-space:pre-wrap;
     display:none; user-select:text; }
@@ -137,10 +146,10 @@
           <label>硬盘 C:</label>
           <select id="cfg-hda-type">
             <option value="none" selected>不挂载</option>
-            <option value="create_idb">新建空硬盘（存于浏览器 IDB）…</option>
-            <option value="create_fs">新建本地文件（选择路径）…</option>
             <option value="local">挂载本地已有文件…</option>
+            <option value="create_fs">新建本地文件（选择路径）…</option>
             <option value="cached">从已缓存镜像…</option>
+            <option value="create_idb">新建空硬盘（存于浏览器 IDB）…</option>
           </select>
         </div>
         
@@ -224,6 +233,15 @@
       </div>
     </div>
     
+    <!-- 保存遮罩 -->
+    <div id="saveOverlay">
+      <div id="saveBox">
+        <div id="saveText">正在保存硬盘数据，请稍候...</div>
+        <div id="saveProgress"><div id="saveBar"></div></div>
+        <div id="saveTip">正在将虚拟机的改动写回 IndexedDB，此时请勿关闭页面。</div>
+      </div>
+    </div>
+
     <div id="shutdownText">已关机</div>
     <div id="bootHint" style="position:absolute;bottom:10px;color:#555;font-size:11px;">就绪</div>
   </div>
@@ -234,10 +252,21 @@
     <button id="btn-resume">继续</button>
     <button id="btn-reset">复位</button>
     <button id="btn-config">修改配置（回主界面）</button>
+    <div class="tool-sep"></div>
+    <button id="btn-toggle-vk">⌨️ 虚拟键盘</button>
     <span style="color:#666;margin-left:auto;">C7 · v86 host</span>
   </div>
 
   <div id="log"></div>
+</div>
+
+<!-- 独立虚拟键盘面板 -->
+<div id="vk-panel">
+  <div id="vk-header">
+    <span>虚拟键盘</span>
+    <span id="vk-close">✕</span>
+  </div>
+  <div id="vk-body"></div>
 </div>
 
 <div id="downloadModal" class="modal-overlay">
@@ -625,7 +654,6 @@ function buildOptions(fda, hda, cd) {
     autostart: true
   };
   
-  // 强制使用真实物理文件
   if (fda && fda.file) opts.fda = { buffer: fda.file };
   if (hda && hda.file) opts.hda = { buffer: hda.file };
   if (cd && cd.file) opts.cdrom = { buffer: cd.file };
@@ -689,7 +717,8 @@ const SCANCODE_MAP = {
   'KeyA':0x1E,'KeyS':0x1F,'KeyD':0x20,'KeyF':0x21,'KeyG':0x22,'KeyH':0x23,'KeyJ':0x24,'KeyK':0x25,'KeyL':0x26,'Semicolon':0x27,'Quote':0x28,'Backquote':0x29,'ShiftLeft':0x2A,'Backslash':0x2B,
   'KeyZ':0x2C,'KeyX':0x2D,'KeyC':0x2E,'KeyV':0x2F,'KeyB':0x30,'KeyN':0x31,'KeyM':0x32,'Comma':0x33,'Period':0x34,'Slash':0x35,'ShiftRight':0x36,'NumpadMultiply':0x37,'AltLeft':0x38,'Space':0x39,
   'CapsLock':0x3A,'F1':0x3B,'F2':0x3C,'F3':0x3D,'F4':0x3E,'F5':0x3F,'F6':0x40,'F7':0x41,'F8':0x42,'F9':0x43,'F10':0x44,'NumLock':0x45,'ScrollLock':0x46,
-  'Numpad7':0x47,'Numpad8':0x48,'Numpad9':0x49,'NumpadSubtract':0x4A,'Numpad4':0x4B,'Numpad5':0x4C,'Numpad6':0x4D,'NumpadAdd':0x4E,'Numpad1':0x4F,'Numpad2':0x50,'Numpad3':0x51,'Numpad0':0x52,'NumpadDecimal':0x53,'F11':0x57,'F12':0x58
+  'Numpad7':0x47,'Numpad8':0x48,'Numpad9':0x49,'NumpadSubtract':0x4A,'Numpad4':0x4B,'Numpad5':0x4C,'Numpad6':0x4D,'NumpadAdd':0x4E,'Numpad1':0x4F,'Numpad2':0x50,'Numpad3':0x51,'Numpad0':0x52,'NumpadDecimal':0x53,'F11':0x57,'F12':0x58,
+  'ArrowUp':0x48,'ArrowDown':0x50,'ArrowLeft':0x4B,'ArrowRight':0x4D
 };
 function bindInput(el) {
   if (el._c7bound) return; el._c7bound = true;
@@ -734,6 +763,79 @@ $('btn-reset-defaults').onclick = () => { cfg = { ...DEFAULT_CFG }; writeCfgToUI
 $('btn-open-downloader').onclick = () => { openModal('downloadModal'); };
 $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(); };
 
+// ─── 虚拟键盘 ───
+const vkPanel = $('vk-panel');
+const vkBody = $('vk-body');
+let vkVisible = false;
+
+const vkLayout = [
+  // 数字行
+  [{k:'Digit1',l:'1'},{k:'Digit2',l:'2'},{k:'Digit3',l:'3'},{k:'Digit4',l:'4'},{k:'Digit5',l:'5'},{k:'Digit6',l:'6'},{k:'Digit7',l:'7'},{k:'Digit8',l:'8'},{k:'Digit9',l:'9'},{k:'Digit0',l:'0'},{k:'Minus',l:'-'},{k:'Equal',l:'='},{k:'Backspace',l:'退格'}],
+  // 字母行1
+  [{k:'KeyQ',l:'Q'},{k:'KeyW',l:'W'},{k:'KeyE',l:'E'},{k:'KeyR',l:'R'},{k:'KeyT',l:'T'},{k:'KeyY',l:'Y'},{k:'KeyU',l:'U'},{k:'KeyI',l:'I'},{k:'KeyO',l:'O'},{k:'KeyP',l:'P'},{k:'BracketLeft',l:'['},{k:'BracketRight',l:']'}],
+  // 字母行2
+  [{k:'KeyA',l:'A'},{k:'KeyS',l:'S'},{k:'KeyD',l:'D'},{k:'KeyF',l:'F'},{k:'KeyG',l:'G'},{k:'KeyH',l:'H'},{k:'KeyJ',l:'J'},{k:'KeyK',l:'K'},{k:'KeyL',l:'L'},{k:'Semicolon',l:';'},{k:'Quote',l:"'"},{k:'Enter',l:'回车'}],
+  // 字母行3
+  [{k:'ShiftLeft',l:'Shift'},{k:'KeyZ',l:'Z'},{k:'KeyX',l:'X'},{k:'KeyC',l:'C'},{k:'KeyV',l:'V'},{k:'KeyB',l:'B'},{k:'KeyN',l:'N'},{k:'KeyM',l:'M'},{k:'Comma',l:','},{k:'Period',l:'.'},{k:'Slash',l:'/'}],
+  // 特殊行 + 方向键
+  [{k:'ControlLeft',l:'Ctrl'},{k:'AltLeft',l:'Alt'},{k:'Space',l:'空格',flex:'4'},{k:'ArrowLeft',l:'←'},{k:'ArrowUp',l:'↑'},{k:'ArrowDown',l:'↓'},{k:'ArrowRight',l:'→'}]
+];
+
+function initVK() {
+  vkLayout.forEach(row => {
+    const rowDiv = document.createElement('div');
+    rowDiv.style.display = 'flex'; rowDiv.style.width = '100%'; rowDiv.style.gap = '4px'; rowDiv.style.marginBottom = '4px';
+    row.forEach(item => {
+      const btn = document.createElement('button');
+      btn.className = 'vk-btn';
+      btn.textContent = item.l;
+      if (item.flex) btn.style.flex = item.flex;
+      const press = (e) => {
+        e.preventDefault();
+        if (typeof emulator !== 'undefined' && emulator) {
+          const sc = SCANCODE_MAP[item.k];
+          if (sc !== undefined) { try { emulator.keyboard_send_scancodes([sc, sc | 0x80]); } catch(err) {} }
+        }
+      };
+      btn.addEventListener('mousedown', press);
+      btn.addEventListener('touchstart', press, {passive: false});
+      rowDiv.appendChild(btn);
+    });
+    vkBody.appendChild(rowDiv);
+  });
+}
+initVK();
+
+$('btn-toggle-vk').onclick = () => {
+  vkVisible = !vkVisible;
+  vkPanel.style.display = vkVisible ? 'flex' : 'none';
+  $('btn-toggle-vk').style.background = vkVisible ? '#1d3a34' : '';
+};
+$('vk-close').onclick = () => { vkPanel.style.display = 'none'; vkVisible = false; $('btn-toggle-vk').style.background = ''; };
+
+(function makeVKDraggable() {
+  const handle = $('vk-header');
+  let isDragging = false, startX, startY, origX, origY;
+  
+  handle.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    startX = e.clientX; startY = e.clientY;
+    const rect = vkPanel.getBoundingClientRect();
+    origX = rect.left; origY = rect.top;
+    vkPanel.style.bottom = 'auto'; vkPanel.style.right = 'auto';
+    e.preventDefault();
+  });
+  
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    vkPanel.style.left = (origX + e.clientX - startX) + 'px';
+    vkPanel.style.top = (origY + e.clientY - startY) + 'px';
+  });
+  
+  window.addEventListener('mouseup', () => { isDragging = false; });
+})();
+
+
 (async function init() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
   try { await Storage.open(); } catch (e) { log('IndexedDB 打开失败: ' + e.message, 'err'); }
@@ -752,112 +854,35 @@ $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(
     logEl.scrollTop = logEl.scrollHeight; 
   } catch(e) {}
 
-  log('C7 就绪 (稳定版)');
+  log('C7 就绪 (带虚拟键盘)');
   screenWrap.addEventListener('click', () => { const c = screenWrap.querySelector('canvas'); if (c) c.focus(); });
 })();
 </script>
 
-<!-- 纯粹追加的虚拟键盘功能，完全独立 -->
-<script>
-(function initVirtualKeyboard() {
-  const SCANCODE_MAP = {
-    'Escape':0x01,'Digit1':0x02,'Digit2':0x03,'Digit3':0x04,'Digit4':0x05,'Digit5':0x06,'Digit6':0x07,'Digit7':0x08,'Digit8':0x09,'Digit9':0x0A,'Digit0':0x0B,'Minus':0x0C,'Equal':0x0D,'Backspace':0x0E,'Tab':0x0F,
-    'KeyQ':0x10,'KeyW':0x11,'KeyE':0x12,'KeyR':0x13,'KeyT':0x14,'KeyY':0x15,'KeyU':0x16,'KeyI':0x17,'KeyO':0x18,'KeyP':0x19,'BracketLeft':0x1A,'BracketRight':0x1B,'Enter':0x1C,'ControlLeft':0x1D,
-    'KeyA':0x1E,'KeyS':0x1F,'KeyD':0x20,'KeyF':0x21,'KeyG':0x22,'KeyH':0x23,'KeyJ':0x24,'KeyK':0x25,'KeyL':0x26,'Semicolon':0x27,'Quote':0x28,'Backquote':0x29,'ShiftLeft':0x2A,'Backslash':0x2B,
-    'KeyZ':0x2C,'KeyX':0x2D,'KeyC':0x2E,'KeyV':0x2F,'KeyB':0x30,'KeyN':0x31,'KeyM':0x32,'Comma':0x33,'Period':0x34,'Slash':0x35,'ShiftRight':0x36,'NumpadMultiply':0x37,'AltLeft':0x38,'Space':0x39
-  };
-
-  const style = document.createElement('style');
-  style.textContent = `
-    #vk-panel { position: fixed; z-index: 9999; background: rgba(20,20,20,0.95); border: 2px solid #444; border-radius: 8px; display: none; flex-direction: column; padding: 8px; resize: both; overflow: hidden; min-width: 320px; min-height: 160px; top: 100px; left: 100px; box-shadow: 0 8px 24px rgba(0,0,0,0.8); }
-    #vk-header { height: 24px; cursor: move; background: #111; border-radius: 4px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; font-size: 12px; color: #888; user-select: none; }
-    #vk-close { cursor: pointer; color: #f44747; font-weight: bold; }
-    #vk-body { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; align-content: flex-start; overflow-y: auto; }
-    .vk-btn { background: #2a2a2a; color: #ccc; border: 1px solid #444; border-radius: 4px; padding: 6px; font-family: monospace; font-size: 12px; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: center; min-width: 28px; height: 32px; flex: 1 0 28px; }
-    .vk-btn:active { background: #4ec9b0; color: #000; border-color: #4ec9b0; }
-    #vk-toggle-btn { position: fixed; bottom: 20px; right: 20px; z-index: 9998; background: #1d3a34; color: #4ec9b0; border: 1px solid #4ec9b0; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-family: monospace; font-size: 14px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none; }
-    #vk-toggle-btn:hover { background: #244a42; }
-  `;
-  document.head.appendChild(style);
-
-  const toggleBtn = document.createElement('button');
-  toggleBtn.id = 'vk-toggle-btn';
-  toggleBtn.textContent = '⌨️ 虚拟键盘';
-  
-  const panel = document.createElement('div');
-  panel.id = 'vk-panel';
-  panel.innerHTML = `
-    <div id="vk-header">
-      <span>虚拟键盘 (拖拽移动/右下角缩放)</span>
-      <span id="vk-close">✕</span>
-    </div>
-    <div id="vk-body"></div>
-  `;
-  
-  document.body.appendChild(toggleBtn);
-  document.body.appendChild(panel);
-
-  const layout = [
-    ['Escape','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'],
-    ['Backquote','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0','Minus','Equal','Backspace'],
-    ['Tab','KeyQ','KeyW','KeyE','KeyR','KeyT','KeyY','KeyU','KeyI','KeyO','KeyP','BracketLeft','BracketRight','Backslash'],
-    ['CapsLock','KeyA','KeyS','KeyD','KeyF','KeyG','KeyH','KeyJ','KeyK','KeyL','Semicolon','Quote','Enter'],
-    ['ShiftLeft','KeyZ','KeyX','KeyC','KeyV','KeyB','KeyN','KeyM','Comma','Period','Slash','ShiftRight'],
-    ['ControlLeft','AltLeft','Space']
-  ];
-  
-  const body = document.getElementById('vk-body');
-  layout.forEach(row => {
-    const rowDiv = document.createElement('div');
-    rowDiv.style.display = 'flex'; rowDiv.style.width = '100%'; rowDiv.style.gap = '4px';
-    row.forEach(code => {
-      const btn = document.createElement('button');
-      btn.className = 'vk-btn';
-      let label = code.replace('Key','').replace('Digit','').replace('Left','').replace('Right','');
-      if (code === 'Space') label = 'Space';
-      if (code === 'Backspace') label = '←';
-      btn.textContent = label;
-      
-      const press = (e) => {
-        e.preventDefault();
-        if (typeof emulator !== 'undefined' && emulator) {
-          const sc = SCANCODE_MAP[code];
-          if (sc !== undefined) { try { emulator.keyboard_send_scancodes([sc, sc | 0x80]); } catch(err) {} }
-        }
-      };
-      btn.addEventListener('mousedown', press);
-      btn.addEventListener('touchstart', press, {passive: false});
-      rowDiv.appendChild(btn);
-    });
-    body.appendChild(rowDiv);
-  });
-
-  document.getElementById('vk-close').onclick = () => { panel.style.display = 'none'; };
-  toggleBtn.onclick = () => { panel.style.display = (panel.style.display === 'flex') ? 'none' : 'flex'; };
-
-  const header = document.getElementById('vk-header');
-  let isDragging = false, startX, startY, origX, origY;
-  header.addEventListener('mousedown', (e) => {
-    isDragging = true; startX = e.clientX; startY = e.clientY;
-    const rect = panel.getBoundingClientRect(); origX = rect.left; origY = rect.top;
-    panel.style.bottom = 'auto'; panel.style.right = 'auto'; e.preventDefault();
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    panel.style.left = (origX + e.clientX - startX) + 'px';
-    panel.style.top = (origY + e.clientY - startY) + 'px';
-  });
-  window.addEventListener('mouseup', () => { isDragging = false; });
-
-  setInterval(() => {
-    if (typeof emulator !== 'undefined' && emulator) {
-      toggleBtn.style.display = 'block';
-    } else {
-      toggleBtn.style.display = 'none';
-      panel.style.display = 'none';
-    }
-  }, 500);
-})();
-</script>
+<style>
+/* 虚拟键盘样式 */
+#vk-panel {
+  position: fixed; z-index: 9999; background: rgba(20, 20, 20, 0.95);
+  border: 2px solid #444; border-radius: 8px; display: none;
+  flex-direction: column; padding: 8px; resize: both; overflow: hidden;
+  min-width: 320px; min-height: 160px; box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+  top: 100px; left: 100px;
+}
+#vk-header {
+  height: 24px; cursor: move; background: #111; border-radius: 4px;
+  margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 8px; font-size: 12px; color: #888; user-select: none;
+}
+#vk-close { cursor: pointer; color: #f44747; font-weight: bold; }
+#vk-close:hover { color: #ff8888; }
+#vk-body { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; align-content: flex-start; overflow-y: auto; }
+.vk-btn {
+  background: #2a2a2a; color: #ccc; border: 1px solid #444; border-radius: 4px;
+  padding: 6px; font-family: monospace; font-size: 12px; cursor: pointer;
+  user-select: none; display: flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 32px; flex: 1 0 28px;
+}
+.vk-btn:active { background: #4ec9b0; color: #000; border-color: #4ec9b0; }
+</style>
 </body>
 </html>
