@@ -625,7 +625,7 @@ function buildOptions(fda, hda, cd) {
     autostart: true
   };
   
-  // ★ 回归原始：直接用 file 对象，不转二进制，不包 Blob
+  // 强制使用真实物理文件
   if (fda && fda.file) opts.fda = { buffer: fda.file };
   if (hda && hda.file) opts.hda = { buffer: hda.file };
   if (cd && cd.file) opts.cdrom = { buffer: cd.file };
@@ -636,7 +636,7 @@ function buildOptions(fda, hda, cd) {
   return opts;
 }
 
-function startMachine() {
+async function startMachine() {
   if (isShutdown) {
     isShutdown = false;
     $('shutdownText').style.display = 'none';
@@ -645,14 +645,13 @@ function startMachine() {
 
   let fda = null, hda = null, cd = null;
   try { 
-    fda = ensureImageForType('fda'); 
-    hda = ensureImageForType('hda'); 
-    cd  = ensureImageForType('cdrom'); 
+    fda = await ensureImageForType('fda'); 
+    hda = await ensureImageForType('hda'); 
+    cd  = await ensureImageForType('cdrom'); 
   } catch(e) { 
     log(e.message, 'err'); alert(e.message); return; 
   }
 
-  // 注意：这里去掉了所有 async/await，全部用同步方式处理，绝对不卡 UI
   cfg = readCfgFromUI(); Storage.saveConfig(cfg);
   destroyEmulator();
 
@@ -756,55 +755,31 @@ $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(
   log('C7 就绪 (稳定版)');
   screenWrap.addEventListener('click', () => { const c = screenWrap.querySelector('canvas'); if (c) c.focus(); });
 })();
-// =========================================================
-// 附加功能：虚拟键盘 (追加即用)
-// =========================================================
+</script>
+
+<!-- 纯粹追加的虚拟键盘功能，完全独立 -->
+<script>
 (function initVirtualKeyboard() {
-  // 如果你原本有快捷键映射表，直接用；如果没有，这里内置一份标准的。
-  const SCANCODE_MAP = window.SCANCODE_MAP || {
+  const SCANCODE_MAP = {
     'Escape':0x01,'Digit1':0x02,'Digit2':0x03,'Digit3':0x04,'Digit4':0x05,'Digit5':0x06,'Digit6':0x07,'Digit7':0x08,'Digit8':0x09,'Digit9':0x0A,'Digit0':0x0B,'Minus':0x0C,'Equal':0x0D,'Backspace':0x0E,'Tab':0x0F,
     'KeyQ':0x10,'KeyW':0x11,'KeyE':0x12,'KeyR':0x13,'KeyT':0x14,'KeyY':0x15,'KeyU':0x16,'KeyI':0x17,'KeyO':0x18,'KeyP':0x19,'BracketLeft':0x1A,'BracketRight':0x1B,'Enter':0x1C,'ControlLeft':0x1D,
     'KeyA':0x1E,'KeyS':0x1F,'KeyD':0x20,'KeyF':0x21,'KeyG':0x22,'KeyH':0x23,'KeyJ':0x24,'KeyK':0x25,'KeyL':0x26,'Semicolon':0x27,'Quote':0x28,'Backquote':0x29,'ShiftLeft':0x2A,'Backslash':0x2B,
     'KeyZ':0x2C,'KeyX':0x2D,'KeyC':0x2E,'KeyV':0x2F,'KeyB':0x30,'KeyN':0x31,'KeyM':0x32,'Comma':0x33,'Period':0x34,'Slash':0x35,'ShiftRight':0x36,'NumpadMultiply':0x37,'AltLeft':0x38,'Space':0x39
   };
 
-  // 1. 注入样式
   const style = document.createElement('style');
   style.textContent = `
-    #vk-panel {
-      position: fixed; z-index: 9999; background: rgba(20, 20, 20, 0.95);
-      border: 2px solid #444; border-radius: 8px; display: none;
-      flex-direction: column; padding: 8px; resize: both; overflow: hidden;
-      min-width: 320px; min-height: 160px; box-shadow: 0 8px 24px rgba(0,0,0,0.8);
-      top: 100px; left: 100px;
-    }
-    #vk-header {
-      height: 24px; cursor: move; background: #111; border-radius: 4px;
-      margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;
-      padding: 0 8px; font-size: 12px; color: #888; user-select: none;
-    }
+    #vk-panel { position: fixed; z-index: 9999; background: rgba(20,20,20,0.95); border: 2px solid #444; border-radius: 8px; display: none; flex-direction: column; padding: 8px; resize: both; overflow: hidden; min-width: 320px; min-height: 160px; top: 100px; left: 100px; box-shadow: 0 8px 24px rgba(0,0,0,0.8); }
+    #vk-header { height: 24px; cursor: move; background: #111; border-radius: 4px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; font-size: 12px; color: #888; user-select: none; }
     #vk-close { cursor: pointer; color: #f44747; font-weight: bold; }
-    #vk-close:hover { color: #ff8888; }
     #vk-body { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; align-content: flex-start; overflow-y: auto; }
-    .vk-btn {
-      background: #2a2a2a; color: #ccc; border: 1px solid #444; border-radius: 4px;
-      padding: 6px; font-family: monospace; font-size: 12px; cursor: pointer;
-      user-select: none; display: flex; align-items: center; justify-content: center;
-      min-width: 28px; height: 32px; flex: 1 0 28px;
-    }
+    .vk-btn { background: #2a2a2a; color: #ccc; border: 1px solid #444; border-radius: 4px; padding: 6px; font-family: monospace; font-size: 12px; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: center; min-width: 28px; height: 32px; flex: 1 0 28px; }
     .vk-btn:active { background: #4ec9b0; color: #000; border-color: #4ec9b0; }
-    #vk-toggle-btn {
-      position: fixed; bottom: 20px; right: 20px; z-index: 9998;
-      background: #1d3a34; color: #4ec9b0; border: 1px solid #4ec9b0;
-      padding: 8px 16px; border-radius: 20px; cursor: pointer;
-      font-family: monospace; font-size: 14px; font-weight: bold;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none;
-    }
+    #vk-toggle-btn { position: fixed; bottom: 20px; right: 20px; z-index: 9998; background: #1d3a34; color: #4ec9b0; border: 1px solid #4ec9b0; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-family: monospace; font-size: 14px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none; }
     #vk-toggle-btn:hover { background: #244a42; }
   `;
   document.head.appendChild(style);
 
-  // 2. 注入 DOM 元素
   const toggleBtn = document.createElement('button');
   toggleBtn.id = 'vk-toggle-btn';
   toggleBtn.textContent = '⌨️ 虚拟键盘';
@@ -822,7 +797,6 @@ $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(
   document.body.appendChild(toggleBtn);
   document.body.appendChild(panel);
 
-  // 3. 生成键位布局
   const layout = [
     ['Escape','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'],
     ['Backquote','Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0','Minus','Equal','Backspace'],
@@ -835,9 +809,7 @@ $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(
   const body = document.getElementById('vk-body');
   layout.forEach(row => {
     const rowDiv = document.createElement('div');
-    rowDiv.style.display = 'flex';
-    rowDiv.style.width = '100%';
-    rowDiv.style.gap = '4px';
+    rowDiv.style.display = 'flex'; rowDiv.style.width = '100%'; rowDiv.style.gap = '4px';
     row.forEach(code => {
       const btn = document.createElement('button');
       btn.className = 'vk-btn';
@@ -850,12 +822,9 @@ $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(
         e.preventDefault();
         if (typeof emulator !== 'undefined' && emulator) {
           const sc = SCANCODE_MAP[code];
-          if (sc !== undefined) {
-            try { emulator.keyboard_send_scancodes([sc, sc | 0x80]); } catch(err) {}
-          }
+          if (sc !== undefined) { try { emulator.keyboard_send_scancodes([sc, sc | 0x80]); } catch(err) {} }
         }
       };
-      
       btn.addEventListener('mousedown', press);
       btn.addEventListener('touchstart', press, {passive: false});
       rowDiv.appendChild(btn);
@@ -863,51 +832,31 @@ $('btn-open-files').onclick = () => { openModal('fileModal'); renderFileManager(
     body.appendChild(rowDiv);
   });
 
-  // 4. 交互逻辑
-  const closeBtn = document.getElementById('vk-close');
-  closeBtn.onclick = () => { panel.style.display = 'none'; };
+  document.getElementById('vk-close').onclick = () => { panel.style.display = 'none'; };
+  toggleBtn.onclick = () => { panel.style.display = (panel.style.display === 'flex') ? 'none' : 'flex'; };
 
-  // 显示/隐藏开关
-  toggleBtn.onclick = () => {
-    if (panel.style.display === 'flex') {
-      panel.style.display = 'none';
-    } else {
-      panel.style.display = 'flex';
-    }
-  };
-
-  // 拖拽移动逻辑
   const header = document.getElementById('vk-header');
   let isDragging = false, startX, startY, origX, origY;
-  
   header.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    startX = e.clientX; startY = e.clientY;
-    const rect = panel.getBoundingClientRect();
-    origX = rect.left; origY = rect.top;
-    panel.style.bottom = 'auto'; panel.style.right = 'auto';
-    e.preventDefault();
+    isDragging = true; startX = e.clientX; startY = e.clientY;
+    const rect = panel.getBoundingClientRect(); origX = rect.left; origY = rect.top;
+    panel.style.bottom = 'auto'; panel.style.right = 'auto'; e.preventDefault();
   });
-  
   window.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
     panel.style.left = (origX + e.clientX - startX) + 'px';
     panel.style.top = (origY + e.clientY - startY) + 'px';
   });
-  
   window.addEventListener('mouseup', () => { isDragging = false; });
 
-  // 自动挂载开关：当 v86 启动时，显示悬浮按钮
-  // 通过轮询检测你的全局 emulator 是否存在，存在就显示按钮
   setInterval(() => {
     if (typeof emulator !== 'undefined' && emulator) {
       toggleBtn.style.display = 'block';
     } else {
       toggleBtn.style.display = 'none';
-      panel.style.display = 'none'; // 引擎关闭时顺便隐藏面板
+      panel.style.display = 'none';
     }
   }, 500);
-
 })();
 </script>
 </body>
