@@ -2,371 +2,233 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Search</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>EZNT 操作系统</title>
+<!-- =====================================================================
+     EZNT - Ecosystem Native Technology
+     EznK architecture | 32-bit browser operating system
+
+     Entry point. All behaviour lives in js/ modules loaded as plain
+     <script src> tags below. No ES modules, no build step, no fetch.
+
+     Load order is the dependency order and is also the boot order:
+       L1 platform -> L3 kernel (SRM) -> Ezn32 NT -> Ezn32 API ->
+       Ezn32 UI -> L5 shell -> js/boot.js
+
+     Screen text is ASCII only (rule #10): the CSS below sets a monospace
+     font and nothing in the markup carries non-ASCII UI text.
+     ===================================================================== -->
 <style>
-:root {
-    --bg: #0a0a1e;
-    --card: #12122a;
-    --accent: #0078D4;
-    --accent2: #00ccff;
-    --green: #00ff41;
-    --red: #ff4444;
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-    font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
-    background: var(--bg);
-    color: #e0e0e0;
-    min-height: 100vh;
-    background: radial-gradient(ellipse at 50% 0%, rgba(0,120,212,0.15) 0%, transparent 70%);
-}
-.container {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 0 20px;
-}
-
-/* 头部 */
-.hero {
-    padding: 120px 0 60px;
-    text-align: center;
-}
-.hero .logo {
-    font-size: 42px;
-    font-weight: bold;
-    color: var(--accent2);
-    letter-spacing: 4px;
-    margin-bottom: 8px;
-}
-.hero .logo span { color: var(--green); }
-.hero .subtitle {
-    font-size: 14px;
-    color: #888;
-    margin-bottom: 40px;
-}
-
-/* 搜索框 */
-.search-wrap {
-    max-width: 600px;
-    margin: 0 auto 40px;
-    position: relative;
-}
-.search-box {
-    width: 100%;
-    padding: 18px 60px 18px 60px;
-    background: #1a1a2e;
-    border: 2px solid #333;
-    border-radius: 40px;
-    color: #ffffff;
-    font-size: 16px;
-    font-family: inherit;
-    outline: none;
-    transition: all 0.3s;
-}
-.search-box:focus {
-    border-color: var(--accent2);
-    box-shadow: 0 0 30px rgba(0,204,255,0.2);
-}
-.search-box::placeholder { color: #666; }
-.search-icon {
-    position: absolute;
-    left: 24px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 20px;
-    color: #666;
-    pointer-events: none;
-}
-.search-clear {
-    position: absolute;
-    right: 20px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 20px;
-    color: #666;
-    cursor: pointer;
-    display: none;
-    background: none;
-    border: none;
-    padding: 4px;
-}
-.search-clear:hover { color: #fff; }
-
-/* 分类 */
-.categories {
-    display: flex;
-    gap: 8px;
-    justify-content: center;
-    flex-wrap: wrap;
-    margin-bottom: 40px;
-}
-.cat-btn {
-    padding: 10px 24px;
-    background: #1a1a2e;
-    border: 1px solid #333;
-    border-radius: 20px;
-    color: #aaa;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-family: inherit;
-}
-.cat-btn:hover {
-    border-color: var(--accent2);
-    color: #fff;
-}
-.cat-btn.active {
-    background: rgba(0,204,255,0.15);
-    border-color: var(--accent2);
-    color: var(--accent2);
-}
-
-/* 项目网格 */
-.grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 14px;
-    padding-bottom: 80px;
-}
-.card {
-    background: var(--card);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 14px;
-    padding: 24px 20px;
-    cursor: pointer;
-    transition: all 0.25s;
-}
-.card:hover {
-    border-color: rgba(0,204,255,0.4);
-    transform: translateY(-4px);
-    box-shadow: 0 10px 30px rgba(0,120,212,0.2);
-}
-.card .icon {
-    font-size: 42px;
-    margin-bottom: 14px;
-    display: block;
-}
-.card .name {
-    font-size: 16px;
-    font-weight: 600;
-    color: #fff;
-    margin-bottom: 8px;
-}
-.card .desc {
-    font-size: 13px;
-    color: #888;
-    line-height: 1.6;
-}
-
-/* 空状态 */
-.empty {
-    grid-column: 1 / -1;
-    text-align: center;
-    padding: 60px 0;
-    color: #666;
-}
-
-/* 页脚 */
-footer {
-    text-align: center;
-    padding: 30px 0;
-    border-top: 1px solid rgba(255,255,255,0.05);
-    font-size: 12px;
-    color: #555;
-}
-
-@media (max-width: 600px) {
-    .hero { padding: 80px 0 40px; }
-    .hero .logo { font-size: 30px; }
-    .grid { grid-template-columns: 1fr; }
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-.card { animation: fadeIn 0.3s ease-out backwards; }
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #004E8C;
+        font-family: 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+    }
+    /* The EznK root surface. js/platform/dom.js resolves this element as
+     * the default parent for DOM.create(); no module ever touches body. */
+    #eznt-root {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        overflow: hidden;
+        background: linear-gradient(135deg, #0078D4 0%, #004E8C 100%);
+    }
+    /* The desktop element is the anchor for the desktop canvas and for the
+     * window canvases; it carries no styling of its own besides size. */
+    #desktop {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+    }
+    /* Boot screen: pure geometry + ASCII text, removed once ready. */
+    #boot-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 200000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: linear-gradient(135deg, #0078D4 0%, #004E8C 100%);
+        color: #FFFFFF;
+    }
+    #boot-logo {
+        font-size: 46px;
+        font-weight: bold;
+        letter-spacing: 12px;
+    }
+    #boot-sub {
+        font-size: 13px;
+        opacity: 0.85;
+        letter-spacing: 3px;
+    }
+    #boot-status {
+        font-size: 12px;
+        opacity: 0.75;
+        margin-top: 12px;
+    }
+    #boot-bar {
+        width: 220px;
+        height: 3px;
+        background: rgba(255,255,255,0.25);
+        overflow: hidden;
+    }
+    #boot-bar-fill {
+        width: 40%;
+        height: 100%;
+        background: #FFFFFF;
+        animation: eznt-boot 1.2s ease-in-out infinite;
+    }
+    @keyframes eznt-boot {
+        0%   { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+    }
 </style>
 </head>
 <body>
 
-<div class="container">
+<main id="eznt-root">
+    <!-- Desktop canvas + window canvases are appended here at runtime. -->
+    <div id="desktop"></div>
+</main>
 
-    <div class="hero">
-        <div class="logo">Sea<span>rch</span></div>
-        <div class="subtitle">一站式导航</div>
-
-        <div class="search-wrap">
-            <span class="search-icon">🔍</span>
-            <input type="text" class="search-box" id="searchBox" placeholder="搜索..." autocomplete="off">
-            <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
-        </div>
-
-        <div class="categories" id="categories"></div>
-    </div>
-
-    <div class="grid" id="grid"></div>
-
+<!-- Boot screen, removed by js/boot.js when the system is ready -->
+<div id="boot-screen">
+    <div id="boot-logo">EZNT</div>
+    <div id="boot-sub">ECOSYSTEM NATIVE TECHNOLOGY</div>
+    <div id="boot-bar"><div id="boot-bar-fill"></div></div>
+    <div id="boot-status">[EZNT] Starting...</div>
 </div>
 
-<footer>
-    © 2026 闪讯工作社 Snxth.
-</footer>
+<!-- ===== L1 平台层 ===== -->
+<script src="js/platform/core.js"></script>
+<script src="js/platform/i18n.js"></script>
+<script src="js/platform/dom.js"></script>
+<script src="js/platform/storage.js"></script>
+<script src="js/platform/time.js"></script>
+<script src="js/platform/net.js"></script>
+<script src="js/platform/media.js"></script>
 
-<script>
-var projects = [
-    // ═══ Windows应用 ═══
-    {
-        name: 'tkemu',
-        icon: '🖥️',
-        url: 'PTD.html',
-        desc: '浏览器中的 Windows 桌面模拟器',
-        category: 'windows'
-    },
-    {
-        name: 'Core System',
-        icon: '💠',
-        url: 'CS.html',
-        desc: '全新架构的浏览器操作系统',
-        category: 'windows'
-    },
+<!-- ===== L3 内核层 (SRM) ===== -->
+<script src="js/kernel/core.js"></script>
+<script src="js/kernel/hal.js"></script>
+<script src="js/kernel/log.js"></script>
+<script src="js/kernel/registry.js"></script>
+<script src="js/kernel/variable-pool.js"></script>
+<script src="js/kernel/function-pool.js"></script>
+<script src="js/kernel/process.js"></script>
+<script src="js/kernel/message.js"></script>
+<script src="js/kernel/service.js"></script>
+<script src="js/kernel/policy.js"></script>
+<script src="js/kernel/restore.js"></script>
+<script src="js/kernel/scheduler.js"></script>
 
-    // ═══ 网页 ═══
-    {
-        name: 'Python IDE',
-        icon: '🐍',
-        url: 'Python.html',
-        desc: '在线 Python 集成开发环境',
-        category: 'web'
-    },
-    {
-        name: 'RF 语言',
-        icon: '🔨',
-        url: 'RF.html',
-        desc: 'C 语言编写的轻量级编程语言',
-        category: 'web'
-    },
-    {
-        name: 'W 语言',
-        icon: '🪟',
-        url: 'W.html',
-        desc: '专为 Windows 界面设计的语言',
-        category: 'web'
-    },
-    {
-        name: 'KSD 游戏框架',
-        icon: '🎮',
-        url: 'KSD.html',
-        desc: '纯 Python 打造的模块化游戏框架',
-        category: 'web'
-    },
-    {
-        name: '双人聊天室',
-        icon: '💬',
-        url: 'chat.html',
-        desc: '基于 WebSocket 的双人实时聊天',
-        category: 'web'
-    },
-    {
-        name: 'GitHub 仓库',
-        icon: '📂',
-        url: 'https://github.com/Zack595910/KSD-',
-        desc: '开源项目源代码',
-        category: 'web'
-    },
+<!-- ===== Ezn32 NT ===== -->
+<script src="js/nt/status.js"></script>
+<script src="js/nt/handle.js"></script>
+<script src="js/nt/syscall.js"></script>
+<script src="js/nt/ntos.js"></script>
 
-    // ═══ 媒体 ═══
-    {
-        name: '路障塔防',
-        icon: '🏰',
-        url: 'tafang.html',
-        desc: '策略塔防游戏',
-        category: 'media'
-    },
-    {
-        name: '最新资讯',
-        icon: '📰',
-        url: 'news.html',
-        desc: '项目新闻和公告',
-        category: 'media'
-    }
-];
+<!-- ===== Ezn32 API ===== -->
+<script src="js/api/kernel.js"></script>
+<script src="js/api/gdi.js"></script>
+<script src="js/api/user.js"></script>
+<script src="js/api/advapi.js"></script>
+<script src="js/api/shell.js"></script>
+<script src="js/api/net.js"></script>
 
-var categories = [
-    { id: 'all', name: '全部' },
-    { id: 'windows', name: 'Windows应用' },
-    { id: 'web', name: '网页' },
-    { id: 'media', name: '媒体' }
-];
+<!-- ===== Ezn32 UI ===== -->
+<script src="js/ui/message.js"></script>
+<script src="js/ui/res.js"></script>
+<script src="js/ui/canvas.js"></script>
+<script src="js/ui/control.js"></script>
+<script src="js/ui/layout.js"></script>
+<script src="js/ui/autolayout.js"></script>
+<script src="js/ui/autofit.js"></script>
+<script src="js/ui/window.js"></script>
+<script src="js/ui/desktop.js"></script>
+<script src="js/ui/context-menu.js"></script>
 
-var currentCategory = 'all';
-var currentSearch = '';
+<!-- ===== Ezn32 UI 控件库 ===== -->
+<script src="js/ui/controls/label.js"></script>
+<script src="js/ui/controls/button.js"></script>
+<script src="js/ui/controls/edit.js"></script>
+<script src="js/ui/controls/checkbox.js"></script>
+<script src="js/ui/controls/listbox.js"></script>
+<script src="js/ui/controls/scrollbar.js"></script>
+<script src="js/ui/controls/statusbar.js"></script>
+<script src="js/ui/controls/menu.js"></script>
+<script src="js/ui/controls/table.js"></script>
+<script src="js/ui/controls/treeview.js"></script>
+<script src="js/ui/controls/dialog.js"></script>
 
-function renderCategories() {
-    var el = document.getElementById('categories');
-    var h = '';
-    categories.forEach(function(cat) {
-        h += '<button class="cat-btn' + (currentCategory === cat.id ? ' active' : '') + '" onclick="setCategory(\'' + cat.id + '\')">' + cat.name + '</button>';
-    });
-    el.innerHTML = h;
-}
+<!-- ===== L4 服务层 ===== -->
+<script src="js/service/user.js"></script>
+<script src="js/service/file.js"></script>
+<script src="js/service/app-registry.js"></script>
+<script src="js/service/theme.js"></script>
+<script src="js/service/resolution.js"></script>
+<script src="js/service/notify.js"></script>
+<script src="js/service/window.js"></script>
+<script src="js/service/backup.js"></script>
+<script src="js/service/wallpaper.js"></script>
+<script src="js/service/screen-saver.js"></script>
+<script src="js/service/file-assoc.js"></script>
 
-function renderProjects() {
-    var grid = document.getElementById('grid');
-    var filtered = projects.filter(function(p) {
-        var catMatch = currentCategory === 'all' || p.category === currentCategory;
-        var searchMatch = !currentSearch ||
-            p.name.toLowerCase().indexOf(currentSearch.toLowerCase()) !== -1 ||
-            p.desc.toLowerCase().indexOf(currentSearch.toLowerCase()) !== -1;
-        return catMatch && searchMatch;
-    });
+<!-- ===== L2 运行时层 ===== -->
+<script src="js/runtime/rf.js"></script>
+<script src="js/runtime/python.js"></script>
+<script src="js/runtime/kd.js"></script>
+<script src="js/runtime/sys.js"></script>
+<script src="js/runtime/exc.js"></script>
+<script src="js/runtime/c2-compat.js"></script>
 
-    if (filtered.length === 0) {
-        grid.innerHTML = '<div class="empty">没有找到匹配的项目</div>';
-        return;
-    }
+<!-- ===== L5 外壳层 ===== -->
+<script src="js/shell/desktop.js"></script>
+<script src="js/shell/taskbar.js"></script>
+<script src="js/shell/start-menu.js"></script>
+<script src="js/shell/notification-center.js"></script>
+<script src="js/shell/lock-screen.js"></script>
+<script src="js/shell/boot.js"></script>
+<script src="js/shell/windows-control.js"></script>
 
-    var h = '';
-    filtered.forEach(function(p, i) {
-        h += '<div class="card" onclick="window.open(\'' + p.url + '\', \'_blank\')" style="animation-delay:' + (i * 0.03) + 's">';
-        h += '<span class="icon">' + p.icon + '</span>';
-        h += '<div class="name">' + p.name + '</div>';
-        h += '<div class="desc">' + p.desc + '</div>';
-        h += '</div>';
-    });
-    grid.innerHTML = h;
-}
+<!-- ===== 兼容层（必须在运行时之后，避免遮蔽） ===== -->
+<script src="js/compat/c2.js"></script>
+<script src="js/compat/legacy-api.js"></script>
 
-function setCategory(id) {
-    currentCategory = id;
-    renderCategories();
-    renderProjects();
-}
+<!-- ===== L6 应用层 ===== -->
+<script src="js/apps/about.js"></script>
+<script src="js/apps/file-manager.js"></script>
+<script src="js/apps/editor.js"></script>
+<script src="js/apps/task-manager.js"></script>
+<script src="js/apps/storage-manager.js"></script>
+<script src="js/apps/registry-editor.js"></script>
+<script src="js/apps/gpedit.js"></script>
+<script src="js/apps/mmc.js"></script>
+<script src="js/apps/device-manager.js"></script>
+<script src="js/apps/shortcut-wizard.js"></script>
+<script src="js/apps/backup-manager.js"></script>
+<script src="js/apps/kd-store.js"></script>
+<script src="js/apps/python-shell.js"></script>
+<script src="js/apps/camera.js"></script>
+<script src="js/apps/recycle-bin.js"></script>
+<script src="js/apps/chat.js"></script>
+<script src="js/apps/code-studio.js"></script>
+<script src="js/apps/sys-manager.js"></script>
 
-function clearSearch() {
-    document.getElementById('searchBox').value = '';
-    currentSearch = '';
-    document.getElementById('searchClear').style.display = 'none';
-    renderProjects();
-}
-
-document.getElementById('searchBox').addEventListener('input', function(e) {
-    currentSearch = e.target.value;
-    document.getElementById('searchClear').style.display = currentSearch ? 'block' : 'none';
-    renderProjects();
-});
-
-document.addEventListener('keydown', function(e) {
-    if (e.key === '/' && document.activeElement !== document.getElementById('searchBox')) {
-        e.preventDefault();
-        document.getElementById('searchBox').focus();
-    }
-});
-
-renderCategories();
-renderProjects();
-</script>
+<!-- ===== 启动入口 ===== -->
+<script src="js/boot.js"></script>
 
 </body>
 </html>
