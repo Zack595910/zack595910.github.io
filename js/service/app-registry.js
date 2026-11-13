@@ -45,7 +45,7 @@
 
     function normalize(spec) {
         return {
-            id: spec.id,
+            id: spec.id, hidden: spec.hidden === true,
             name: spec.name || spec.id,
             icon: spec.icon || '[A]',
             category: spec.category || 'other',
@@ -83,7 +83,7 @@
             var a = apps[k];
             return {
                 id: a.id, name: a.name, icon: a.icon, category: a.category,
-                exts: a.exts.slice(0), entry: a.entry, builtin: a.builtin,
+                exts: a.exts.slice(0), entry: a.entry, builtin: a.builtin, hidden: a.hidden === true,
                 description: a.description, registeredAt: a.registeredAt
             };
         }));

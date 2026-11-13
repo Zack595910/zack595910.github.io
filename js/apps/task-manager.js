@@ -19,29 +19,34 @@
     var CORE = G.EznK.Platform.Core;
     var S = CORE.STATUS;
     var ui = ezn32.ui;
+    var api = ezn32.api;
 
     var APP = { id: 'task-manager', displayName: '任务管理器', icon: '[#]', width: 680, height: 460 };
-    var state = { win: null, table: null, status: null, timer: null };
+    var state = { win: null, table: null, status: null, timer: null, rowPids: [], selfPid: null };
 
-    function colleci() {
+    function collect() {
         var procs = EznK.Kernel.SRM.listProcesses() || {};
         var out = [];
         Object.keys(procs).forEach(function (pid) {
             var p = procs[pid];
-            out.push([
+            var row = [
                 p.name,
                 p.type || '-',
                 p.ecosystem || '-',
                 p.status || '-',
                 String(p.startedAt ? Math.round((Date.now() - p.startedAt) / 1000) : 0) + 's'
-            ]);
+            ];
+            row.__pid = pid;
+            out.push(row);
         });
         return out;
     }
 
     function refresh() {
         if (!state.table) { return; }
-        var rows = colleci();
+        var raw = collect();
+        state.rowPids = raw.map(function (r) { return r.__pid; });
+        var rows = raw.map(function (r) { return [r[0], r[1], r[2], r[3], r[4]]; });
         state.table.setRows(rows);
         if (state.status) { state.status.setPane('main', rows.length + ' 个进程'); }
         if (state.win) { state.win.invalidate(); }
@@ -57,6 +62,16 @@
         var win = created.value;
         state.win = win;
         var client = win.client;
+
+        /* 把任务管理器自身登记为进程，进程表才不会空 */
+        try {
+            var selfProc = api.kernel.CreateProcess({
+                name: '任务管理器', type: 'app', ecosystem: 'native'
+            });
+            Promise.resolve(selfProc).then(function (r) {
+                if (r && r.status === S.OK) { state.selfPid = r.value.pid; }
+            });
+        } catch (_) {}
 
         var table = new ui.controls.Table({
             x: 8, y: 8,
@@ -81,16 +96,31 @@
         }));
         client.addChild(new ui.controls.Button({
             x: 136, y: y, width: 120, height: 26, text: '结束任务',
+            variant: 'danger',
             onClick: function () {
                 var row = state.table.getSelected();
-                if (!row) { return; }
-                var sel = state.table.selectedIndex;
-                var procs = EznK.Kernel.SRM.listProcesses();
-                var pids = Object.keys(procs);
-                if (pids[sel]) {
-                    EznK.Kernel.SRM.killProcess(pids[sel]);
-                    refresh();
+                if (!row) {
+                    if (state.status) { state.status.setPane('main', '请先选中一个进程'); }
+                    return;
                 }
+                var pid = state.rowPids[state.table.selectedIndex];
+                if (!pid) {
+                    if (state.status) { state.status.setPane('main', '该进程无法结束'); }
+                    return;
+                }
+                var r = EznK.Kernel.SRM.killProcess(pid);
+                var nc = G.EznK.Shell && G.EznK.Shell.notifications;
+                if (nc) {
+                    nc.push({
+                        title: '任务管理器',
+                        text: r ? ('已结束进程：' + row[0]) : ('无法结束：' + row[0]),
+                        level: r ? 'info' : 'warn'
+                    });
+                }
+                if (state.status) {
+                    state.status.setPane('main', r ? ('已结束 ' + row[0]) : ('无法结束 ' + row[0]));
+                }
+                refresh();
             }
         }));
 

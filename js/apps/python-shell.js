@@ -25,6 +25,11 @@
 
     function py() { return G.EznK.Runtime && G.EznK.Runtime.python; }
 
+    /** 该行是否含中文（中文用 ui 字体渲染，等宽字体的中文会重叠） */
+    function hasCJK(s) {
+        return /[\u3400-\u9FFF\u3000-\u303F\uFF00-\uFFEF]/.test(String(s));
+    }
+
     function renderOutput() {
         if (!st.output) { return; }
         st.output.invalidate();
@@ -52,15 +57,19 @@
             append('Python 尚未安装。请到「控制面板 → 程序 → Python 环境」安装，或在此按"安装"。', 'err');
             return;
         }
+        var beforeCount = st.lines.length;
         p.run(src).then(function (r) {
             if (r.status !== S.OK) {
                 append(String(r.reason || '执行失败'), 'err');
                 return;
             }
             var v = r.value;
-            if (v === null || v === undefined || v === '') {
+            /* print 的输出已经通过 sink 实时写入终端，这里只处理表达式返回值。
+             * 不再因为返回 null 就显示"（无输出）"，否则 print 之后会多一行废话。 */
+            var viaSink = st.lines.length > beforeCount;
+            if ((v === null || v === undefined || v === '') && !viaSink) {
                 append('（无输出）', 'dim');
-            } else {
+            } else if (v !== null && v !== undefined && v !== '') {
                 append(String(v), 'out');
             }
         });
@@ -84,7 +93,7 @@
             var t = ui.res.theme().value;
             var gdi = ezn32.api.gdi;
             gdi.FillRect(dc, 0, 0, out.width, out.height, '#0c0c0c');
-            gdi.SelectObject(dc, ui.res.font('mono'));
+            gdi.SelectObject(dc, hasCJK(L.text) ? ui.res.font('ui') : ui.res.font('mono'));
             var lineH = 17;
             var maxLines = Math.floor((out.height - 10) / lineH);
             var start = Math.max(0, st.lines.length - maxLines);
@@ -181,6 +190,26 @@
                 }
             });
             win.client.invalidate();
+        };
+
+        /* 注册 stdout/stderr 接收器：Python 的 print 直接显示在终端里 */
+        var unregister = null;
+        try {
+            var pysvc = py();
+            if (pysvc && typeof pysvc.registerSink === 'function') {
+                unregister = pysvc.registerSink(function (line, cls) {
+                    st.lines.push({ text: String(line), kind: cls === 'error' ? 'err' : 'out' });
+                    if (st.lines.length > 500) { st.lines.shift(); }
+                    renderOutput();
+                });
+            }
+        } catch (_) {}
+
+        var oldDestroy = win.onDestroy;
+        win.onDestroy = function () {
+            if (typeof unregister === 'function') { unregister(); }
+            if (typeof oldDestroy === 'function') { oldDestroy(); }
+            if (st.win === win) { st.win = null; }
         };
 
         win.invalidate();

@@ -109,16 +109,46 @@
         });
     }
 
+    /** saveAs() - 弹出"另存为"独立对话框（Windows 习惯） */
     function saveAs() {
-        var base = state.path ? state.path : '/Users/' + currentUser() + '/Documents/Untitled.txt';
-        return api.kernel.WriteFileText(base, state.edit.getValue()).then(function (r) {
-            if (r.status === S.OK) {
-                state.dirty = false;
-                setPath(base);
-                notify('Saved ' + base, 'info');
+        var FD = G.EznK.Apps && G.EznK.Apps.fileDialog;
+        if (!FD) {
+            notify('文件对话框不可用', 'error');
+            return Promise.resolve(CORE.fail(S.ENOSYS, { reason: 'file dialog missing' }));
+        }
+        var base = state.path ? state.path.split('/').pop() : '未命名.txt';
+        var dir = state.path ? state.path.slice(0, state.path.lastIndexOf('/')) : ('/Users/' + currentUser() + '/Documents');
+        FD.saveDialog({
+            title: '另存为',
+            dir: dir,
+            fileName: base,
+            filters: ['.txt', '.md', '.rf', '.py', '.js', '.kd', '.sys', '.exc', '.c'],
+            onOk: function (path) {
+                api.kernel.WriteFileText(path, state.edit.getValue()).then(function (r) {
+                    if (r.status === S.OK) {
+                        state.dirty = false;
+                        setPath(path);
+                        notify('已保存 ' + path, 'info');
+                    } else {
+                        notify('保存失败：' + (r.reason || ''), 'error');
+                    }
+                });
             }
-            return r;
         });
+        return Promise.resolve(CORE.ok(true));
+    }
+
+    /** openDialog() - 弹出"打开"独立对话框（Windows 习惯） */
+    function openDialog() {
+        var FD = G.EznK.Apps && G.EznK.Apps.fileDialog;
+        if (!FD) { return CORE.fail(S.ENOSYS, { reason: 'file dialog missing' }); }
+        FD.openDialog({
+            title: '打开',
+            dir: '/Users/' + currentUser() + '/Documents',
+            filters: ['.txt', '.md', '.rf', '.py', '.js', '.kd', '.sys', '.exc', '.c'],
+            onOk: function (path) { loadFile(path); }
+        });
+        return CORE.ok(true);
     }
 
     function currentUser() {
@@ -180,6 +210,41 @@
         return Promise.resolve(CORE.fail(S.ENOENT, { reason: 'no runner for ' + ext }));
     }
 
+    /** 以 rf 脚本运行（忽略文件扩展名） */
+    function runAsRf() {
+        var rf = rt().rf;
+        if (!rf) { notify('rf 运行时不可用', 'error'); return; }
+        var code = state.edit ? state.edit.getValue() : '';
+        notify('正在以 rf 脚本运行…');
+        Promise.resolve(rf.runScript(code)).then(function (r) {
+            notify(r.status === S.OK ? 'rf 脚本运行完成' : ('rf 出错：' + (r.reason || '')),
+                r.status === S.OK ? 'info' : 'error');
+        });
+    }
+
+    /** 以 Python 运行（忽略文件扩展名） */
+    function runAsPython() {
+        var py = rt().python;
+        if (!py) { notify('Python 运行时不可用', 'error'); return; }
+        var code = state.edit ? state.edit.getValue() : '';
+        notify('正在以 Python 运行…');
+        Promise.resolve(py.run(code)).then(function (r) {
+            notify(r.status === S.OK ? 'Python 运行完成' : ('Python 出错：' + (r.reason || '')),
+                r.status === S.OK ? 'info' : 'error');
+        });
+    }
+
+    /** 以 KD 应用运行（忽略文件扩展名） */
+    function runAsKd() {
+        var kd = rt().kd;
+        if (!kd) { notify('KD 运行时不可用', 'error'); return; }
+        var code = state.edit ? state.edit.getValue() : '';
+        var name = state.path ? state.path.split('/').pop() : '未命名';
+        Promise.resolve(kd.openSource(code, name)).then(function (r) {
+            if (r.status !== S.OK) { notify('KD 启动失败：' + (r.reason || ''), 'error'); }
+        });
+    }
+
     /* =================================================================
      * 3. Window
      * ============================================================== */
@@ -202,10 +267,7 @@
                 {
                     id: 'file', text: '文件',
                     items: [
-                        { id: 'open', text: '打开…', onClick: function () {
-                            var fm = G.EznK.Apps.fileManager;
-                            if (fm) { fm.open(); }
-                        } },
+                        { id: 'open', text: '打开…', shortcut: 'Ctrl+O', onClick: function () { openDialog(); } },
                         { id: 'save', text: '保存', shortcut: 'Ctrl+S', onClick: function () { save(); } },
                         { id: 'saveas', text: '另存为…', onClick: function () { saveAs(); } },
                         { separator: true },
@@ -217,10 +279,14 @@
                     items: [
                         { id: 'runnow', text: '运行当前文件', shortcut: 'F5', onClick: function () { run(); } },
                         { separator: true },
+                        { id: 'runrf', text: '以 rf 脚本运行', icon: '📜', onClick: function () { runAsRf(); } },
+                        { id: 'runpy', text: '以 Python 运行', icon: '🐍', onClick: function () { runAsPython(); } },
+                        { id: 'runkd', text: '以 KD 应用运行', icon: '📦', onClick: function () { runAsKd(); } },
+                        { separator: true },
                         { id: 'py', text: 'Python 环境状态', onClick: function () {
                             var py = rt().python;
                             var st = py ? py.status().value : null;
-                            notify(st ? ('Python: ' + st.status) : 'Python unavailable', 'info');
+                            notify(st ? ('Python: ' + st.label) : 'Python 不可用', 'info');
                         } }
                     ]
                 }
@@ -295,7 +361,8 @@
     var Editor = {
         version: '1.0.0', id: APP.id, displayName: 'Editor', icon: APP.icon,
         open: open, register: register,
-        save: save, saveAs: saveAs, run: run, loadFile: loadFile,
+        save: save, saveAs: saveAs, openDialog: openDialog, run: run, loadFile: loadFile,
+        runAsRf: runAsRf, runAsPython: runAsPython, runAsKd: runAsKd,
         state: function () { return state; }
     };
     G.EznK.Apps.editor = Editor;

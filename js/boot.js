@@ -249,11 +249,98 @@
     }
 
     /** Seed the desktop with a few useful files on a fresh install. */
+    /**
+     * seedSystemDirs() - 初始化系统目录内容
+     *   首次运行时 /Programs、/System、/Temp、/Shared 都是空的会让
+     *   文件管理器看起来"什么都没有"。这里写入系统自带内容，
+     *   并保证用户目录结构完整（对齐 Windows 的文件夹布局）。
+     */
+    function seedSystemDirs() {
+        var storage = G.EznK.Platform.Storage;
+        var user = state.user ? state.user.name : 'User';
+        var userRoot = '/Users/' + user;
+
+        var SEED = [
+            /* ---- 用户目录 ---- */
+            [userRoot + '/Desktop', null],
+            [userRoot + '/Documents', null],
+            [userRoot + '/Downloads', null],
+            [userRoot + '/Pictures', null],
+            [userRoot + '/Music', null],
+            [userRoot + '/Videos', null],
+            [userRoot + '/Trash', null],
+            [userRoot + '/Settings', null],
+            [userRoot + '/Registry', null],
+
+            /* ---- 系统目录 ---- */
+            ['/System', null],
+            ['/System/Api', null],
+            ['/System/Apps', null],
+            ['/System/Kernel', null],
+            ['/System/Nt', null],
+            ['/System/Registry', null],
+            ['/System/Restore', null],
+            ['/System/Runtime', null],
+            ['/System/Shell', null],
+            ['/System/Ui', null],
+            ['/System/Updates', null],
+            ['/System/Backups', null],
+            ['/System/Logs', null],
+
+            /* ---- 程序目录：放示例脚本 ---- */
+            ['/Programs', null],
+            ['/Programs/Examples', null],
+            ['/Programs/Examples/hello.rf',
+             'window "Hello RF" 420 300\nlabel "欢迎使用 rf 脚本引擎" center\nbutton "打招呼" run\n  print "Hello from rf!"\nend\nbutton "关闭" close\n'],
+            ['/Programs/Examples/demo.exc',
+             'app "演示应用" version="1.0" {\n  window title="EXC 演示" width=420 height=280 {\n    label text="这是一个 EXC 应用" align=center\n    button text="关闭" onClick={ Ezn32UI.close(); }\n  }\n}\n'],
+            ['/Programs/Examples/sample.py',
+             '# Python 示例\nprint("Hello from Python!")\nfor i in range(3):\n    print("count", i)\n'],
+            ['/Programs/Examples/hello.js',
+             '// JavaScript 示例（用代码编辑器打开）\nfunction greet(name) {\n    return "Hello, " + name;\n}\nconsole.log(greet("EZNT"));\n'],
+            ['/Programs/Examples/demo.kd',
+             '<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>KD 示例</title></head>\n<body style="background:#1e1e1e;color:#ddd;font-family:sans-serif;padding:20px">\n<h1>KD 应用示例</h1>\n<p>这是一个运行在沙箱 iframe 中的 KD 应用。</p>\n<button onclick="parent.shellPrint(\'你好！\')">点我</button>\n</body></html>\n'],
+            ['/Programs/Examples/system.sys',
+             '// System Control 脚本示例\n_SYS.showToast("来自 sys 脚本的问候");\n'],
+
+            /* ---- 临时与共享 ---- */
+            ['/Temp', null],
+            ['/Temp/README.txt', '临时文件目录。系统重启后内容可能被清理。\n'],
+            ['/Shared', null],
+            ['/Shared/公共文档.txt', '所有用户共享的文件放在这里。\n']
+        ];
+
+        /* 递归创建目录 + 写入文件 */
+        var chain = Promise.resolve();
+        SEED.forEach(function (item) {
+            chain = chain.then(function () {
+                var path = item[0];
+                var content = item[1];
+                if (content === null) {
+                    return storage.mkdir(path).then(function () { return null; });
+                }
+                /* 文件：先确保父目录存在 */
+                var parent = path.slice(0, path.lastIndexOf('/')) || '/';
+                return storage.mkdir(parent).then(function () {
+                    return storage.exists(path).then(function (e) {
+                        if (e.status === S.OK && e.value) { return null; }
+                        return storage.writeFile(path, content);
+                    });
+                });
+            });
+        });
+        return chain.then(function () { return CORE.ok(true); });
+    }
+
     function seedContent() {
         var storage = G.EznK.Platform.Storage;
         var user = state.user ? state.user.name : 'User';
         var desktop = '/Users/' + user + '/Desktop';
-        return storage.exists(desktop).then(function (e) {
+
+        /* 先补齐系统目录，再确保桌面有初始文件 */
+        return seedSystemDirs().then(function () {
+            return storage.exists(desktop);
+        }).then(function (e) {
             if (e.status === S.OK && e.value) {
                 return storage.listDir(desktop).then(function (l) {
                     if (l.status === S.OK && l.value.length > 0) { return CORE.ok(true); }

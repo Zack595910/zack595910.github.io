@@ -289,8 +289,6 @@
         exc:         '⚙️',
         kd:          '📦',
         sys:         '🛠️',
-        zjl:         '📚',
-        skl:         '🧩',
 
         /* ---- 磁盘与设备 ---- */
         drive:       '💿',
@@ -392,8 +390,6 @@
         if (e === '.exc') { return 'exc'; }
         if (e === '.kd' || e === '.html') { return 'kd'; }
         if (e === '.sys') { return 'sys'; }
-        if (e === '.zjl') { return 'zjl'; }
-        if (e === '.skl') { return 'skl'; }
         return 'file';
     }
 

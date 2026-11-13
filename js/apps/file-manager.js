@@ -227,25 +227,12 @@
                 text: h.icon + '  ' + h.name,
                 checked: h.id === current,
                 onClick: function () {
+                    /* 点选即用该应用打开，不是设默认 */
                     openWith(item.path, h.id);
                 }
             };
         });
-        items.push({ separator: true });
-        items.push({
-            text: '设为默认打开方式', icon: '✔️',
-            onClick: function () {
-                var chain = list.slice(0);
-                function askNext() {
-                    if (!chain.length) { return; }
-                    var h = chain.shift();
-                    FA.setDefault(ext, h.id);
-                    var nc = G.EznK.Shell && G.EznK.Shell.notifications;
-                    if (nc) { nc.push({ title: '默认打开方式', text: ext + '  ->  ' + h.name, level: 'info' }); }
-                }
-                askNext();
-            }
-        });
+
         ui.ContextMenu.Show({ x: state._menuX || 200, y: state._menuY || 200, items: items });
         return CORE.ok(true);
     }

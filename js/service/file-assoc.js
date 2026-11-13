@@ -30,14 +30,14 @@
 
     /** 内置的候选打开方式（供设置界面下拉选择） */
     var HANDLERS = [
-        { id: 'editor',       name: '代码编辑器',  icon: '📝', exts: ['.txt', '.md', '.json', '.log', '.py', '.js'] },
+        { id: 'editor',       name: '代码编辑器',  icon: '📝', exts: ['.txt', '.md', '.json', '.log', '.py', '.js', '.css', '.c', '.rf', '.sys', '.exc'] },
         { id: 'code-studio',  name: '代码工坊',    icon: '💻', exts: ['.txt', '.md', '.py', '.rf', '.kd', '.exc'] },
         { id: 'file-manager', name: '文件管理器',  icon: '📁', exts: ['*'] },
         { id: 'python-shell', name: 'Python 终端', icon: '🐍', exts: ['.py'] },
         { id: 'rf-runtime',   name: 'rf 运行时',   icon: '📜', exts: ['.rf'] },
         { id: 'kd-runtime',   name: 'KD 运行时',   icon: '📦', exts: ['.kd', '.html'] },
         { id: 'exc-runtime',  name: 'EXC 运行时',  icon: '⚙️', exts: ['.exc'] },
-        { id: 'sys-manager',  name: '系统脚本',    icon: '🛠️', exts: ['.sys', '.skl'] },
+        { id: 'sys-manager',  name: '系统脚本',    icon: '🛠️', exts: ['.sys'] },
         { id: 'camera',       name: '图片查看',    icon: '📷', exts: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'] },
         { id: 'notepad',      name: '文本查看',    icon: '📄', exts: ['.txt', '.log', '.ini', '.cfg'] }
     ];
@@ -47,7 +47,6 @@
         '.py': 'text/x-python', '.js': 'application/javascript',
         '.rf': 'application/x-eznt-rf', '.kd': 'application/x-eznt-kd',
         '.exc': 'application/x-eznt-exc', '.sys': 'application/x-eznt-sys',
-        '.skl': 'application/x-eznt-skl', '.zjl': 'application/x-eznt-zjl',
         '.c2': 'application/x-eznt-c2',
         '.html': 'text/html', '.css': 'text/css',
         '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -187,12 +186,10 @@
             '.js': 'editor',
             '.css': 'editor',
             '.html': 'kd-runtime',
-            '.rf': 'rf-runtime',
+            '.rf': 'editor',
             '.kd': 'kd-runtime',
             '.exc': 'exc-runtime',
             '.sys': 'sys-manager',
-            '.skl': 'sys-manager',
-            '.zjl': 'editor',
             '.c2': 'c2-runtime',
             '.png': 'camera',
             '.jpg': 'camera',

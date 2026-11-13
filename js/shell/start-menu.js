@@ -65,6 +65,8 @@
         'chat': '💬',
         'code-studio': '💻',
         'sysmanager': '⚡',
+        'file-dialog': '🚀',
+        'mmc': '📋',
         'settings': '⚙️'
     };
 
@@ -89,6 +91,8 @@
         'chat': '聊天室',
         'code-studio': '代码工坊',
         'sysmanager': 'System Control',
+        'file-dialog': '文件对话框',
+        'mmc': '系统控制台',
         'settings': '设置'
     };
 
@@ -125,14 +129,21 @@
         /* 注册表是权威来源 */
         var reg = G.EznK.Service && G.EznK.Service.appRegistry;
         if (reg) {
-            reg.list().value.forEach(function (a) {
+            reg.list().value.filter(function (a) { return !a.hidden; }).forEach(function (a) {
                 if (a.id === 'c2-runtime') { return; }
                 add(a.id, nameFor(a.id, a.name), iconFor(a.id, a.icon));
             });
         }
 
         /* 补齐只有模块但未注册的 */
-        var apps = G.EznK.Apps || {};
+        var apps = Object.keys(G.EznK.Apps || {}).map(function (k) {
+            return G.EznK.Apps[k];
+        }).reduce(function (acc, mod) {
+            if (mod && typeof mod.open === 'function') {
+                acc[mod.id || mod.displayName || ''] = mod;
+            }
+            return acc;
+        }, {});
         Object.keys(apps).forEach(function (k) {
             var mod = apps[k];
             if (!mod || typeof mod.open !== 'function') { return; }

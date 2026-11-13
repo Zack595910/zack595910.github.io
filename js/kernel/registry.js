@@ -159,48 +159,171 @@
     }
 
     /** Factory registry keys installed on first boot. */
+    /**
+     * seedDefaults() - 系统自带的注册表结构（对齐 Windows）
+     *
+     *   HKEY_CLASSES_ROOT   (HKCR)  文件关联
+     *   HKEY_CURRENT_USER   (HKCU)  当前用户设置
+     *   HKEY_LOCAL_MACHINE  (HKLM)  系统全局设置
+     *   HKEY_USERS          (HKU)   所有用户
+     *   HKEY_CURRENT_CONFIG (HKCC)  当前硬件配置
+     */
     function seedDefaults() {
         return {
+            /* ---- HKEY_CLASSES_ROOT：文件关联 ---- */
+            HKCR: {
+                '.txt': 'editor',
+                '.md': 'editor',
+                '.log': 'editor',
+                '.json': 'editor',
+                '.js': 'editor',
+                '.css': 'editor',
+                '.c': 'editor',
+                '.py': 'editor',
+                '.rf': 'editor',
+                '.sys': 'sys-manager',
+                '.exc': 'exc-runtime',
+                '.kd': 'kd-runtime',
+                '.html': 'kd-runtime',
+                '.c2': 'c2-runtime',
+                '.png': 'camera',
+                '.jpg': 'camera',
+                '.jpeg': 'camera',
+                '.gif': 'camera',
+                '.svg': 'camera',
+                '.mp4': 'camera',
+                '.webm': 'camera',
+
+                'Applications': {
+                    'editor.exe': { FriendlyAppName: '代码编辑器', Icon: '📝' },
+                    'filemanager.exe': { FriendlyAppName: '文件管理器', Icon: '📁' },
+                    'control.exe': { FriendlyAppName: '控制面板', Icon: '⚙️' },
+                    'python.exe': { FriendlyAppName: 'Python 终端', Icon: '🐍' },
+                    'kd.exe': { FriendlyAppName: 'KD 应用运行时', Icon: '📦' },
+                    'rf.exe': { FriendlyAppName: 'rf 脚本运行时', Icon: '📜' },
+                    'syscontrol.exe': { FriendlyAppName: 'System Control', Icon: '⚡' }
+                },
+
+                'Mime': {
+                    '.txt': 'text/plain',
+                    '.md': 'text/markdown',
+                    '.json': 'application/json',
+                    '.py': 'text/x-python',
+                    '.js': 'application/javascript',
+                    '.css': 'text/css',
+                    '.html': 'text/html',
+                    '.kd': 'application/x-eznt-kd',
+                    '.exc': 'application/x-eznt-exc',
+                    '.rf': 'application/x-eznt-rf',
+                    '.sys': 'application/x-eznt-sys',
+                    '.c2': 'application/x-eznt-c2',
+                    '.png': 'image/png',
+                    '.jpg': 'image/jpeg',
+                    '.gif': 'image/gif',
+                    '.svg': 'image/svg+xml',
+                    '.mp4': 'video/mp4'
+                }
+            },
+
+            /* ---- HKEY_CURRENT_USER：当前用户 ---- */
+            HKCU: {
+                Software: {
+                    EZNT: {
+                        Version: '1.0.0',
+                        RegisteredOwner: 'EZNT User'
+                    }
+                },
+                'Control Panel': {
+                    'Desktop': {
+                        Wallpaper: 'default',
+                        IconSize: 48,
+                        IconSpacing: 100
+                    },
+                    'Colors': {
+                        Window: '#202020',
+                        Highlight: '#0078D4',
+                        Accent: '#0078D4'
+                    },
+                    'Sound': { Beep: true, Volume: 80 },
+                    'Mouse': { DoubleClickSpeed: 500, Speed: 5 },
+                    'Keyboard': { RepeatDelay: 500, RepeatRate: 30 },
+                    'International': { LocaleName: 'zh-CN', sLanguage: 'CHS' }
+                },
+                'Explorer': {
+                    'Advanced': {
+                        Hidden: 1,
+                        'ShowSuperHidden': 0,
+                        'HideFileExt': 0
+                    },
+                    'Shell Folders': {
+                        Desktop: '/Users/{user}/Desktop',
+                        Personal: '/Users/{user}/Documents',
+                        Pictures: '/Users/{user}/Pictures',
+                        Music: '/Users/{user}/Music',
+                        Videos: '/Users/{user}/Videos',
+                        Downloads: '/Users/{user}/Downloads'
+                    }
+                }
+            },
+
+            /* ---- HKEY_LOCAL_MACHINE：系统全局 ---- */
             HKLM: {
                 Software: {
                     EZNT: {
                         Version: '1.0.0',
-                        InstalledAt: new Date().toISOString(),
-                        'CurrentUser': ''
+                        BuildNumber: '1',
+                        RegisteredOwner: 'EZNT',
+                        InstallDate: new Date().toISOString().slice(0, 10),
+                        Kernel: 'SRM',
+                        Architecture: 'EznK'
                     }
                 },
                 'System': {
                     'ControlSet001': {
-                        'Services': {},
-                        'Display': { 'Resolution': { 'Width': 1280, 'Height': 720 } }
+                        'Services': {
+                            SRM: { Start: 0, Status: 'running', DisplayName: '系统资源管理器' },
+                            Storage: { Start: 0, Status: 'running', DisplayName: '存储网关' },
+                            GDI: { Start: 0, Status: 'running', DisplayName: '图形设备接口' },
+                            User: { Start: 0, Status: 'running', DisplayName: '用户服务' },
+                            File: { Start: 0, Status: 'running', DisplayName: '文件服务' },
+                            Network: { Start: 0, Status: 'running', DisplayName: '网络服务' },
+                            Media: { Start: 0, Status: 'running', DisplayName: '媒体服务' },
+                            Python: { Start: 3, Status: 'stopped', DisplayName: 'Python 运行时' }
+                        },
+                        'Control': {
+                            'ComputerName': { ComputerName: 'EZNT-PC' },
+                            'Session Manager': {
+                                'Environment': {
+                                    TEMP: '/Temp',
+                                    PATH: '/Programs;/System'
+                                }
+                            }
+                        }
+                    },
+                    'CurrentControlSet': 0,
+                    'Display': {
+                        'Resolution': { Width: 1280, Height: 720 },
+                        'Scale': 1,
+                        'ColorDepth': 32
                     }
+                },
+                'Hardware': {
+                    'DESCRIPTION': { 'ProcessorNameString': 'EznK Virtual CPU' },
+                    'CentralProcessor': { VendorIdentifier: 'EZNT', Speed: 3200 }
                 }
             },
-            HKCU: {
-                Software: { EZNT: {} },
-                'Control Panel': { 'Desktop': { 'Wallpaper': 'default', 'IconSize': 48 } }
-            },
-            /* HKCR maps a file extension to the APPLICATION ID that opens
-             * it - the shell's association table. MIME types live under
-             * HKCR\Mime so a KD app can ask for either without ambiguity. */
-            HKCR: {
-                '.txt': 'editor',
-                '.md': 'editor',
-                '.py': 'editor',
-                '.rf': 'rf-runtime',
-                '.sys': 'sys-manager',
-                '.exc': 'exc-runtime',
-                '.kd': 'kd-runtime',
-                '.zjl': 'editor',
-                '.skl': 'info',
-                '.json': 'editor',
-                '.html': 'kd-runtime',
-                'Mime': {
-                    '.txt': 'text/plain',
-                    '.kd': 'application/x-eznt-kd',
-                    '.exc': 'application/x-eznt-exc',
-                    '.rf': 'application/x-eznt-rf'
+
+            /* ---- HKEY_USERS：所有用户 ---- */
+            HKU: {
+                '.DEFAULT': {
+                    'Control Panel': { 'Desktop': { Wallpaper: 'default' } }
                 }
+            },
+
+            /* ---- HKEY_CURRENT_CONFIG：当前硬件配置 ---- */
+            HKCC: {
+                'Display': { Width: 1280, Height: 720, Scale: 1 },
+                'System': { 'Printers': {} }
             }
         };
     }

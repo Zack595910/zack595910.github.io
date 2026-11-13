@@ -575,6 +575,16 @@
             var target = focusedControl() || w.root;
             var handled = target.dispatch('keydown', keyData(ev));
 
+            /* 可打印字符：keydown 未处理时插入（单通道，不会重复） */
+            if (!handled && typeof ev.key === 'string' && ev.key.length === 1 &&
+                !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+                var insTarget = focusedControl();
+                if (insTarget) {
+                    var ins = insTarget.dispatch('char', { event: ev, text: ev.key });
+                    if (ins) { handled = ins; }
+                }
+            }
+
             /* Backspace / Tab / 方向键会滚动页面，输入框获得焦点时必须拦下 */
             if (handled && (ev.key === 'Backspace' || ev.key === 'Tab' ||
                     ev.key === 'ArrowUp' || ev.key === 'ArrowDown' ||
@@ -585,15 +595,12 @@
             if (handled) { w.surface.invalidate(); }
         });
 
+        /* 只从 keydown 派发字符插入。
+         * 之前 keydown 与 keypress 都派发 'char'，导致每个字符插入两次
+         * （输入 "abc" 得到 "aabbcc"）。浏览器在派发 keypress 前也会
+         * 触发 keydown，二者只需保留一个通道。 */
         on('keypress', function (ev) {
-            if (w.minimized) { return; }
-            var target = focusedControl();
-            if (!target) { return; }
-            /* 可打印字符走 'char'，让 Edit 插入文本 */
-            if (typeof ev.key === 'string' && ev.key.length === 1) {
-                var handled = target.dispatch('char', { event: ev, text: ev.key });
-                if (handled) { w.surface.invalidate(); }
-            }
+            ev.preventDefault();
         });
 
         on('keyup', function (ev) {

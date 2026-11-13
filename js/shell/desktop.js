@@ -232,10 +232,9 @@
                     status.setPane('main', '名称不能包含 \\ / : * ? " < > |');
                     return;
                 }
-                var dir = String(icon.path).slice(0, String(icon.path).lastIndexOf('/'));
-                var newPath = dir + '/' + newName;
-
-                api.kernel.RenameFile(icon.path, newPath).then(function (r) {
+                /* RenameFile 的第二个参数是"纯文件名"，不是完整路径。
+                 * 传路径会被内核判定为 EINVAL —— 这正是"重命名一定报错"的原因。 */
+                api.kernel.RenameFile(icon.path, newName).then(function (r) {
                     if (r.status === S.OK) {
                         win.destroy();
                         refresh().then(function () { resolve(CORE.ok(true)); });

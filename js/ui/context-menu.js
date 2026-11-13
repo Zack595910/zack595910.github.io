@@ -306,7 +306,18 @@
      * 5. Public handle
      * ============================================================== */
 
-    var CM = {};
+    /* Geometry() - 当前菜单的屏幕矩形与布局参数。
+     * 供测试和自动化点击精确落到某一项上，避免各脚本各自猜坐标。 */
+    function Geometry() {
+        if (!menu || !menu.open || !menu.overlay) { return null; }
+        return {
+            x: menu.x, y: menu.y, w: menu.width, h: menu.height,
+            itemHeight: ITEM_H, sepHeight: SEP_H, pad: PAD
+        };
+    }
+
+    var CM = {
+        Geometry: Geometry,};
     CM.__isContextMenu = true;
     CM.version = '1.0.0';
     CM.STATUS = S;
