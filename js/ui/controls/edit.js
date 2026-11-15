@@ -243,6 +243,38 @@
         return this.value;
     };
 
+    /**
+     * imeRect() - 控件在视口中的矩形，给隐藏 textarea 定位，
+     * 让移动端输入法候选框跟着光标走。
+     */
+    Edit.prototype.imeRect = function () {
+        try {
+            var ab = this.absolutePosition ? this.absolutePosition() : { x: 0, y: 0 };
+            var surf = null;
+            var o = this.owner;
+            if (!o) {
+                var n = this;
+                while (n && !o) { if (n.element) { o = n; } if (n.canvas) { o = n; } n = n.parent; }
+            }
+            if (o) { surf = o.element || o.canvas || null; }
+            if (!surf && G.document) {
+                var cs = G.document.querySelectorAll('canvas');
+                if (cs.length) { surf = cs[cs.length - 1]; }
+            }
+            var base = surf && surf.getBoundingClientRect
+                ? surf.getBoundingClientRect()
+                : { left: 0, top: 0 };
+            return {
+                left: base.left + ab.x,
+                top: base.top + ab.y,
+                width: this.width || 100,
+                height: this.height || 20
+            };
+        } catch (_) {
+            return { left: 0, top: 0, width: 100, height: 20 };
+        }
+    };
+
     Edit.prototype.getValue = function () { return this.value; };
 
     Edit.prototype.selectAll = function () {
@@ -261,12 +293,47 @@
             this.focused = true;
             this.startCaret();
             this.invalidate();
+            /* 把焦点交给隐藏 textarea：移动端才会弹输入法，桌面端才有 IME 合成 */
+            try {
+                var IME = G.EznK.Ui && G.EznK.Ui.IME;
+                if (IME && IME.focus) { IME.focus(this, this.imeRect()); }
+            } catch (_) {}
             return 'focus';
         }
         if (msg.type === 'blur') {
             this.stopCaret();
             this.invalidate();
+            try {
+                var IME2 = G.EznK.Ui && G.EznK.Ui.IME;
+                if (IME2 && IME2.blur) { IME2.blur(); }
+            } catch (_) {}
             return 'blur';
+        }
+        if (msg.type === 'contextmenu') {
+            /* 编辑框右键菜单：复制 / 剪切 / 粘贴 / 全选（Windows 习惯） */
+            var dcm = msg.data || {};
+            var selfC = this;
+            var hasSel = this.selStart !== this.selEnd;
+            var CM = G.ezn32.ui && G.ezn32.ui.ContextMenu;
+            if (!CM) { return null; }
+            CM.Show({
+                x: dcm.screenX || 0, y: dcm.screenY || 0,
+                items: [
+                    { text: '撤销', icon: '↶', shortcut: 'Ctrl+Z',
+                      onClick: function () { selfC.handleKey({ key: 'z', ctrlKey: true }); } },
+                    { separator: true },
+                    { text: '剪切', icon: '✂️', shortcut: 'Ctrl+X', enabled: hasSel,
+                      onClick: function () { selfC.handleKey({ key: 'x', ctrlKey: true }); } },
+                    { text: '复制', icon: '📋', shortcut: 'Ctrl+C', enabled: hasSel,
+                      onClick: function () { selfC.handleKey({ key: 'c', ctrlKey: true }); } },
+                    { text: '粘贴', icon: '📥', shortcut: 'Ctrl+V',
+                      onClick: function () { selfC.handleKey({ key: 'v', ctrlKey: true }); } },
+                    { separator: true },
+                    { text: '全选', icon: '⬚', shortcut: 'Ctrl+A',
+                      onClick: function () { selfC.selectAll(); } }
+                ]
+            });
+            return 'context';
         }
         if (msg.type === 'keydown') {
             var d = msg.data || {};
@@ -275,7 +342,29 @@
         if (msg.type === 'char') {
             var d2 = msg.data || {};
             if (typeof d2.text === 'string' && d2.text.length > 0) {
+                /* IME / 粘贴送来的可能是整段文本 */
                 this.insert(d2.text);
+                /* 输入法弹出时把候选框移到光标处 */
+                if (d2.ime) {
+                    try {
+                        var IME3 = G.EznK.Ui && G.EznK.Ui.IME;
+                        if (IME3 && IME3.setCursorPosition) {
+                            var r = this.imeRect();
+                            IME3.setCursorPosition(r.left, r.top + r.height);
+                        }
+                    } catch (_) {}
+                }
+                return 'inserted';
+            }
+        }
+        /* 输入法合成：把候选文本作为预览插入提示（不真正写入，等 compositionend） */
+        if (msg.type === 'compositionupdate') {
+            return 'composing';
+        }
+        if (msg.type === 'compositionend') {
+            var dc = msg.data || {};
+            if (typeof dc.text === 'string' && dc.text.length > 0) {
+                this.insert(dc.text);
                 return 'inserted';
             }
         }
@@ -309,22 +398,47 @@
 
     Edit.prototype.handleKey = function (d) {
         var key = d.key;
-        var ctrl = d.ctrlKey === true;
+        /* Mac 用 Cmd（metaKey）代替 Ctrl */
+        var ctrl = d.ctrlKey === true || d.metaKey === true;
         var shift = d.shiftKey === true;
 
         if (ctrl && (key === 'a' || key === 'A')) { this.selectAll(); return 'selectAll'; }
         if (ctrl && (key === 'c' || key === 'C')) {
-            G.ezn32.ui.__clipboard.set(this.getSelected() || this.value);
+            var copied = this.getSelected() || this.value;
+            G.ezn32.ui.__clipboard.set(copied);
+            /* 同时写入系统剪贴板，和外部程序互通 */
+            try {
+                var IMEc = G.EznK.Ui && G.EznK.Ui.IME;
+                if (IMEc && IMEc.writeClipboard) { IMEc.writeClipboard(copied); }
+            } catch (_) {}
             return 'copy';
         }
         if (ctrl && (key === 'x' || key === 'X')) {
-            G.ezn32.ui.__clipboard.set(this.getSelected());
+            var cutText = this.getSelected();
+            G.ezn32.ui.__clipboard.set(cutText);
+            try {
+                var IMEx = G.EznK.Ui && G.EznK.Ui.IME;
+                if (IMEx && IMEx.writeClipboard) { IMEx.writeClipboard(cutText); }
+            } catch (_) {}
             this.deleteSelection();
             this.fireChange();
             return 'cut';
         }
         if (ctrl && (key === 'v' || key === 'V')) {
-            this.insert(G.ezn32.ui.__clipboard.get());
+            /* 优先内存剪贴板（同步），异步再向系统剪贴板补齐 */
+            var mem = G.ezn32.ui.__clipboard.get();
+            if (mem) { this.insert(mem); }
+            try {
+                var IMEv = G.EznK.Ui && G.EznK.Ui.IME;
+                if (IMEv && IMEv.readClipboard) {
+                    var self2 = this;
+                    IMEv.readClipboard().then(function (r) {
+                        if (r.status === 0 && r.value && r.value !== mem) {
+                            self2.insert(r.value);
+                        }
+                    });
+                }
+            } catch (_) {}
             return 'paste';
         }
 

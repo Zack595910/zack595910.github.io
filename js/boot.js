@@ -235,6 +235,13 @@
         return chain.then(function () {
             /* 外壳层模块也要在应用注册表里登记（控制面板是应用之一），
              * 否则从开始菜单 / 桌面图标启动会报 "no such app"。 */
+            /* 界面层横切模块：输入法桥接要先准备好隐藏 textarea */
+            try {
+                if (G.EznK && G.EznK.Ui && G.EznK.Ui.IME && typeof G.EznK.Ui.IME.boot === 'function') {
+                    G.EznK.Ui.IME.boot();
+                }
+            } catch (err) { failed.push('ime(' + (err && err.message) + ')'); }
+
             var shell = (G.EznK && G.EznK.Shell) || {};
             Object.keys(shell).forEach(function (k) {
                 var m = shell[k];

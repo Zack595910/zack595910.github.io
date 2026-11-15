@@ -410,7 +410,21 @@
 
         on('mousedown', function (ev) {
             var p = localPoint(w, ev);
-            w.activate();
+            /* 先算命中的控件：如果是可编辑的，activate 别再抢焦点 */
+            var downHit = w.root.hitTestTree(p.x, p.y);
+            var editable = false;
+            try {
+                var cc = downHit;
+                while (cc && !editable) {
+                    if (cc.constructor && (cc.constructor.name === 'Edit' ||
+                        cc.constructor.name === 'Memo' || cc.multiline === true)) { editable = true; }
+                    cc = cc.parent;
+                }
+            } catch (_) {}
+            w.activate(editable);
+            /* 阻止浏览器的默认聚焦：canvas 有 tabindex=0，浏览器会在
+             * mousedown 之后自动 focus 它，把输入法需要的焦点再次抢走。 */
+            if (editable && ev.preventDefault) { ev.preventDefault(); }
             /* 右键：派发 contextmenu 给命中的控件（列表、表格、桌面等用它弹菜单） */
             if (ev.button === 2) {
                 var rcTarget = w.root.hitTestTree(p.x, p.y);
@@ -575,8 +589,16 @@
             var target = focusedControl() || w.root;
             var handled = target.dispatch('keydown', keyData(ev));
 
-            /* 可打印字符：keydown 未处理时插入（单通道，不会重复） */
-            if (!handled && typeof ev.key === 'string' && ev.key.length === 1 &&
+            /* 可打印字符：keydown 未处理时插入。
+             * 但如果焦点在 IME 的隐藏 textarea 上，字符会通过它的
+             * input 事件送进来 —— 这里必须跳过，否则每个字符插两次。 */
+            var imeOwns = false;
+            try {
+                var IMEk = G.EznK.Ui && G.EznK.Ui.IME;
+                imeOwns = !!(IMEk && IMEk.state && IMEk.state().active &&
+                             G.document && G.document.activeElement === IMEk.element());
+            } catch (_) {}
+            if (!handled && !imeOwns && typeof ev.key === 'string' && ev.key.length === 1 &&
                 !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
                 var insTarget = focusedControl();
                 if (insTarget) {
@@ -717,8 +739,25 @@
      * 6. Drag / resize / state
      * ============================================================== */
 
-    CtlWindow.prototype.activate = function () {
-        try { if (this.surface && this.surface.element.focus) { this.surface.element.focus({ preventScroll: true }); } } catch (_) {}
+    CtlWindow.prototype.activate = function (skipFocus) {
+        /* 不要无条件把焦点抢回 canvas：编辑控件聚焦后，我们故意把真实的
+         * DOM 焦点交给隐藏 textarea（移动端才会弹输入法）。这里如果
+         * 无条件 focus(canvas)，点一次输入框就又把焦点抢走，输入法立刻收起。
+         * skipFocus=true 时不碰 DOM 焦点。 */
+        if (!skipFocus) {
+            var imeActive = false;
+            try {
+                var IME = G.EznK.Ui && G.EznK.Ui.IME;
+                imeActive = !!(IME && IME.state && IME.state().active);
+            } catch (_) {}
+            if (!imeActive) {
+                try {
+                    if (this.surface && this.surface.element.focus) {
+                        this.surface.element.focus({ preventScroll: true });
+                    }
+                } catch (_) {}
+            }
+        }
         var ids = Object.keys(live);
         ids.forEach(function (id) {
             var w = live[id];
