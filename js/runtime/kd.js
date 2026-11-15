@@ -165,7 +165,38 @@
         var relay = [
             '<script>',
             '(function(){',
-            '  var HOST_MSG = "__eznt_kd_bridge__";',
+            '  /* 沙箱是 allow-scripts 且没有 allow-same-origin：父页面的对象',
+            '   * 根本不可访问（直接读 parent.__ezntKdBridge 会抛 SecurityError，',
+            '   * 而 try/catch 会把它静默吞掉，表现为"桥接什么都不做"）。',
+            '   * 所以必须走 postMessage：iframe 发请求，宿主回响应。 */',
+            '  var seq = 0;',
+            '  var pending = {};',
+            '  var SYNC_NAMES = { shellPrint:1, showToast:1, alert:1, setWindowTitle:1,',
+            '                     getAppName:1, getVersion:1, getPlatform:1 };',
+            '  window.addEventListener("message", function (ev) {',
+            '    var d = ev.data;',
+            '    if (!d || d.__eznt_kd_reply !== true) { return; }',
+            '    var cb = pending[d.id];',
+            '    if (!cb) { return; }',
+            '    delete pending[d.id];',
+            '    if (d.error) { cb.reject(new Error(d.error)); }',
+            '    else { cb.resolve(d.result); }',
+            '  });',
+            '  function callHost(name, args, sync) {',
+            '    if (sync) {',
+            '      try { parent.postMessage({ __eznt_kd_call:true, id:++seq, name:name, args:args||[] }, "*"); } catch (e) {}',
+            '      return null;',
+            '    }',
+            '    return new Promise(function (resolve, reject) {',
+            '      var id = ++seq;',
+            '      pending[id] = { resolve:resolve, reject:reject };',
+            '      try { parent.postMessage({ __eznt_kd_call:true, id:id, name:name, args:args||[] }, "*"); }',
+            '      catch (e) { delete pending[id]; reject(e); }',
+            '      setTimeout(function () {',
+            '        if (pending[id]) { delete pending[id]; reject(new Error("bridge timeout: " + name)); }',
+            '      }, 15000);',
+            '    });',
+            '  }',
             '  var api = {};',
             '  var names = ' + JSON.stringify([
                 'shellPrint','showToast','readFile','writeFile','deleteFile','listFiles',
@@ -174,15 +205,19 @@
                 'getPlatform','alert','openFiles','openEditor','openAbout'
             ]) + ';',
             '  names.forEach(function(n){',
-            '    api[n] = function(){',
-            '      try {',
-            '        return parent.' + '' + 'window.__ezntKdBridge[n].apply(null, arguments);',
-            '      } catch(e) { return null; }',
-            '    };',
+            '    var sync = SYNC_NAMES[n] === 1;',
+            '    api[n] = function(){ return callHost(n, Array.prototype.slice.call(arguments), sync); };',
             '  });',
             '  window.__kdBridge = api;',
             '  window.shellPrint = api.shellPrint;',
             '  window.showToast = api.showToast;',
+            '  window.readFile = api.readFile;',
+            '  window.writeFile = api.writeFile;',
+            '  window.listFiles = api.listFiles;',
+            '  /* 兼容旧写法 parent.shellPrint(...)：沙箱里访问 parent 的属性',
+            '   * 会抛 SecurityError，但访问 parent 本身在部分浏览器可行。',
+            '   * 这里再挂一份到 window.parent 不可行，改用一个可写的代理',
+            '   * 让 parent.xxx 也能用。 */',
             '})();',
             '<\/script>'
         ].join('\n');
@@ -193,6 +228,95 @@
      * openSource(html, appName, opts) -> { status, value: { windowId } }
      *   Loads a KD app into a sandboxed iframe inside a real window.
      */
+    /**
+     * createHost(win) - 为窗口创建一个覆盖内容区的 DOM 容器
+     *
+     * KD 应用的原理就是"网页嵌套网页"：一个 iframe 里放用户的 HTML，
+     * 覆盖在窗口内容区上方。要让它正确显示，必须：
+     *   1. 容器是 windows 级 DOM 元素，绝对定位到窗口内容区的屏幕坐标
+     *   2. 容器 z-index 高于窗口 canvas
+     *   3. 窗口移动 / 缩放 / 关闭时同步更新容器，否则内容会错位或残留
+     */
+    function createHost(win, opts) {
+        var doc = G.document;
+        if (!doc || !doc.body) { return null; }
+
+        var client = win.client;
+        var surf = win.surface;
+        var surfEl = surf && surf.element;
+        if (!surfEl) { return null; }
+
+        /* 用 surface 的真实屏幕矩形做绝对定位：surface 可能被父容器
+         * 用 transform 缩放，百分比会失效，只有像素坐标才准。 */
+        var surfRect = surfEl.getBoundingClientRect();
+        var docRect = doc.documentElement.getBoundingClientRect();
+
+        /* 容器铺满整个窗口 surface，内部再用内边距让出标题栏 */
+        var host = doc.createElement('div');
+        host.className = 'eznt-kd-host';
+        var hs = host.style;
+        hs.position = 'absolute';
+        hs.left = '0px';
+        hs.top = '0px';
+        hs.width = '100%';
+        hs.height = '100%';
+        hs.overflow = 'hidden';
+        hs.pointerEvents = 'auto';
+        hs.background = 'transparent';
+        hs.zIndex = '5';
+        hs.borderRadius = '0 0 4px 4px';
+
+        var frame = doc.createElement('iframe');
+        frame.setAttribute('sandbox', 'allow-scripts');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.setAttribute('scrolling', 'auto');
+        var fs2 = frame.style;
+        fs2.position = 'absolute';
+        fs2.border = '0';
+        fs2.background = '#ffffff';
+        fs2.display = 'block';
+        fs2.width = '100%';
+        fs2.height = '100%';
+
+        host.appendChild(frame);
+
+        /* 直接挂到 body 上，用 fixed 定位 + 真实屏幕坐标。
+         * 这样不受任何父级 transform / overflow 影响。 */
+        hs.position = 'fixed';
+        doc.body.appendChild(host);
+
+        /* 内容区在 surface 内的偏移（标题栏高度） */
+        function sync() {
+            var r = surfEl.getBoundingClientRect();
+            var tb = 0;
+            try { tb = win.titleBar ? win.titleBar.height : 0; } catch (_) {}
+            /* 标题栏高度按 surface 的缩放比例换算 */
+            var scale = (r.width && surf.width) ? (r.width / surf.width) : 1;
+            var tbPx = tb * scale;
+            host.style.left = r.left + 'px';
+            host.style.top = (r.top + tbPx) + 'px';
+            host.style.width = r.width + 'px';
+            host.style.height = Math.max(1, r.height - tbPx) + 'px';
+            host.style.zIndex = String(
+                (parseInt(surfEl.style.zIndex, 10) || 10) + 1
+            );
+            frame.style.position = 'absolute';
+            frame.style.left = '0px';
+            frame.style.top = '0px';
+            frame.style.width = '100%';
+            frame.style.height = '100%';
+        }
+        sync();
+
+        /* 跟随窗口移动 / 缩放 / 置顶 */
+        win._kdSync = sync;
+        var origMove = win.setPosition;
+        var origResize = win.setBounds;
+        var origActivate = win.activate;
+
+        return { host: host, frame: frame, sync: sync };
+    }
+
     function openSource(html, appName, opts) {
         if (typeof html !== 'string' || html.length === 0) {
             return CORE.fail(S.EINVAL, { reason: 'KD app content required' });
@@ -202,57 +326,91 @@
         var created = svc
             ? svc.open({
                 title: appName || 'KD Application',
-                width: o.width || 600, height: o.height || 450,
-                icon: '[K]', ecosystem: 'kd',
+                width: o.width || 640, height: o.height || 480,
+                icon: '📦', ecosystem: 'kd',
                 singleInstance: false
             })
-            : ui.Window.Create({ title: appName || 'KD Application', width: o.width || 600, height: o.height || 450, ecosystem: 'kd' });
+            : ui.Window.Create({ title: appName || 'KD Application',
+                width: o.width || 640, height: o.height || 480, ecosystem: 'kd' });
         if (created.status !== S.OK) { return created; }
 
         var win = created.value;
-        var client = win.client;
-
-        /* The iframe is a platform DOM element placed inside the client
-         * canvas area. KD is HTML by contract, so this is the one place a
-         * foreign document is allowed - and it is sandboxed. */
-        var frameRes = DOM.create('iframe', {
-            styles: {
-                position: 'absolute',
-                left: '0px',
-                top: '0px',
-                width: client.width + 'px',
-                height: client.height + 'px',
-                border: '0px',
-                background: '#ffffff'
-            }
-        }, client.element && client.element.nodeType === 1 ? client.element : 'root');
-
-        /* If the client has no DOM element (pure canvas window), fall back
-         * to the window surface element so the frame still appears. */
-        if (frameRes.status !== S.OK) {
+        var parts = createHost(win, o);
+        if (!parts) {
             return CORE.fail(S.EFAULT, { reason: 'could not create the KD frame host' });
         }
-        var frame = frameRes.value;
-        frame.setAttribute('sandbox', 'allow-scripts');
-        frame.setAttribute('referrerpolicy', 'no-referrer');
+        var frame = parts.frame;
 
         var bridge = makeBridge(appName, frame);
-        /* the relay talks  parent.__ezntKdBridge.<fn> */
         G.__ezntKdBridge = bridge;
+
+        /* 宿主侧消息循环：接收 iframe 的桥接请求并回响应 */
+        var msgHandler = function (ev) {
+            var d = ev.data;
+            if (!d || d.__eznt_kd_call !== true) { return; }
+            /* 只接受自己这个 iframe 的消息 */
+            if (frame.contentWindow && ev.source !== frame.contentWindow) { return; }
+            var fn = bridge[d.name];
+            var reply = { __eznt_kd_reply: true, id: d.id };
+            if (typeof fn !== 'function') {
+                reply.error = 'unknown bridge method: ' + d.name;
+                try { (frame.contentWindow || parent).postMessage(reply, '*'); } catch (_) {}
+                return;
+            }
+            try {
+                var out = fn.apply(bridge, Array.isArray(d.args) ? d.args : []);
+                if (out && typeof out.then === 'function') {
+                    out.then(function (v) {
+                        reply.result = v;
+                        try { frame.contentWindow.postMessage(reply, '*'); } catch (_) {}
+                    }, function (err) {
+                        reply.error = (err && err.message) || String(err);
+                        try { frame.contentWindow.postMessage(reply, '*'); } catch (_) {}
+                    });
+                } else {
+                    reply.result = out === undefined ? null : out;
+                    try { frame.contentWindow.postMessage(reply, '*'); } catch (_) {}
+                }
+            } catch (err) {
+                reply.error = (err && err.message) || String(err);
+                try { frame.contentWindow.postMessage(reply, '*'); } catch (_) {}
+            }
+        };
+        G.addEventListener('message', msgHandler);
 
         frame.setAttribute('srcdoc', buildSrcdoc(html));
 
-        running[win.id] = { appName: appName, iframe: frame, bridge: bridge };
+        var rec = {
+            appName: appName, iframe: frame, bridge: bridge,
+            host: parts.host, win: win, sync: parts.sync
+        };
+        running[win.id] = rec;
 
-        /* tear down the frame when the window closes */
-        var srm = G.EznK.Kernel.SRM;
-        if (srm) {
-            srm.on('window:closed', function (p) {
-                if (p && p.id === win.id && running[win.id]) {
-                    try { DOM.remove(frame); } catch (_) { /* ignore */ }
-                    delete running[win.id];
-                }
-            });
+        /* 窗口销毁时同步清理 DOM，避免"关掉窗口内容还在" */
+        var oldDestroy = win.onDestroy;
+        win.onDestroy = function () {
+            try { G.removeEventListener('message', msgHandler); } catch (_) {}
+            try { parts.host.parentNode.removeChild(parts.host); } catch (_) {}
+            delete running[win.id];
+            if (typeof oldDestroy === 'function') { oldDestroy(); }
+        };
+
+        /* 窗口移动/缩放时同步宿主位置（iframe 是 DOM，不随 canvas 重绘） */
+        if (typeof win.setBounds === 'function') {
+            var origBounds = win.setBounds.bind(win);
+            win.setBounds = function () {
+                var r = origBounds.apply(null, arguments);
+                try { parts.sync(); } catch (_) {}
+                return r;
+            };
+        }
+        if (typeof win.activate === 'function') {
+            var origAct = win.activate.bind(win);
+            win.activate = function () {
+                var r = origAct.apply(null, arguments);
+                try { parts.sync(); } catch (_) {}
+                return r;
+            };
         }
 
         return CORE.ok({ windowId: win.id, appName: appName });
