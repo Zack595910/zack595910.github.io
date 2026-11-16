@@ -121,7 +121,7 @@
                 var cfg = Storage.config;
                 cfg.set('/System/SystemVersion.json', {
                     name: 'EZNT',
-                    version: '1.0.0',
+                    version: (G.EznK.Platform && G.EznK.Platform.Version) ? G.EznK.Platform.Version.semver() : '1.3.0',
                     architecture: 'EznK',
                     installedAt: Date.now()
                 });
@@ -379,7 +379,7 @@
 
     var Boot = {};
     Boot.__isBoot = true;
-    Boot.version = '1.0.0';
+    Boot.version = (G.EznK.Platform && G.EznK.Platform.Version) ? G.EznK.Platform.Version.semver() : '1.3.0';
     Boot.STATUS = S;
 
     Boot.run = run;
