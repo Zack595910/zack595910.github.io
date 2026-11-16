@@ -280,6 +280,15 @@
 
         host.appendChild(frame);
 
+        /* 拖动 / 调整大小时把 iframe 设为 pointer-events:none。
+         * 否则鼠标一旦进入 iframe 区域，事件就被 iframe 自己吃掉，
+         * 父页面收不到 mousemove，窗口会"卡住不动"。
+         * 这是所有嵌套 iframe 的 GUI 都要处理的经典问题。 */
+        function syncPointer() {
+            var busy = !!(win.dragging || win.resizing);
+            frame.style.pointerEvents = busy ? 'none' : 'auto';
+        }
+
         /* 直接挂到 body 上，用 fixed 定位 + 真实屏幕坐标。
          * 这样不受任何父级 transform / overflow 影响。 */
         hs.position = 'fixed';
@@ -301,6 +310,7 @@
                 (parseInt(surfEl.style.zIndex, 10) || 10) + 1
             );
             frame.style.position = 'absolute';
+            syncPointer();
             frame.style.left = '0px';
             frame.style.top = '0px';
             frame.style.width = '100%';
@@ -389,6 +399,8 @@
         /* 窗口销毁时同步清理 DOM，避免"关掉窗口内容还在" */
         var oldDestroy = win.onDestroy;
         win.onDestroy = function () {
+            alive = false;
+            if (rafId && G.cancelAnimationFrame) { try { G.cancelAnimationFrame(rafId); } catch (_) {} }
             try { G.removeEventListener('message', msgHandler); } catch (_) {}
             try { parts.host.parentNode.removeChild(parts.host); } catch (_) {}
             delete running[win.id];
@@ -404,6 +416,29 @@
                 return r;
             };
         }
+
+        /* 拖动/缩放期间持续刷新 pointer-events 与位置：
+         * 用 rAF 轮询比挂钩每个事件更可靠（拖动可能是任意路径触发的）。 */
+        var rafId = null;
+        var lastSig = '';
+        var alive = true;
+        var tickFn = function () {
+            if (!alive || !G.document || !win || win.destroyed) { rafId = null; return; }
+            try {
+                /* 从 DOM 读真实位置：拖动时 moveDrag 是直接改 surface 的
+                 * style.left/top，win.x 未必同步，只盯 win.x 会漏掉变化。 */
+                var r = surfEl.getBoundingClientRect();
+                var sig = Math.round(r.left) + ',' + Math.round(r.top) + ',' +
+                          Math.round(r.width) + ',' + Math.round(r.height) +
+                          ',' + (win.dragging ? 1 : 0) + ',' + (win.resizing ? 1 : 0);
+                if (sig !== lastSig) {
+                    lastSig = sig;
+                    parts.sync();
+                }
+            } catch (_) { /* 单帧失败不要终止循环 */ }
+            rafId = G.requestAnimationFrame(tickFn);
+        };
+        if (G.requestAnimationFrame) { rafId = G.requestAnimationFrame(tickFn); }
         if (typeof win.activate === 'function') {
             var origAct = win.activate.bind(win);
             win.activate = function () {

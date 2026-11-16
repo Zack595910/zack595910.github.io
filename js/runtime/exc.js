@@ -581,12 +581,154 @@
             setTitle: function (t) { return win.setTitle(String(t)); }
         };
 
+        /* ==============================================================
+         * EXC 网络能力（Net）
+         * --------------------------------------------------------------
+         * .exc 应用里可以直接用 Net 访问互联网：
+         *
+         *   Net.get(url)              -> Promise<string>
+         *   Net.getJSON(url)          -> Promise<object>
+         *   Net.post(url, body)       -> Promise<string>
+         *   Net.postJSON(url, data)   -> Promise<object>
+         *   Net.request(url, opts)    -> Promise<{ok, status, text, json, headers}>
+         *   Net.loadText(url)         -> Promise<string>   别名 get
+         *   Net.isOnline()            -> boolean
+         *   Net.then(...)             -> 直接返回 Promise，链式写法可用
+         *
+         * 所有调用都经过 EznK.Platform.Net 网关（规则：网络只能走平台层）。
+         * 出错不抛异常，而是返回 Promise.reject(Error)，方便 .catch()。
+         * ============================================================== */
+        var NetPlatform = G.EznK.Platform && G.EznK.Platform.Net;
+
+        function netFail(msg) {
+            var e = new Error(msg || 'network error');
+            e.isNetworkError = true;
+            return e;
+        }
+
+        function netEnsure() {
+            if (!NetPlatform) { throw netFail('网络层不可用'); }
+        }
+
+        var Net = {
+            version: '1.0.0',
+
+            /** isOnline() -> boolean */
+            isOnline: function () {
+                if (!NetPlatform) { return false; }
+                try {
+                    var r = NetPlatform.isOnline();
+                    return !!(r && r.value);
+                } catch (_) { return (G.navigator ? G.navigator.onLine !== false : true); }
+            },
+
+            /**
+             * request(url, opts) -> Promise<{ok, status, text, json, headers}>
+             *   opts: { method, headers, body, timeout }
+             */
+            request: function (url, opts) {
+                netEnsure();
+                var o = opts || {};
+                return NetPlatform.request(url, o).then(function (r) {
+                    if (r.status !== S.OK) {
+                        throw netFail(r.reason || ('请求失败 (status=' + r.status + ')'));
+                    }
+                    var res = r.value;
+                    return res.text().then(function (text) {
+                        var headers = {};
+                        try {
+                            res.headers.forEach(function (v, k) { headers[k] = v; });
+                        } catch (_) {}
+                        var parsed = null;
+                        var isJson = false;
+                        try {
+                            parsed = JSON.parse(text);
+                            isJson = true;
+                        } catch (_) {}
+                        return {
+                            ok: res.ok,
+                            status: res.status,
+                            url: res.url || url,
+                            text: text,
+                            json: isJson ? parsed : null,
+                            headers: headers
+                        };
+                    });
+                });
+            },
+
+            /** get(url, opts) -> Promise<string> 返回响应文本 */
+            get: function (url, opts) {
+                netEnsure();
+                var o = {};
+                if (opts) {
+                    Object.keys(opts).forEach(function (k) { o[k] = opts[k]; });
+                }
+                o.method = 'GET';
+                if (NetPlatform.fetchText) {
+                    return NetPlatform.fetchText(url, o).then(function (r) {
+                        if (r.status !== S.OK) { throw netFail(r.reason || '获取失败'); }
+                        return r.value;
+                    });
+                }
+                return Net.request(url, o).then(function (res) { return res.text; });
+            },
+
+            /** getJSON(url, opts) -> Promise<object> */
+            getJSON: function (url, opts) {
+                netEnsure();
+                var o = {};
+                if (opts) { Object.keys(opts).forEach(function (k) { o[k] = opts[k]; }); }
+                o.method = 'GET';
+                if (NetPlatform.fetchJson) {
+                    return NetPlatform.fetchJson(url, o).then(function (r) {
+                        if (r.status !== S.OK) { throw netFail(r.reason || '获取 JSON 失败'); }
+                        return r.value;
+                    });
+                }
+                return Net.request(url, o).then(function (res) {
+                    if (res.json === null) { throw netFail('响应不是合法 JSON'); }
+                    return res.json;
+                });
+            },
+
+            /** post(url, body, opts) -> Promise<string> */
+            post: function (url, body, opts) {
+                var o = {};
+                if (opts) { Object.keys(opts).forEach(function (k) { o[k] = opts[k]; }); }
+                o.method = 'POST';
+                o.body = (typeof body === 'string') ? body : (body === undefined ? '' : String(body));
+                return Net.request(url, o).then(function (res) { return res.text; });
+            },
+
+            /** postJSON(url, data, opts) -> Promise<object> */
+            postJSON: function (url, data, opts) {
+                var o = {};
+                if (opts) { Object.keys(opts).forEach(function (k) { o[k] = opts[k]; }); }
+                o.method = 'POST';
+                o.body = JSON.stringify(data === undefined ? {} : data);
+                var h = o.headers ? Object.assign({}, o.headers) : {};
+                if (!h['Content-Type'] && !h['content-type']) {
+                    h['Content-Type'] = 'application/json';
+                }
+                o.headers = h;
+                return Net.request(url, o).then(function (res) {
+                    if (res.json === null) { throw netFail('响应不是合法 JSON'); }
+                    return res.json;
+                });
+            },
+
+            /** loadText(url) -> Promise<string>  别名 */
+            loadText: function (url, opts) { return Net.get(url, opts); }
+        };
+
         /* The scope is frozen for creation: no control factory is exposed,
          * satisfying "JS blocks may only modify existing controls". */
         var Scope = {
             Ezn32UI: Ezn32UI,
             Ezn32: G.ezn32,
             SRM: G.EznK.Kernel.SRM,
+            Net: Net,
             app: { name: appName, version: appVersion },
             window: win,
             controls: ctx.controls
@@ -594,33 +736,49 @@
 
         jsQueue.forEach(function (job) {
             try {
-                var fn = new Function('Ezn32UI', 'Ezn32', 'SRM', 'app', 'controls', 'window', job.js);
-                fn(Ezn32UI, Scope.Ezn32, Scope.SRM, Scope.app, ctx.controls, win);
+                var fn = new Function('Ezn32UI', 'Ezn32', 'SRM', 'Net', 'app', 'controls', 'window', job.js);
+                fn(Ezn32UI, Scope.Ezn32, Scope.SRM, Scope.Net, Scope.app, ctx.controls, win);
             } catch (err) {
                 LOG.error('EXC JS block for <' + job.node.type + '> threw: ' + (err && err.message));
             }
         });
 
-        /* wire onClick JS blocks (the common declarative pattern) */
+        /* 把 onClick JS 块绑到对应的按钮上。
+         *
+         * 之前的实现：没有 name/id 的按钮回退到"第一个按钮"，于是每个
+         * button 的 resolve 都覆盖同一个控件的 onClick，最后只有最后一个
+         * 块生效 —— 表现为"点任何按钮都执行最后一个按钮的代码"。
+         *
+         * 正确做法：按 <button> 在 AST 里出现的顺序，对应 built 里第 N 个
+         * kind==='button' 的控件。有 name/id 的优先用名字找。 */
+        var builtButtons = built.filter(function (c) { return c.kind === 'button'; });
+        var btnSeq = 0;
         winNode.children.forEach(function (child) {
             if (child.type !== 'button') { return; }
+            /* 分配顺序索引：即使这个按钮没有 onClick，也要占一个位置，
+             * 否则后续按钮会整体错位。 */
+            var myIndex = btnSeq++;
             var oc = child.props.onClick;
             if (!oc || !oc.__js) { return; }
             var ctlKey = child.props.name || child.props.id;
             var target = ctlKey ? ctx.controls[ctlKey] : null;
             if (!target) {
-                /* fall back to the Nth built button */
-                target = built.filter(function (c) { return c.kind === 'button'; })[0] || null;
+                target = builtButtons[myIndex] || null;
             }
             if (!target) { return; }
-            target.onClick = function () {
-                try {
-                    var f = new Function('Ezn32UI', 'Ezn32', 'SRM', 'app', 'controls', 'window', oc.__js);
-                    f(Ezn32UI, G.ezn32, G.EznK.Kernel.SRM, Scope.app, ctx.controls, win);
-                } catch (err) {
-                    LOG.error('EXC onClick threw: ' + (err && err.message));
-                }
-            };
+            /* 用 IIFE 固定 oc，避免闭包共享最后一个值 */
+            (function (jsSrc, ctl) {
+                ctl.onClick = function () {
+                    try {
+                        var f = new Function('Ezn32UI', 'Ezn32', 'SRM', 'Net',
+                            'app', 'controls', 'window', jsSrc);
+                        f(Ezn32UI, G.ezn32, G.EznK.Kernel.SRM, Scope.Net,
+                            Scope.app, ctx.controls, win);
+                    } catch (err) {
+                        LOG.error('EXC onClick threw: ' + (err && err.message));
+                    }
+                };
+            })(oc.__js, target);
         });
 
         return Promise.resolve(CORE.ok({
