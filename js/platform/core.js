@@ -289,7 +289,10 @@
     var Core = {};
 
     Core.__isEZNTCore = true;
-    Core.version = '1.0.0';
+    /* 版本号统一从 EznK.Platform.Version 取，本文件不再写死 */
+Core.version = (root.EznK && root.EznK.Platform && root.EznK.Platform.Version)
+    ? root.EznK.Platform.Version.semver()
+    : '1.3.0';
 
     Core.STATUS = STATUS;
     Core.statusName = nameOf;
