@@ -48,7 +48,10 @@
 
         line('EZNT', 18, 'text', 'monoBig');
         line('生态系统原生技术', 52, 'textSecondary');
-        line('版本 1.0.0', 72, 'textSecondary', 'small');
+        var V = G.EznK.Platform && G.EznK.Platform.Version;
+        line('版本 ' + (V ? V.semver() : '1.3.0') +
+             (V ? ('    Build ' + V.build + '    Release ' + V.release) : ''),
+             72, 'textSecondary', 'small');
 
         client.addChild(new ui.controls.Label({
             x: 24, y: 104, width: client.width - 48, height: 1, text: ''
@@ -109,7 +112,7 @@
         return CORE.ok(true);
     }
 
-    var About = { version: '1.0.0', id: APP.id, displayName: '关于系统', icon: APP.icon, open: open, register: register };
+    var About = { version: (G.EznK.Platform && G.EznK.Platform.Version) ? G.EznK.Platform.Version.semver() : '1.3.0', id: APP.id, displayName: '关于系统', icon: APP.icon, open: open, register: register };
     G.EznK.Apps.about = About;
     register();
     CORE.createLogger('EznK/L6:about').info('js/apps/about.js 已加载');
