@@ -63,7 +63,17 @@
     };
 
     Button.prototype.onControlMessage = function (msg) {
-        if (msg.type === 'click' || (msg.type === 'mouseup' && this.hover && this.pressed)) {
+        /* 只认 'click'。
+         * window.js 在 mouseup 时先派发 'mouseup'、再派发 'click'，
+         * 两个分支都触发 fire() 会让每个按钮单击被识别成两次
+         * （后果：执行两次、通知发两条、计数加二）。
+         * mouseup 只负责清掉按下状态。 */
+        if (msg.type === 'mouseup') {
+            this.pressed = false;
+            this.invalidate();
+            return 'up';
+        }
+        if (msg.type === 'click') {
             this.fire();
             return 'clicked';
         }

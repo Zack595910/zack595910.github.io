@@ -438,8 +438,15 @@
             /* 记录按下的控件，抬起时比对才能判定为一次 click */
             w._downTarget = w.root.hitTestTree(p.x, p.y);
             routeDown(w, p, ev);
-            /* 若进入了拖拽/调整状态，立刻把后续 move/up 提到 window 上 */
-            if (w.dragging || w.resizing) { ensureCapture(); }
+            /* 若进入了拖拽/调整状态，立刻把后续 move/up 提到 window 上，
+             * 并马上让内容宿主（KD iframe）交出鼠标事件 —— 必须在这一刻
+             * 就做，否则第一帧 mousemove 会落进 iframe 被它吃掉。 */
+            if (w.dragging || w.resizing) {
+                if (typeof w._kdSync === 'function') {
+                    try { w._kdSync(); } catch (_) {}
+                }
+                ensureCapture();
+            }
         });
 
         /* 阻止浏览器自带右键菜单，让 canvas 内的右键菜单生效 */
@@ -784,6 +791,10 @@
     CtlWindow.prototype.endDrag = function () {
         this.dragging = false;
         this.dragStart = null;
+        /* 拖动结束后让内容宿主恢复可交互（KD iframe 的 pointer-events） */
+        if (typeof this._kdSync === 'function') {
+            try { this._kdSync(); } catch (_) {}
+        }
         if (this.surface) { this.surface.invalidate(); }
     };
 
@@ -793,6 +804,11 @@
         w.y = Math.max(0, w.dragStart.wy + (ev.clientY - w.dragStart.my));
         w.surface.element.style.left = w.x + 'px';
         w.surface.element.style.top = w.y + 'px';
+        /* 通知窗口内容的宿主（KD iframe 等）跟随移动。
+         * 这些宿主是真实 DOM 元素，不会随 canvas 自动重绘。 */
+        if (typeof w._kdSync === 'function') {
+            try { w._kdSync(); } catch (_) {}
+        }
         USER.MoveWindow(w.id, w.x, w.y);
     }
 
@@ -823,6 +839,11 @@
         w.resizing = false;
         w.resizeGrip = null;
         w.resizeStart = null;
+        /* 先清状态再通知宿主，否则宿主看到的仍是 resizing=true，
+         * 会把 pointer-events 又设回 none。 */
+        if (typeof w._kdSync === 'function') {
+            try { w._kdSync(); } catch (_) {}
+        }
         USER.MoveWindow(w.id, w.x, w.y, w.width, w.height);
         if (w.surface) { w.surface.invalidate(); }
     }
@@ -951,19 +972,25 @@
     CtlWindow.prototype.toggleMaximize = function () {
         if (!this.resizable) { return fail(S.EACCES, { reason: 'window is not resizable' }); }
         if (this.maximized) {
+            /* 先清最大化标志再改几何：applyGeometry 会触发布局与
+             * 内容宿主同步，宿主需要看到正确的新状态。 */
+            this.maximized = false;
             if (this.preMax) {
                 applyGeometry(this, this.preMax.x, this.preMax.y, this.preMax.width, this.preMax.height);
             }
-            this.maximized = false;
             USER.UnmaximizeWindow(this.id);
         } else {
             this.preMax = { x: this.x, y: this.y, width: this.width, height: this.height };
             var host = desktopElement();
             var W = host.status === S.OK ? host.value.clientWidth : 1280;
             var H = host.status === S.OK ? host.value.clientHeight : 720;
-            applyGeometry(this, 0, 0, W, H);
             this.maximized = true;
+            applyGeometry(this, 0, 0, W, H);
             USER.MaximizeWindow(this.id);
+        }
+        /* 通知内容宿主（KD iframe 等）跟随最大化 / 还原后的新尺寸 */
+        if (typeof this._kdSync === 'function') {
+            try { this._kdSync(); } catch (_) {}
         }
         if (this.surface) { this.surface.invalidate(); }
         return ok(true);
@@ -990,6 +1017,16 @@
     CtlWindow.prototype.destroy = function () {
         if (this.destroyed) { return ok(true); }
         this.destroyed = true;
+        /* 调用窗口自己的清理钩子：KD 应用要靠它移除 iframe、
+         * 应用要靠它注销订阅，否则关掉窗口后 DOM 会残留在页面上。 */
+        if (typeof this.onDestroy === 'function') {
+            try { this.onDestroy(); } catch (err) {
+                var srmE = (G.EznK.Kernel && G.EznK.Kernel.SRM) || G.SRM;
+                if (srmE && srmE.emit) {
+                    srmE.emit('ui:error', { window: this.id, error: err && err.message });
+                }
+            }
+        }
         delete live[this.id];
         var hs = listeners[this.id] || [];
         hs.forEach(function (h) { if (DOM) { DOM.off(h); } });
