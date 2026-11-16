@@ -229,7 +229,7 @@
             HKCU: {
                 Software: {
                     EZNT: {
-                        Version: '1.0.0',
+                        Version: (G.EznK.Platform && G.EznK.Platform.Version) ? G.EznK.Platform.Version.semver() : '1.3.0',
                         RegisteredOwner: 'EZNT User'
                     }
                 },
@@ -270,7 +270,7 @@
             HKLM: {
                 Software: {
                     EZNT: {
-                        Version: '1.0.0',
+                        Version: (G.EznK.Platform && G.EznK.Platform.Version) ? G.EznK.Platform.Version.semver() : '1.3.0',
                         BuildNumber: '1',
                         RegisteredOwner: 'EZNT',
                         InstallDate: new Date().toISOString().slice(0, 10),
@@ -465,7 +465,7 @@
 
     var Registry = {};
     Registry.__isRegistry = true;
-    Registry.version = '1.0.0';
+    Registry.version = (G.EznK.Platform && G.EznK.Platform.Version) ? G.EznK.Platform.Version.semver() : '1.3.0';
     Registry.STATUS = S;
 
     /* strict API */
