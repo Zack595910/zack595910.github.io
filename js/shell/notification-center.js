@@ -146,10 +146,40 @@
         return CORE.ok(true);
     }
 
+    /**
+     * clearAll() - 清空全部通知
+     *
+     * 之前只清掉浮动 toast，没有清 state.history，所以通知中心里的
+     * 历史条目一直在，看起来"点清除没反应"。现在两处都清，并把
+     * 清空结果写回配置盘（服务层的 clear）。
+     */
     function clearAll() {
+        /* 1) 浮动 toast */
         state.toasts.forEach(function (t) { if (t.timer) { TIME.cancel(t.timer); } });
         state.toasts = [];
+
+        /* 2) 历史记录 */
+        state.history = [];
+
+        /* 3) 落盘（避免刷新后又冒出来） */
+        try {
+            var svc = G.EznK.Service && G.EznK.Service.notify;
+            if (svc && typeof svc.clear === 'function') { svc.clear(); }
+            else if (svc && typeof svc.save === 'function') { svc.save([]); }
+        } catch (_) {}
+
+        /* 4) 重绘：通知面板和任务栏徽标都要更新 */
         if (state.surface) { state.surface.invalidate(); }
+        if (state.panel && state.panel.invalidate) {
+            state.panel.invalidate();
+        } else if (state.panel && state.panel.surface && state.panel.surface.invalidate) {
+            state.panel.surface.invalidate();
+        }
+        try {
+            var tb = G.EznK.Shell && G.EznK.Shell.taskbar;
+            if (tb && typeof tb.invalidate === 'function') { tb.invalidate(); }
+        } catch (_) {}
+
         return CORE.ok(true);
     }
 
@@ -178,13 +208,64 @@
         if (surfRes.status !== S.OK) { return surfRes; }
         var surf = surfRes.value;
         var taskbarH = EznK.Shell.taskbar ? EznK.Shell.taskbar.HEIGHT : 40;
+        /* 用绝对像素定位而不是 right/bottom：
+         * 宿主有 transform 时 fixed 的 right/bottom 会失效，
+         * 面板会跑到左上角（0,0），看起来"点了没反应"。 */
+        var vw = G.innerWidth || 1280;
+        var vh = G.innerHeight || 720;
+        var panelH = state.height;
         surf.element.style.position = 'fixed';
-        surf.element.style.right = '0px';
-        surf.element.style.bottom = taskbarH + 'px';
+        surf.element.style.right = '';
+        surf.element.style.bottom = '';
+        surf.element.style.left = Math.max(0, vw - PANEL_W) + 'px';
+        surf.element.style.top = Math.max(0, vh - taskbarH - panelH) + 'px';
         surf.element.style.zIndex = '95001';
+        /* 窗口尺寸变化时跟着贴右下角 */
+        state._panelReposition = function () {
+            if (!state.panel) { return; }
+            var w2 = G.innerWidth || 1280;
+            var h2 = G.innerHeight || 720;
+            var tb = EznK.Shell.taskbar ? EznK.Shell.taskbar.HEIGHT : 40;
+            state.panel.element.style.left = Math.max(0, w2 - PANEL_W) + 'px';
+            state.panel.element.style.top = Math.max(0, h2 - tb - state.height) + 'px';
+        };
+        if (!state._resizeBound && G.addEventListener) {
+            state._resizeBound = true;
+            G.addEventListener('resize', function () {
+                if (state._panelReposition) { state._panelReposition(); }
+            });
+        }
         /* 通知历史面板需要可点击（关闭按钮），保留默认 pointer-events */
         surf.painter = function (s) { paintPanel(s); };
         surf.invalidate();
+
+        /* 面板点击：点"全部清除"就清空；点其他地方不处理 */
+        state.clearHover = false;
+        surf.element.style.pointerEvents = 'auto';
+        surf.element.addEventListener('mousemove', function (ev) {
+            var r = surf.element.getBoundingClientRect();
+            var lx = ev.clientX - r.left, ly = ev.clientY - r.top;
+            var br = clearBtnRect();
+            var hov = lx >= br.x && lx <= br.x + br.w && ly >= br.y && ly <= br.y + br.h;
+            if (hov !== state.clearHover) {
+                state.clearHover = hov;
+                surf.invalidate();
+            }
+        });
+        surf.element.addEventListener('click', function (ev) {
+            var r = surf.element.getBoundingClientRect();
+            var lx = ev.clientX - r.left, ly = ev.clientY - r.top;
+            /* 点"全部清除"按钮 */
+            var br = clearBtnRect();
+            if (lx >= br.x && lx <= br.x + br.w && ly >= br.y && ly <= br.y + br.h) {
+                clearAll();
+                close();
+                return;
+            }
+            /* 点面板空白处：关闭面板 */
+            if (ly > 40) { close(); }
+        });
+
         state.panel = surf;
         return CORE.ok(true);
     }
@@ -195,6 +276,11 @@
         return CORE.ok(true);
     }
 
+    /* 面板上的"全部清除"按钮矩形（点击判定用） */
+    function clearBtnRect() {
+        return { x: PANEL_W - 20 - 76, y: 10, w: 76, h: 22 };
+    }
+
     function paintPanel(surface) {
         var t = RES.theme().value;
         GDI.FillRect(surface.dc, 0, 0, PANEL_W, surface.height, t.surface);
@@ -202,6 +288,18 @@
         GDI.SelectObject(surface.dc, RES.font('title'));
         GDI.SetTextColor(surface.dc, t.text);
         GDI.DrawText(surface.dc, '通知中心', 12, 12);
+
+        /* 全部清除按钮 */
+        var br = clearBtnRect();
+        var hov = state.clearHover === true;
+        GDI.FillRect(surface.dc, br.x, br.y, br.w, br.h,
+            hov ? '#E81123' : t.surfaceAlt);
+        GDI.DrawRect(surface.dc, br.x, br.y, br.w, br.h, t.border, 1);
+        GDI.SelectObject(surface.dc, RES.font('small'));
+        GDI.SetTextColor(surface.dc, hov ? '#ffffff' : t.text);
+        GDI.SetTextAlign(surface.dc, 'center');
+        GDI.DrawText(surface.dc, '🗑 全部清除', br.x, br.y + 4, br.w);
+        GDI.SetTextAlign(surface.dc, 'left');
 
         var list = state.history.slice(-8).reverse();
         GDI.SelectObject(surface.dc, RES.font('small'));

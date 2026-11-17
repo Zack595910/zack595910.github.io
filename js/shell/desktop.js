@@ -104,14 +104,20 @@
         var vw = window.innerWidth || 1280;
         var vh = (window.innerHeight || 720) - TASKBAR_H;
 
+        /* 可用行数：屏幕放不下时把整列上移，保证最后一行不被任务栏遮住 */
+        var rowsFit = Math.max(1, Math.floor((vh - PAD_Y * 2) / ICON_H));
+        var row = Math.min(ic.row, rowsFit - 1);
+        var overflow = Math.max(0, ic.row - (rowsFit - 1));
+
         if (ic.side === 'left') {
-            return { x: PAD_X, y: PAD_Y + ic.row * ICON_H };
+            /* 超出时向右开新列，避免压在一起 */
+            return { x: PAD_X + overflow * ICON_W, y: PAD_Y + row * ICON_H };
         }
         if (ic.side === 'right') {
-            return { x: vw - ICON_W - PAD_X, y: PAD_Y + ic.row * ICON_H };
+            return { x: vw - ICON_W - PAD_X - overflow * ICON_W, y: PAD_Y + row * ICON_H };
         }
         /* 右下角 */
-        return { x: vw - ICON_W - PAD_X, y: vh - ICON_H - PAD_Y };
+        return { x: vw - ICON_W - PAD_X, y: Math.max(PAD_Y, vh - ICON_H - PAD_Y) };
     }
 
     /** 生成系统图标的完整描述（供 Desktop 渲染） */
@@ -126,6 +132,10 @@
                 type: 'system',
                 systemId: ic.id,
                 appId: ic.app,
+                /* side/row 必须透传：屏幕尺寸变化时 UI 层要用它们
+                 * 重新计算系统图标位置，否则左右两列会跑出屏幕。 */
+                side: ic.side || 'left',
+                row: typeof ic.row === 'number' ? ic.row : 0,
                 desc: ic.desc,
                 path: null,
                 x: p.x,
@@ -142,8 +152,36 @@
         return '/Users/' + currentUserName() + '/Desktop';
     }
 
+    /**
+     * 屏幕尺寸变化时自动重排桌面图标。
+     * 之前布局写死每列 6 个，窗口变小后图标就跑出屏幕了。
+     */
+    var _relayoutBound = false;
+    function bindRelayout() {
+        if (_relayoutBound) { return; }
+        _relayoutBound = true;
+        var run = function () {
+            try {
+                if (ui.Desktop.RelayoutDesktop) { ui.Desktop.RelayoutDesktop(); }
+                /* 系统图标也按新尺寸重算 */
+                if (ui.Desktop.SetSystemIcons) { ui.Desktop.SetSystemIcons(buildSystemIcons()); }
+                loadPositions();
+            } catch (_) {}
+        };
+        if (G.addEventListener) {
+            G.addEventListener('resize', run);
+        }
+        /* 桌面画布自身尺寸变化（缩放/分辨率改变）也要响应 */
+        var srm = G.EznK.Kernel && G.EznK.Kernel.SRM;
+        if (srm && typeof srm.on === 'function') {
+            srm.on('desktop:resized', run);
+            srm.on('resolution:changed', run);
+        }
+    }
+
     /** refresh() -> Promise  重新载入桌面图标（系统图标 + 用户文件） */
     function refresh() {
+        bindRelayout();
         var folder = desktopFolder();
         return api.kernel.CreateDirectory(folder).then(function () {
             return ui.Desktop.LoadFromFolder(folder);

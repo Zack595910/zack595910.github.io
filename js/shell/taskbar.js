@@ -195,6 +195,9 @@
         on('click', function (ev) {
             var r = el.getBoundingClientRect();
             var x = ev.clientX - r.left;
+            /* y 之前没定义，导致后面 inRect(x, y, ...) 永远失败 ——
+             * 点击时钟/托盘全部没反应。 */
+            var y = ev.clientY - r.top;
             if (state.startRect && x < state.startRect.w) {
                 if (EznK.Shell && EznK.Shell.startMenu) {
                     EznK.Shell.startMenu.toggle();
@@ -218,10 +221,140 @@
                 showUserMenu();
                 return;
             }
-            if (state.clockRect && x >= state.clockRect.x) {
+            /* 托盘（通知图标）：点击开关通知中心 */
+            if (state.trayRect && inRect(x, y, state.trayRect)) {
                 if (EznK.Shell && EznK.Shell.notifications) { EznK.Shell.notifications.toggle(); }
+                return;
+            }
+            /* 时钟：点击弹出时钟面板（之前错写成打开通知中心，
+             * 而且只判断了 x 没判断 y，导致时钟右侧全被当成时钟）。 */
+            if (state.clockRect && inRect(x, y, state.clockRect)) {
+                toggleClockPanel();
+                return;
             }
         });
+    }
+
+    /** inRect(x, y, rect) - 点是否落在矩形内 */
+    function inRect(x, y, r) {
+        return !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+    }
+
+    /* =================================================================
+     * 3c. 时钟面板
+     *     PTD 的托盘时钟：点击显示一个大时钟 + 电子时间 + 日期。
+     * ============================================================== */
+
+    var clockState = { panel: null, timer: null };
+
+    function toggleClockPanel() {
+        if (clockState.panel) { closeClockPanel(); return; }
+        openClockPanel();
+    }
+
+    function closeClockPanel() {
+        if (clockState.timer) { clearInterval(clockState.timer); clockState.timer = null; }
+        if (clockState.panel) {
+            try { CANVAS.dispose(clockState.panel); } catch (_) {}
+            clockState.panel = null;
+        }
+    }
+
+    function openClockPanel() {
+        var hostRes = DOM.byId('eznt-root');
+        if (hostRes.status !== S.OK) { return; }
+        var W = 300, H = 300;
+        var surfRes = CANVAS.CreateForParent(hostRes.value, W, H);
+        if (surfRes.status !== S.OK) { return; }
+        var surf = surfRes.value;
+
+        var vw = G.innerWidth || 1280;
+        var vh = G.innerHeight || 720;
+        var taskH = state.surface ? state.surface.height : 40;
+        surf.element.style.position = 'fixed';
+        surf.element.style.left = Math.max(0, vw - W) + 'px';
+        surf.element.style.top = Math.max(0, vh - taskH - H) + 'px';
+        surf.element.style.zIndex = '96000';
+        surf.element.style.pointerEvents = 'auto';
+
+        function paintClock(s) {
+            var th = RES.theme().value;
+            var now = new Date();
+            GDI.FillRect(s.dc, 0, 0, W, H, th.surface);
+            GDI.DrawRect(s.dc, 0, 0, W, H, th.border, 1);
+
+            /* --- 模拟大时钟 --- */
+            var cx = W / 2, cy = 100, R = 72;
+            GDI.FillRect(s.dc, cx - R, cy - R, R * 2, R * 2, th.surfaceAlt);
+            GDI.DrawRect(s.dc, cx - R, cy - R, R * 2, R * 2, th.accent || th.border, 2);
+
+            /* 12 个刻度 */
+            var i, ang;
+            for (i = 0; i < 12; i++) {
+                ang = (i / 12) * Math.PI * 2;
+                var tx = cx + Math.sin(ang) * (R - 12);
+                var ty = cy - Math.cos(ang) * (R - 12);
+                GDI.FillRect(s.dc, Math.round(tx) - 1, Math.round(ty) - 1, 3, 3, th.textSecondary);
+            }
+
+            var hh = now.getHours() % 12, mm = now.getMinutes(), ss = now.getSeconds();
+            var hAng = ((hh + mm / 60) / 12) * Math.PI * 2;
+            var mAng = ((mm + ss / 60) / 60) * Math.PI * 2;
+            var sAng = (ss / 60) * Math.PI * 2;
+
+            /* 时针 */
+            line(s.dc, cx, cy, cx + Math.sin(hAng) * (R * 0.5), cy - Math.cos(hAng) * (R * 0.5), th.text, 4);
+            /* 分针 */
+            line(s.dc, cx, cy, cx + Math.sin(mAng) * (R * 0.72), cy - Math.cos(mAng) * (R * 0.72), th.text, 3);
+            /* 秒针 */
+            line(s.dc, cx, cy, cx + Math.sin(sAng) * (R * 0.8), cy - Math.cos(sAng) * (R * 0.8), th.accent || '#E81123', 2);
+
+            /* 中心点 */
+            GDI.FillRect(s.dc, cx - 4, cy - 4, 8, 8, th.accent || th.text);
+
+            /* --- 电子时间（HH:MM:SS，等宽、大字号） --- */
+            var hh2 = String(now.getHours()).padStart(2, '0');
+            var mi2 = String(now.getMinutes()).padStart(2, '0');
+            var se2 = String(now.getSeconds()).padStart(2, '0');
+            var timeStr = hh2 + ':' + mi2 + ':' + se2;
+            GDI.SelectObject(s.dc, RES.font('iconLarge'));
+            GDI.SetTextColor(s.dc, th.text);
+            GDI.SetTextAlign(s.dc, 'left');
+            GDI.DrawText(s.dc, timeStr, 16, 196, W - 32);
+
+            /* --- 日期 --- */
+            var WEEK = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+            var dateStr = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' +
+                          now.getDate() + '日  ' + WEEK[now.getDay()];
+            GDI.SelectObject(s.dc, RES.font('ui'));
+            GDI.SetTextColor(s.dc, th.textSecondary);
+            GDI.DrawText(s.dc, dateStr, 16, 240, W - 32);
+
+            /* --- 提示 --- */
+            GDI.SelectObject(s.dc, RES.font('small'));
+            GDI.SetTextColor(s.dc, th.textDisabled);
+            GDI.DrawText(s.dc, '点击面板关闭', 16, 270, W - 32);
+        }
+
+        function line(dc, x1, y1, x2, y2, color, w) {
+            /* 用一串小方块画线，避免依赖 GDI 是否提供 DrawLine */
+            var steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+            steps = Math.max(1, Math.round(steps));
+            for (var k = 0; k <= steps; k++) {
+                var px = x1 + (x2 - x1) * (k / steps);
+                var py = y1 + (y2 - y1) * (k / steps);
+                GDI.FillRect(dc, Math.round(px) - w / 2, Math.round(py) - w / 2, w, w, color);
+            }
+        }
+
+        surf.painter = function (s) { paintClock(s); };
+        surf.element.addEventListener('click', function () { closeClockPanel(); });
+        surf.invalidate();
+
+        clockState.panel = surf;
+        clockState.timer = setInterval(function () {
+            if (clockState.panel) { clockState.panel.invalidate(); }
+        }, 1000);
     }
 
     /* =================================================================
@@ -405,6 +538,11 @@
     Taskbar.Resize = Resize;
     Taskbar.dispose = dispose;
     Taskbar.HEIGHT = RES.METRICS.taskbarHeight;
+    /* 状态与时钟面板：供桌面/测试读取托盘、时钟、用户区域位置 */
+    Taskbar.state = function () { return state; };
+    Taskbar.openClock = openClockPanel;
+    Taskbar.closeClock = closeClockPanel;
+    Taskbar.toggleClock = toggleClockPanel;
     /* 供开始菜单判断"点击是否在任务栏内" */
     Object.defineProperty(Taskbar, '_surfaceEl', {
         get: function () { return state._surfaceEl || null; }

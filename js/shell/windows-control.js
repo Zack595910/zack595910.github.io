@@ -472,7 +472,19 @@
             };
             makeClickable(sw, function () {
                 var th = svc().theme;
-                if (th) { try { th.set(th.get().value.name); th.repaintAll(); } catch (e) {} }
+                /* 之前这里调 th.set(th.get().value.name) —— 传的是当前主题名，
+                 * 等于什么都没改，所以"窗口颜色"点了没反应。
+                 * 正确做法：把色块的颜色设为窗口强调色。 */
+                if (th && typeof th.setAccent === 'function') {
+                    var r = th.setAccent(c);
+                    if (r.status !== S.OK) {
+                        setName('设置失败：' + (r.reason || ''));
+                        render();
+                        return;
+                    }
+                } else if (th) {
+                    th.repaintAll();
+                }
                 setName(T('pers.windowColorChanged', '窗口颜色已更改'));
                 render();
             });

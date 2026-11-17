@@ -149,6 +149,12 @@
         state.surface.element.style.left = '0px';
         state.surface.element.style.top = '0px';
         state.surface.element.style.zIndex = '99000';
+        /* 关键：canvas 必须有 tabindex 才能获得键盘焦点。
+         * 密码框是画上去的，没有真实 input，靠 canvas 收 keydown。
+         * 之前没设 tabindex，锁屏后按什么键都没反应。 */
+        state.surface.element.setAttribute('tabindex', '0');
+        state.surface.element.style.outline = 'none';
+        state.surface.element.style.cursor = 'text';
         state.surface.painter = function (s) { paint(s); };
         bindEvents();
         return CORE.ok(state.surface);
@@ -170,6 +176,10 @@
         state.selected = 0;
         tickClock();
         invalidate();
+        /* 主动把焦点给 canvas，用户才能直接打字 */
+        setTimeout(function () {
+            try { state.surface.element.focus({ preventScroll: true }); } catch (_) {}
+        }, 60);
         return new Promise(function (resolve) { state.resolve = resolve; });
     }
 
@@ -205,6 +215,12 @@
     function bindEvents() {
         var el = state.surface.element;
         function on(ev, fn) { var h = DOM.on(el, ev, fn); if (h.status === S.OK) { state.listeners.push(h.value); } }
+
+        /* 点一下锁屏任意位置就重新拿回焦点 */
+        on('mousedown', function (ev) {
+            try { state.surface.element.focus({ preventScroll: true }); } catch (_) {}
+            if (ev.preventDefault) { ev.preventDefault(); }
+        });
 
         on('keydown', function (ev) {
             if (ev.key === 'Enter') {
