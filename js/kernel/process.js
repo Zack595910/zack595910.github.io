@@ -81,6 +81,13 @@
             owner: (info && info.owner) || null,
             exitCode: null
         };
+        /* 把 info.onKill 登记到 killHandlers，killProcess 才会回调它。
+         * 没有这一步，即使调用方传了 onKill 也不会被执行 —— 这是
+         * "结束进程后窗口不消失" 的最后一环。 */
+        if (info && typeof info.onKill === 'function') {
+            if (!killHandlers[pid]) { killHandlers[pid] = []; }
+            killHandlers[pid].push(info.onKill);
+        }
         LOG.info('process started: ' + table[pid].name + ' (' + table[pid].type + ') pid=' + pid);
         emitSafely('process:start', { pid: pid, name: table[pid].name, type: table[pid].type });
         return pid;
