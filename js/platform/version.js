@@ -37,14 +37,14 @@
 
     /* ---------------- 版本三元组 ---------------- */
     var MAJOR = 1;
-    var MINOR = 5;
+    var MINOR = 8;
     var PATCH = 0;
 
     /* ---------------- 构建信息 ---------------- */
     /* BUILD 用当天日期：每次交付手动更新为当天 YYYYMMDD */
-    var BUILD = '20261116';
+    var BUILD = '20261117';
     /* RELEASE 每交付一次 +1 */
-    var RELEASE = 10;
+    var RELEASE = 17;
 
     var NAME = 'EZNT';
     var CODENAME = 'Ecosystem Native Technology';
