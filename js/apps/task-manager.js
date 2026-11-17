@@ -103,22 +103,37 @@
                     if (state.status) { state.status.setPane('main', '请先选中一个进程'); }
                     return;
                 }
-                var pid = state.rowPids[state.table.selectedIndex];
+                /* Table.setRows 把数组行包装成 { id, cells: [...] }，
+                 * getSelected() 返回的就是这个包装对象 —— 直接取 row[0]
+                 * 永远是 undefined。必须走 row.cells[0]。 */
+                var cells = row.cells || row;
+                var procName = (cells && cells[0] !== undefined) ? String(cells[0]) : '(未知进程)';
+
+                var idx = state.table.selectedIndex;
+                var pid = state.rowPids[idx];
+                /* 行号与 pid 列表错位时（例如刷新增删过行），用名字兜底查找 */
+                if (!pid) {
+                    var procs = EznK.Kernel.SRM.listProcesses() || {};
+                    Object.keys(procs).forEach(function (k) {
+                        if (!pid && procs[k] && String(procs[k].name) === procName) { pid = k; }
+                    });
+                }
                 if (!pid) {
                     if (state.status) { state.status.setPane('main', '该进程无法结束'); }
                     return;
                 }
+
                 var r = EznK.Kernel.SRM.killProcess(pid);
                 var nc = G.EznK.Shell && G.EznK.Shell.notifications;
                 if (nc) {
                     nc.push({
                         title: '任务管理器',
-                        text: r ? ('已结束进程：' + row[0]) : ('无法结束：' + row[0]),
+                        text: r ? ('已结束进程：' + procName) : ('无法结束：' + procName),
                         level: r ? 'info' : 'warn'
                     });
                 }
                 if (state.status) {
-                    state.status.setPane('main', r ? ('已结束 ' + row[0]) : ('无法结束 ' + row[0]));
+                    state.status.setPane('main', r ? ('已结束 ' + procName) : ('无法结束 ' + procName));
                 }
                 refresh();
             }
@@ -160,7 +175,12 @@
         return CORE.ok(true);
     }
 
-    var TM = { version: '1.0.0', id: APP.id, displayName: '任务管理器', icon: APP.icon, open: open, register: register, refresh: refresh };
+    var TM = {
+        version: '1.0.0', id: APP.id, displayName: '任务管理器', icon: APP.icon,
+        open: open, register: register, refresh: refresh,
+        state: function () { return state; },
+        collect: collect
+    };
     G.EznK.Apps.taskManager = TM;
     register();
     CORE.createLogger('EznK/L6:taskmgr').info('js/apps/task-manager.js 已加载');

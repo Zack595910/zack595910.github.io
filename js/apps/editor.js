@@ -250,11 +250,27 @@
      * ============================================================== */
 
     function open(opts) {
-        var o = opts || {};
+        /* 兼容两种调用方式：
+         *   editor.open({ path: '/a.txt' })   —— 应用内部/桌面图标常用
+         *   editor.open('/a.txt')             —— ShellExecute 按关联打开
+         * 之前只支持对象，ShellExecute 传字符串时 o.path 是 undefined，
+         * 结果打开的是空白文档。 */
+        var o;
+        if (typeof opts === 'string') {
+            o = { path: opts };
+        } else {
+            o = opts || {};
+        }
         var svc = G.EznK.Service && G.EznK.Service.window;
+        /* 允许开多个编辑器窗口：从桌面双击不同文件时应当各自开一个窗口，
+         * 否则第二个文件会复用第一个窗口，看起来"内容还是旧的"。 */
         var created = svc
-            ? svc.open({ title: '代码编辑器', width: APP.width, height: APP.height, icon: APP.icon, appId: APP.id })
-            : ui.Window.Create({ title: '代码编辑器', width: APP.width, height: APP.height });
+            ? svc.open({ title: o.path ? String(o.path).split('/').pop() : '代码编辑器',
+                         width: APP.width, height: APP.height,
+                         icon: APP.icon, appId: APP.id,
+                         singleInstance: false })
+            : ui.Window.Create({ title: o.path ? String(o.path).split('/').pop() : '代码编辑器',
+                                 width: APP.width, height: APP.height });
         if (created.status !== S.OK) { return created; }
 
         var win = created.value;

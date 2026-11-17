@@ -133,7 +133,7 @@
         var DOM = G.EznK.Platform.DOM;
         var v = DOM.create('video', {
             style: { display: 'none' },
-            attributes: { autoplay: 'autoplay', playsinline: 'playsinline', muted: 'muted' }
+            attrs: { autoplay: 'autoplay', playsinline: 'playsinline', muted: 'muted' }
         });
         if (v.status === S.OK) {
             st.frameEl = v.value;
