@@ -43,6 +43,7 @@
     var LOG = CORE.createLogger('Ezn32/UI:desktop');
 
     var state = {
+        scale: 1,           /* 桌面图标缩放因子（小屏时自动缩小） */
         surface: null,
         icons: [],
         selected: -1,
@@ -127,6 +128,166 @@
         return RES.icon('file');
     }
 
+    /**
+     * DesktopGrid() -> { perCol, maxCols, grid, originX, originY, width, height }
+     *   根据桌面画布的实际尺寸计算一列能放多少个图标、最多几列。
+     *   任务栏高度从桌面元素的 clientHeight 里已经扣掉了。
+     */
+    function DesktopGrid() {
+        var grid = RES.METRICS.desktopGridSize || 100;
+        var iconH = RES.METRICS.iconSize || 48;
+        var ORIGIN_X = 130;
+        var ORIGIN_Y = 20;
+        var BOTTOM_PAD = 12;
+        var RIGHT_PAD = 12;
+
+        /* 可用尺寸：优先用真实桌面画布，退回到 window */
+        var vw = 1280, vh = 720;
+        try {
+            var el = SurfaceElement();
+            if (el) { vw = el.clientWidth || vw; vh = el.clientHeight || vh; }
+        } catch (_) {}
+        if (!vw) { vw = G.innerWidth || 1280; }
+        if (!vh) { vh = (G.innerHeight || 720); }
+
+        /* 一列能放几个：可用高度去掉上下留白后按网格高整除 */
+        var usableH = Math.max(grid, vh - ORIGIN_Y - BOTTOM_PAD);
+        var perCol = Math.max(1, Math.floor(usableH / grid));
+
+        /* 最多几列：从 ORIGIN_X 到右边留白之间按网格宽整除 */
+        var usableW = Math.max(grid, vw - ORIGIN_X - RIGHT_PAD);
+        var maxCols = Math.max(1, Math.floor(usableW / grid));
+
+        /* 自动缩放：如果单列放不下常见的系统图标数量（按 6 个算），
+         * 就按比例缩小整个网格，保证图标能完整显示。 */
+        var wantRows = 6;
+        var needH = wantRows * grid;
+        var haveH = Math.max(grid, vh - ORIGIN_Y - BOTTOM_PAD);
+        var autoScale = needH > haveH ? Math.max(0.55, haveH / needH) : 1;
+
+        return {
+            perCol: perCol,
+            maxCols: maxCols,
+            grid: grid,
+            gridScaled: grid * autoScale,
+            autoScale: autoScale,
+            originX: ORIGIN_X,
+            originY: ORIGIN_Y,
+            width: vw,
+            height: vh,
+            iconH: iconH,
+            capacity: perCol * maxCols
+        };
+    }
+
+    /**
+     * RelayoutDesktop() - 按当前屏幕尺寸重新排列用户文件图标。
+     *   窗口大小变化（桌面缩放、浏览器窗口改变）后调用，保证图标
+     *   不会跑到屏幕外。系统图标位置由外壳用 systemIconPosition 计算，
+     *   这里只重排非系统图标。
+     */
+    function RelayoutDesktop() {
+        var cap = DesktopGrid();
+        state.scale = cap.autoScale;
+        var grid = cap.gridScaled;
+        var iconH = RES.METRICS.iconSize || 48;
+        var count = 0;
+
+        /* 1) 用户文件：从系统图标右侧开始网状排布。
+         * 容量不足时压缩步距（最多压到 60%），保证所有图标都留在屏内。 */
+        var users = state.icons.filter(function (ic) { return ic.type !== 'system'; });
+        var need = users.length;
+        var cols = cap.maxCols;
+        var rows = cap.perCol;
+        var stepX = grid, stepY = grid;
+        if (need > cols * rows) {
+            /* 需要更多格子：先加列，再加行，最后压步距 */
+            var wantCols = Math.ceil(need / rows);
+            if (wantCols > cols) {
+                var availW = Math.max(grid, cap.width - cap.originX - 12);
+                stepX = Math.max(grid * 0.6, availW / wantCols);
+                cols = Math.max(1, Math.floor(availW / stepX));
+                var wantRows = Math.ceil(need / cols);
+                if (wantRows > rows) {
+                    /* 第 n 行底边 = originY + (n-1)*stepY + ICON_H 必须 <= height。
+                     * 所以 stepY <= (height - originY - ICON_H) / (n-1)。
+                     * 这里用的 ICON_H 是布局网格高度（含文字标签），
+                     * 不是图标本体高度。 */
+                    var labelH = grid;                 /* 图标 + 标签的完整高度 */
+                    var padB = 8;
+                    var maxBottom = cap.height - padB - labelH;
+                    var span = Math.max(0, maxBottom - cap.originY);
+                    var wantRowsN = Math.max(1, wantRows);
+                    stepY = wantRowsN > 1 ? (span / (wantRowsN - 1)) : grid;
+                    stepY = Math.min(grid, Math.max(24, stepY));
+                    rows = wantRowsN;
+                }
+            }
+        }
+        users.forEach(function (ic, i) {
+            var col = Math.floor(i / rows);
+            var row = i % rows;
+            ic.x = cap.originX + col * stepX;
+            ic.y = cap.originY + row * stepY;
+            count++;
+        });
+
+        /* 2) 系统图标：左右各占一列。
+         *
+         * 之前行数不够时会向右/左"开新列"（x += grid），新列正好压进
+         * 用户文件区（x=130）或越过回收站，导致图标重叠。
+         * 正确做法：一列内压缩行距，把图标全部塞进这一列。
+         */
+        var systems = state.icons.filter(function (ic) { return ic.type === 'system'; });
+        /* 按 side 分组。没有 side 的按 row/顺序均分：前一半左列，后一半右列。 */
+        var left = [], right = [];
+        systems.forEach(function (ic, i) {
+            var sd = ic.side;
+            if (sd === 'right' || sd === 'bottom') { right.push(ic); }
+            else if (sd === 'left') { left.push(ic); }
+            else {
+                /* 没有 side 信息：一半一半分，保证不会全堆在一列 */
+                if (i < Math.ceil(systems.length / 2)) { left.push(ic); }
+                else { right.push(ic); }
+            }
+        });
+
+        var iconW = (RES.METRICS.desktopIconWidth || 84) * cap.autoScale;
+        var topPad = 20;
+        var bottomPad = 8;
+        var labelH = grid;                       /* 图标 + 标签的完整高度（已含缩放） */
+        var maxBottom = cap.height - bottomPad - labelH;
+
+        function layoutColumn(list, xFn) {
+            if (!list.length) { return; }
+            var n = list.length;
+            /* 步距下限 = 图标+标签实际高度，保证绝不重叠。
+             * 空间不足时优先压缩到 labelH，仍不够就允许贴到底边，
+             * 由绘制层负责把超出的图标裁掉（总比互相压住强）。 */
+            var span = Math.max(labelH, maxBottom - topPad);
+            var step = grid;
+            if (n > 1) {
+                step = Math.max(labelH, Math.min(grid, span / (n - 1)));
+            }
+            list.forEach(function (ic, i) {
+                ic.x = xFn(1);
+                ic.y = topPad + i * step;
+                count++;
+            });
+        }
+
+        layoutColumn(left, function () { return 20; });
+        layoutColumn(right, function (scale) {
+            /* 右侧列按缩放后的宽度贴右边 */
+            var w2 = iconW * (scale || 1);
+            return Math.max(20, cap.width - w2 - 20);
+        });
+
+        invalidate();
+        emit('desktop:relayout', { count: count, perCol: cap.perCol, rowsFit: rowsFit });
+        return CORE.ok(count);
+    }
+
     /** LoadFromFolder(path) - populate icons from a real directory. */
     function LoadFromFolder(path) {
         return K.FindFiles(path).then(function (r) {
@@ -135,14 +296,25 @@
             /* 用户文件从系统图标列的右侧开始排布，避免重叠 */
             var ORIGIN_X = 130;
             var ORIGIN_Y = 20;
-            var list = r.value.map(function (e, i) {
+
+            /* 按桌面实际大小计算每列能放几个图标。
+             * 之前这里写死 /6，屏幕高度不够时第 5、6 个会掉到任务栏下面，
+             * 列数多了也会顶出右边界。 */
+            var cap = DesktopGrid();
+            var perCol = cap.perCol;
+            var maxCols = Math.max(1, cap.maxCols);
+            var maxIcons = perCol * maxCols;
+
+            var list = r.value.slice(0, maxIcons).map(function (e, i) {
+                var col = Math.floor(i / perCol);
+                var row = i % perCol;
                 return {
                     id: e.path,
                     name: e.name,
                     path: e.path,
                     type: e.type === 'dir' ? 'dir' : 'file',
-                    x: ORIGIN_X + Math.floor(i / 6) * grid,
-                    y: ORIGIN_Y + (i % 6) * grid
+                    x: ORIGIN_X + col * grid,
+                    y: ORIGIN_Y + row * grid
                 };
             });
             SetIcons(list);
@@ -177,6 +349,8 @@
                 type: 'system',
                 systemId: ic.systemId || ic.id,
                 appId: ic.appId || null,
+                side: ic.side || 'left',
+                row: typeof ic.row === 'number' ? ic.row : 0,
                 path: null,
                 x: ic.x,
                 y: ic.y
@@ -201,8 +375,19 @@
 
     /** IconPositions() - for persistence by the desktop service. */
     function IconPositions() {
+        /* 返回完整信息：只给 id/x/y 会让调用方（重排、测试、外壳）
+         * 拿不到 name 和 type，无法区分系统图标与用户文件。 */
         return state.icons.map(function (ic) {
-            return { id: ic.id, x: ic.x, y: ic.y };
+            return {
+                id: ic.id,
+                name: ic.name || ic.text || ic.id,
+                text: ic.text || ic.name || ic.id,
+                type: ic.type || (ic.systemId ? 'system' : 'file'),
+                side: ic.side || null,
+                path: ic.path || null,
+                x: ic.x,
+                y: ic.y
+            };
         });
     }
 
@@ -306,9 +491,10 @@
             GDI.FillRect(surface.dc, 0, 0, surface.width, surface.height, t.desktop);
         }
 
-        /* icons */
-        var iconSize = RES.METRICS.iconSize;
-        var labelW = RES.METRICS.desktopIconLabelWidth;
+        /* icons —— 按 state.scale 缩放（小屏自动变小，避免重叠/越界） */
+        var SC = state.scale || 1;
+        var iconSize = Math.round(RES.METRICS.iconSize * SC);
+        var labelW = Math.round(RES.METRICS.desktopIconLabelWidth * SC);
         GDI.SelectObject(surface.dc, RES.font('ui'));
 
         for (var i = 0; i < state.icons.length; i++) {
@@ -475,11 +661,19 @@
     function openIcon(index) {
         var ic = state.icons[index];
         if (!ic) { return CORE.fail(S.ENOENT, { reason: 'no icon at index' }); }
-        if (state.onOpen) {
-            try { state.onOpen(ic); } catch (_) { /* ignore */ }
-        }
+        /* 二选一，不能都执行：
+         *   · 有 appId 的系统图标 -> 只启动应用
+         *   · 用户文件（有 path）  -> 只交给外壳按关联打开
+         * 之前先调 onOpen 再判 appId，其中 onOpen 内部已经会打开文件，
+         * 于是同一次双击打开了两个窗口（一个空白、一个有内容）。 */
         if (ic.appId) {
+            if (state.onOpen) {
+                try { state.onOpen(ic); } catch (_) { /* ignore */ }
+            }
             return SHELL.LaunchApplication(ic.appId);
+        }
+        if (state.onOpen) {
+            try { return state.onOpen(ic); } catch (_) { /* ignore */ }
         }
         if (ic.path) {
             return SHELL.OpenFile(ic.path);
@@ -529,6 +723,8 @@
     D.AddIcon = AddIcon;
     D.GetIcon = GetIcon;
     D.LoadFromFolder = LoadFromFolder;
+    D.DesktopGrid = DesktopGrid;
+    D.RelayoutDesktop = RelayoutDesktop;
     D.IconPositions = IconPositions;
     D.ApplyPositions = ApplyPositions;
     D.SetSystemIcons = SetSystemIcons;

@@ -302,6 +302,40 @@
      * Create(spec) -> { status, value: CtlWindow }
      *   spec intentionally mirrors ezn32.api.user.CreateWindow.
      */
+    /* =================================================================
+     * 进程退出 -> 窗口销毁
+     * --------------------------------------------------------------
+     * 任务管理器"结束任务"走的是 SRM.killProcess，它只从进程表删除记录
+     * 并发出 process:exit 事件。USER 层的窗口对象和 UI 层的 canvas 窗口
+     * 是两套东西，销毁 USER 窗口不会自动收掉画布上的窗口。
+     *
+     * 所以在 UI 层订阅 process:exit：哪个窗口的 pid 被杀了，就把那个
+     * 窗口真正销毁掉。这样任何来源的结束进程（任务管理器、sys 脚本、
+     * killProcess 直接调用）都能让窗口消失。
+     * ============================================================== */
+    var processWatcherBound = false;
+    function bindProcessWatcher() {
+        if (processWatcherBound) { return; }
+        var srm = G.EznK.Kernel && G.EznK.Kernel.SRM;
+        if (!srm || typeof srm.on !== 'function') { return; }
+        processWatcherBound = true;
+        srm.on('process:exit', function (p) {
+            var pid = p && p.pid;
+            if (!pid) { return; }
+            var ids = Object.keys(live);
+            ids.forEach(function (id) {
+                var w = live[id];
+                if (!w || w.destroyed) { return; }
+                var wPid = w.pid || (w.api && w.api.pid) || null;
+                if (wPid && wPid === pid) {
+                    /* 直接走 UI 的 destroy（会触发 onDestroy、清理 DOM），
+                     * 但不要再回头调 USER.DestroyWindow 造成递归。 */
+                    try { w.destroy(); } catch (_) {}
+                }
+            });
+        });
+    }
+
     function Create(spec) {
         var s = spec || {};
         var w = new CtlWindow(s);
@@ -327,6 +361,9 @@
         if (apiRes.status !== S.OK) { return apiRes; }
         w.api = apiRes.value;
         w.id = apiRes.value.id;
+        /* 记住 pid：杀掉这个进程时 UI 层要能找到对应窗口 */
+        w.pid = apiRes.value.pid || null;
+        bindProcessWatcher();
 
         /* 2) surface on the desktop */
         var hostRes = desktopElement();
