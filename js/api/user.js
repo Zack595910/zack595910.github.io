@@ -141,7 +141,14 @@
             w.pid = srm.registerProcess(s.title, 'window', {
                 ecosystem: w.ecosystem,
                 owner: w.owner,
-                windowId: wid
+                windowId: wid,
+                /* 结束进程必须真的关掉窗口。
+                 * registerProcess 的 info 里带 onKill，killProcess 会回调它；
+                 * 之前这里没传，所以任务管理器"结束任务"只是从进程表里删了
+                 * 一条记录，窗口原封不动。 */
+                onKill: function () {
+                    try { DestroyWindow(wid); } catch (_) {}
+                }
             });
         }
         emit('window:created', { id: wid, title: w.title, ecosystem: w.ecosystem });
