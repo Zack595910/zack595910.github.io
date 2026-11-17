@@ -124,9 +124,11 @@
      */
     function createUser(spec) {
         var s = spec || {};
-        if (typeof s.name !== 'string' || !/^[A-Za-z0-9 _.-]{2,24}$/.test(s.name)) {
+        /* 允许中文用户名：之前只允许 ASCII，导致"创建不了新账户"。
+         * 现在支持字母、数字、中文、空格、点、连字符、下划线，长度 2-24。 */
+        if (typeof s.name !== 'string' || !/^[A-Za-z0-9 \u4e00-\u9fff _.-]{2,24}$/.test(s.name)) {
             return Promise.resolve(CORE.fail(S.EINVAL, {
-                reason: 'user name must be 2-24 ASCII letters, digits, spaces, dot, dash or underscore'
+                reason: '用户名需为 2-24 个字符（字母、数字、中文、空格、点、连字符或下划线）'
             }));
         }
         if (findUser(s.name)) {

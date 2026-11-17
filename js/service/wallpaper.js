@@ -128,7 +128,7 @@
                     objectFit: 'cover',
                     pointerEvents: 'none'
                 },
-                attributes: { muted: 'muted', loop: 'loop', autoplay: 'autoplay', playsinline: 'playsinline' }
+                attrs: { muted: 'muted', loop: 'loop', autoplay: 'autoplay', playsinline: 'playsinline' }
             });
             if (v.status === S.OK) {
                 state.videoEl = v.value;
@@ -217,8 +217,12 @@
 
     function pick(kind) {
         return new Promise(function (resolve) {
+            /* DOM.create 的属性字段名是 attrs（不是 attributes）。
+             * 之前写成 attributes，DOM 直接返回 EINVAL，
+             * pickImage/pickVideo 永远"无法创建文件选择器" ——
+             * 这就是"无法上传图片/视频壁纸"的根因。 */
             var input = DOM.create('input', {
-                attributes: { type: 'file', accept: kind === 'video' ? 'video/*' : 'image/*' }
+                attrs: { type: 'file', accept: kind === 'video' ? 'video/*' : 'image/*' }
             });
             if (input.status !== S.OK) {
                 resolve(CORE.fail(S.EFAULT, { reason: '无法创建文件选择器' }));
@@ -247,8 +251,27 @@
             });
 
             DOM.append(desktopHost() || document.body, el);
-            el.style.display = 'none';
-            el.click();
+            /* 关键：不能用 display:none —— 浏览器会拒绝在隐藏元素上
+             * 触发文件选择器（click() 静默失效，表现为"点了没反应"）。
+             * 用"几乎不可见但仍在渲染树里"的方式隐藏。 */
+            el.style.position = 'fixed';
+            el.style.left = '-9999px';
+            el.style.top = '0';
+            el.style.width = '1px';
+            el.style.height = '1px';
+            el.style.opacity = '0.01';
+            el.style.pointerEvents = 'none';
+
+            /* 再兜一层：直接触发 change 是测不了的，但保证点击生效 */
+            try {
+                if (typeof el.showPicker === 'function') {
+                    el.showPicker();
+                } else {
+                    el.click();
+                }
+            } catch (_) {
+                el.click();
+            }
         });
     }
 
