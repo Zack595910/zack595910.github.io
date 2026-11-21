@@ -857,24 +857,211 @@
     };
 
     /* ---- 5.13 程序 ---- */
+    /**
+     * 程序和功能 —— 已安装应用管理
+     *
+     *   上半：统计条（总数 / 内置 / 用户安装 / 自启项 / 占用空间）
+     *   中部：应用列表（图标 / 名称 / 类型 / 大小 / 自启开关）
+     *   底部：针对选中项的操作按钮（卸载 / 自启 / 打开）
+     */
     BUILDERS.programs = function (host, pad) {
         sectionTitle(host, '📦  ' + T('prog.title', '程序和功能'), pad);
+
         var reg = svc().appRegistry;
-        var list = reg ? reg.list().value : [];
-        var y = 34;
-        var h = new ui.Control({ x: pad, y: y, width: host.width - pad * 2, height: 30 + Math.min(list.length, 10) * 22 });
-        h.onPaint = function (dc) {
-            var t = RES.theme().value;
+        var inst = svc().appInstaller;
+        var startup = svc().startup;
+        var all = reg ? reg.list().value : [];
+        var userApps = all.filter(function (a) { return a.builtin !== true; });
+        var autoItems = startup ? startup.list().value : [];
+
+        var st = { table: null, rowApps: [], selectedIndex: -1, sizes: {} };
+
+        /* ---- 统计条 ---- */
+        var statH = 52;
+        var stats = new ui.Control({ x: pad, y: 34, width: host.width - pad * 2, height: statH });
+        stats.onPaint = function (dc) {
+            var th = RES.theme().value;
             GDI.SelectObject(dc, RES.font('ui'));
-            GDI.SetTextColor(dc, t.text);
-            GDI.DrawText(dc, '已安装的程序（' + list.length + '）', 0, 0);
-            GDI.SetTextColor(dc, t.textSecondary);
-            list.slice(0, 10).forEach(function (a, i) {
-                var nm = ITEM_LABELS[a.id] || a.name;
-                GDI.DrawTextTruncated(dc, '  ' + nm + (a.builtin ? '（内置）' : ''), 0, 26 + i * 22, h.width);
+            var totalSize = 0;
+            Object.keys(st.sizes).forEach(function (k) { totalSize += st.sizes[k] || 0; });
+            var cells = [
+                ['已安装', String(all.length), th.accent],
+                ['内置', String(all.length - userApps.length), th.textSecondary],
+                ['用户安装', String(userApps.length), th.textSecondary],
+                ['自启项', String(autoItems.filter(function (x) { return x.enabled !== false; }).length), '#6bff9e'],
+                ['占用', (totalSize / 1024).toFixed(1) + ' KB', th.textSecondary]
+            ];
+            var cw = Math.floor(stats.width / cells.length);
+            cells.forEach(function (c, i) {
+                var x = i * cw;
+                GDI.SetTextColor(dc, th.textSecondary);
+                GDI.SetTextAlign(dc, 'left');
+                GDI.DrawText(dc, c[0], x, 0, cw - 4);
+                GDI.SetTextColor(dc, c[2]);
+                GDI.SelectObject(dc, RES.font('uiBold'));
+                GDI.DrawText(dc, c[1], x, 18, cw - 4);
+                GDI.SelectObject(dc, RES.font('ui'));
             });
         };
-        host.addChild(h);
+        host.addChild(stats);
+
+        /* ---- 应用列表 ---- */
+        var tableY = 34 + statH + 8;
+        var btnH = 40;
+        var table = new ui.controls.Table({
+            x: pad, y: tableY,
+            width: Math.max(120, host.width - pad * 2),
+            height: Math.max(80, host.height - tableY - btnH - 12),
+            columns: [
+                { id: 'name', text: '名称', width: 200 },
+                { id: 'kind', text: '类型', width: 80 },
+                { id: 'size', text: '大小', width: 90 },
+                { id: 'auto', text: '开机自启', width: 90 }
+            ]
+        });
+        host.addChild(table);
+        st.table = table;
+
+        function refreshTable() {
+            st.rowApps = [];
+            var rows = all.map(function (a) {
+                var isAuto = autoItems.some(function (it) {
+                    return it.target && a.entry && it.target === a.entry;
+                });
+                st.rowApps.push(a);
+                return [
+                    (a.icon || '📦') + '  ' + (a.name || a.id),
+                    a.builtin ? '内置' : '用户',
+                    st.sizes[a.id] !== undefined ? (st.sizes[a.id] / 1024).toFixed(1) + ' KB' : '—',
+                    isAuto ? '✔ 已启用' : ''
+                ];
+            });
+            table.setRows(rows);
+            stats.invalidate();
+        }
+
+        table.onSelect = function (item, idx) { st.selectedIndex = idx; };
+        refreshTable();
+
+        /* 异步算出每个用户应用的大小 */
+        if (inst && typeof inst.sizeOf === 'function') {
+            userApps.forEach(function (a) {
+                Promise.resolve(inst.sizeOf(a)).then(function (sz) {
+                    st.sizes[a.id] = sz;
+                    if (st.hostAlive !== false) { refreshTable(); }
+                });
+            });
+        }
+
+        /* ---- 操作按钮 ---- */
+        var by = host.height - btnH;
+
+        host.addChild(new ui.controls.Button({
+            x: pad, y: by, width: 110, height: 28, text: '🚀  打开',
+            variant: 'primary',
+            onClick: function () {
+                var a = st.rowApps[st.selectedIndex];
+                if (!a) { setName('请先选择一个程序'); return; }
+                try {
+                    if (typeof a.launcher === 'function') { a.launcher(); }
+                    else if (reg) { reg.launch(a.id); }
+                    setName('正在启动 ' + a.name);
+                } catch (err) {
+                    setName('启动失败：' + (err && err.message));
+                }
+                render();
+            }
+        }));
+
+        host.addChild(new ui.controls.Button({
+            x: pad + 118, y: by, width: 130, height: 28, text: '⏻  切换自启',
+            onClick: function () {
+                var a = st.rowApps[st.selectedIndex];
+                if (!a) { setName('请先选择一个程序'); return; }
+                if (!startup) { setName('自启服务不可用'); return; }
+                var exist = autoItems.filter(function (it) {
+                    return it.target && a.entry && it.target === a.entry;
+                })[0];
+                if (exist) {
+                    startup.remove(exist.id);
+                    setName('已取消开机自启：' + a.name);
+                } else {
+                    var target = a.entry || a.id;
+                    var r = startup.add({
+                        kind: a.entry ? 'script' : 'app',
+                        name: a.name,
+                        icon: a.icon,
+                        target: target,
+                        delayMs: 1200
+                    });
+                    setName(r.status === S.OK ? ('已设置为开机自启：' + a.name)
+                                              : ('设置失败：' + (r.reason || '')));
+                }
+                autoItems = startup.list().value;
+                refreshTable();
+                render();
+            }
+        }));
+
+        host.addChild(new ui.controls.Button({
+            x: pad + 256, y: by, width: 110, height: 28, text: '🗑  卸载',
+            variant: 'danger',
+            onClick: function () {
+                var a = st.rowApps[st.selectedIndex];
+                if (!a) { setName('请先选择一个程序'); return; }
+                if (a.builtin) { setName('内置应用不能卸载'); return; }
+                if (!inst) { setName('安装服务不可用'); return; }
+
+                var CM = ui.ContextMenu;
+                if (!CM) { return; }
+                CM.Show({
+                    x: 240, y: 240,
+                    items: [
+                        { text: '确认卸载 ' + a.name + '？', disabled: true },
+                        { separator: true },
+                        {
+                            text: '🗑  确认卸载', variant: 'danger',
+                            onClick: function () {
+                                Promise.resolve(inst.uninstall(a.id)).then(function (r) {
+                                    if (r.status === S.OK) {
+                                        setName('已卸载 ' + a.name);
+                                        all = reg.list().value;
+                                        userApps = all.filter(function (x) { return x.builtin !== true; });
+                                        autoItems = startup ? startup.list().value : [];
+                                        refreshTable();
+                                        render();
+                                    } else {
+                                        setName('卸载失败：' + (r.reason || ''));
+                                        render();
+                                    }
+                                });
+                            }
+                        },
+                        { text: '取消', onClick: function () {} }
+                    ]
+                });
+            }
+        }));
+
+        host.addChild(new ui.controls.Button({
+            x: pad + 374, y: by, width: 110, height: 28, text: '🔄  刷新',
+            onClick: function () {
+                all = reg ? reg.list().value : [];
+                userApps = all.filter(function (x) { return x.builtin !== true; });
+                autoItems = startup ? startup.list().value : [];
+                refreshTable();
+                render();
+            }
+        }));
+
+        /* 自适应 */
+        var oldLayout = host.onResize;
+        host.onResizeHook = function (h2) {
+            stats.width = Math.max(200, h2.width - pad * 2);
+            table.width = Math.max(120, h2.width - pad * 2);
+            table.height = Math.max(80, h2.height - (34 + statH + 8) - btnH - 12);
+        };
+        void oldLayout;
     };
 
     /* ---- 5.14 Python 环境（带 PTD 同款进度条） ---- */

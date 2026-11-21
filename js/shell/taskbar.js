@@ -61,6 +61,32 @@
         /* 用户按钮：时钟左侧，显示当前用户，点开是用户菜单 */
         state.userRect = { x: surface.width - clockW - trayW - userW - 18, y: 0, w: userW, h: h };
 
+        /* 托盘图标区：在用户按钮左侧，收进托盘的应用图标排在这里 */
+        var traySvc = G.EznK.Service && G.EznK.Service.tray;
+        var trayCount = traySvc ? traySvc.count() : 0;
+        var iconSize = 22;
+        var trayIconsW = trayCount ? (trayCount * (iconSize + 6) + 8) : 0;
+        state.trayIconsRect = {
+            x: state.userRect.x - trayIconsW,
+            y: 0,
+            w: trayIconsW,
+            h: h
+        };
+        state.trayIcons = [];
+        if (traySvc && trayCount) {
+            var list2 = traySvc.list().value;
+            var sx = state.trayIconsRect.x + 4;
+            list2.forEach(function (it, i) {
+                state.trayIcons.push({
+                    id: it.id,
+                    icon: it.icon,
+                    name: it.name,
+                    rect: { x: sx + i * (iconSize + 6), y: (h - iconSize) / 2,
+                            w: iconSize, h: iconSize }
+                });
+            });
+        }
+
         var avail = surface.width - startW - clockW - trayW - userW - 60;
         var list = ui.Window.List().value;
         var bw = Math.min(180, Math.max(120, list.length ? Math.floor(avail / Math.max(1, list.length)) - 4 : 150));
@@ -105,6 +131,21 @@
 
         /* window buttons */
         GDI.SelectObject(surface.dc, RES.font('ui'));
+        /* 托盘图标 */
+        if (state.trayIcons && state.trayIcons.length) {
+            state.trayIcons.forEach(function (it) {
+                var r = it.rect;
+                if (state.hover === 'tray:' + it.id) {
+                    GDI.FillRect(surface.dc, r.x, r.y, r.w, r.h, t.surfaceHover);
+                }
+                GDI.SelectObject(surface.dc, RES.font('ui'));
+                GDI.SetTextColor(surface.dc, t.text);
+                GDI.SetTextAlign(surface.dc, 'center');
+                GDI.DrawText(surface.dc, it.icon, r.x, r.y + 2, r.w);
+                GDI.SetTextAlign(surface.dc, 'left');
+            });
+        }
+
         state.buttons.forEach(function (b) {
             var hovered = state.hover === b.id;
             var bg = b.active ? t.taskbarActive : (hovered ? t.taskbarHover : null);
@@ -178,7 +219,15 @@
             var x = ev.clientX - r.left;
             var y = ev.clientY - r.top;
             var hoverline = null;
-            if (state.startRect && x < state.startRect.w) { hoverline = 'start'; }
+            if (state.trayIcons && state.trayIcons.length) {
+                for (var thi = 0; thi < state.trayIcons.length; thi++) {
+                    if (inRect(x, y, state.trayIcons[thi].rect)) {
+                        hoverline = 'tray:' + state.trayIcons[thi].id;
+                        break;
+                    }
+                }
+            }
+            if (!hoverline && state.startRect && x < state.startRect.w) { hoverline = 'start'; }
             else {
                 for (var i = 0; i < state.buttons.length; i++) {
                     var b = state.buttons[i];
@@ -221,17 +270,45 @@
                 showUserMenu();
                 return;
             }
+            /* 托盘图标：点击还原窗口 */
+            if (state.trayIcons && state.trayIcons.length) {
+                for (var ti = 0; ti < state.trayIcons.length; ti++) {
+                    var tit = state.trayIcons[ti];
+                    if (inRect(x, y, tit.rect)) {
+                        var traySvc = G.EznK.Service && G.EznK.Service.tray;
+                        if (traySvc) { traySvc.activate(tit.id); }
+                        return;
+                    }
+                }
+            }
             /* 托盘（通知图标）：点击开关通知中心 */
             if (state.trayRect && inRect(x, y, state.trayRect)) {
                 if (EznK.Shell && EznK.Shell.notifications) { EznK.Shell.notifications.toggle(); }
                 return;
             }
-            /* 时钟：点击弹出时钟面板（之前错写成打开通知中心，
-             * 而且只判断了 x 没判断 y，导致时钟右侧全被当成时钟）。 */
+            /* 时钟：点击弹出时钟面板 */
             if (state.clockRect && inRect(x, y, state.clockRect)) {
                 toggleClockPanel();
                 return;
             }
+        });
+
+        /* ---- 右键：托盘图标弹菜单 ---- */
+        on('contextmenu', function (ev) {
+            var r2 = el.getBoundingClientRect();
+            var cx = ev.clientX - r2.left;
+            var cy = ev.clientY - r2.top;
+            if (state.trayIcons && state.trayIcons.length) {
+                for (var ri = 0; ri < state.trayIcons.length; ri++) {
+                    if (inRect(cx, cy, state.trayIcons[ri].rect)) {
+                        var ts = G.EznK.Service && G.EznK.Service.tray;
+                        if (ts) { ts.showMenu(state.trayIcons[ri].id, ev.clientX, ev.clientY); }
+                        if (ev.preventDefault) { ev.preventDefault(); }
+                        return;
+                    }
+                }
+            }
+            if (ev.preventDefault) { ev.preventDefault(); }
         });
     }
 
