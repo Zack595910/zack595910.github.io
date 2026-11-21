@@ -44,7 +44,7 @@
      * ============================================================== */
 
     function normalize(spec) {
-        return {
+        var entry = {
             id: spec.id, hidden: spec.hidden === true,
             name: spec.name || spec.id,
             icon: spec.icon || '[A]',
@@ -55,6 +55,12 @@
             description: spec.description || '',
             registeredAt: spec.registeredAt || new Date().toISOString()
         };
+        /* 用户安装的应用需要保留启动器与清单路径，
+         * 否则注册后"启动"按钮拿不到 launcher。 */
+        if (typeof spec.launcher === 'function') { entry.launcher = spec.launcher; }
+        if (spec.installed === true) { entry.installed = true; }
+        if (typeof spec.manifestPath === 'string') { entry.manifestPath = spec.manifestPath; }
+        return entry;
     }
 
     /** register(spec) -> { status, value: app } */
