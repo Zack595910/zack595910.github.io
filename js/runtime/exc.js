@@ -544,18 +544,211 @@
 
         var built = [];
         var jsQueue = [];
+        var dynamicRoots = [];      /* repeat 生成的动态块，重绘时重建 */
+        var onCloseSrc = '';        /* onclose 子节点收集 */
+        var conditional = [];       /* if/show 条件控件 */
+
+        /**
+         * buildRepeat(node, parentControl) - 展开 repeat 块
+         *   repeat over="items" as="item" {
+         *     label text={ item.name }
+         *     button text="删除" onClick={ remove(item) }
+         *   }
+         * 这一版只支持数据来自 state 或 Store 的同步取值。
+         */
+        function buildRepeat(node, parentControl) {
+            var overExpr = String(node.props.over || '').trim();
+            var asName = String(node.props.as || 'item').trim();
+            if (!overExpr) { return; }
+
+            var list = null;
+            try {
+                var f = Function.apply(null, JS_PARAMS.concat([
+                    'return (' + overExpr + ');'
+                ]));
+                list = f.apply(null, JS_ARGS);
+            } catch (err) {
+                LOG.error('EXC repeat 取值失败: ' + overExpr + ' -> ' + (err && err.message));
+                return;
+            }
+            if (!Array.isArray(list)) {
+                LOG.warn('EXC repeat 的 over 不是数组: ' + overExpr);
+                return;
+            }
+
+            list.forEach(function (item, idx) {
+                node.children.forEach(function (child) {
+                    var ctl = buildControl(child.type, child.props, ctx);
+                    if (!ctl) { return; }
+                    parentControl.addChild(ctl);
+                    built.push(ctl);
+                    var key = child.props.name || child.props.id;
+                    if (key) { ctx.controls[key] = ctl; }
+                    /* 让 onClick 等 JS 块能拿到当前项 */
+                    if (child.js) { jsQueue.push({ js: child.js, ctl: ctl, node: child }); }
+                    if (child.children.length) { buildChildren(child, ctl); }
+                    void asName; void idx;
+                });
+            });
+        }
 
         function buildChildren(parentNode, parentControl) {
             parentNode.children.forEach(function (child) {
+                /* repeat 是容器节点，不是控件 */
+                if (child.type === 'repeat') {
+                    buildRepeat(child, parentControl);
+                    return;
+                }
+                /* onload / onclose：生命周期块，不是控件。
+                 * 写成子节点是最自然的方式（避免和 window 的 { 冲突）：
+                 *   window title="X" {
+                 *     onload={ ... }
+                 *     label text="hi"
+                 *   }
+                 */
+                if (child.type === 'onload' || child.type === 'onLoad') {
+                    var rawOn = child.props.__inlineJs;
+                    var onSrc = (rawOn && typeof rawOn.__js === 'string') ? rawOn.__js
+                              : (typeof rawOn === 'string' ? rawOn : '');
+                    if (onSrc && onSrc.trim().length) {
+                        G.setTimeout(function () {
+                            if (!win || win.destroyed) { return; }
+                            try { runJsBlock(onSrc, 'onLoad'); } catch (_) {}
+                        }, 30);
+                    }
+                    return;
+                }
+                if (child.type === 'onclose' || child.type === 'onClose') {
+                    var rawOff = child.props.__inlineJs;
+                    var offSrc = (rawOff && typeof rawOff.__js === 'string') ? rawOff.__js
+                               : (typeof rawOff === 'string' ? rawOff : '');
+                    if (offSrc && offSrc.trim().length) {
+                        onCloseSrc = offSrc;
+                    }
+                    return;
+                }
                 var ctl = buildControl(child.type, child.props, ctx);
                 if (!ctl) { return; }
                 parentControl.addChild(ctl);
                 built.push(ctl);
                 var key = child.props.name || child.props.id || ctl.id;
-                ctx.controls[key] = ctl;
+                if (key) { ctx.controls[key] = ctl; }
                 if (child.js) { jsQueue.push({ js: child.js, ctl: ctl, node: child }); }
+                /* if / show：登记条件，首次渲染后求值 */
+                if (typeof child.props.show === 'string' && child.props.show.trim().length) {
+                    conditional.push({ ctl: ctl, expr: child.props.show.trim() });
+                }
+                /* bind：双向绑定到 state.xxx */
+                if (typeof child.props.bind === 'string' && child.props.bind.trim().length) {
+                    bindControl(ctl, child.props.bind.trim());
+                }
                 if (child.children.length) { buildChildren(child, ctl); }
             });
+        }
+
+        /* ==============================================================
+         * 双向绑定 bind="path"
+         *   edit / checkbox 参与输入；label / button 参与显示
+         * ============================================================== */
+        var binds = [];
+
+        function getByPath(path) {
+            var parts = String(path).split('.');
+            var cur = stateObj;
+            for (var i = 0; i < parts.length; i++) {
+                if (cur === null || cur === undefined) { return undefined; }
+                cur = cur[parts[i]];
+            }
+            return cur;
+        }
+        function setByPath(path, val) {
+            var parts = String(path).split('.');
+            var cur = stateObj;
+            for (var i = 0; i < parts.length - 1; i++) {
+                if (cur[parts[i]] === null || typeof cur[parts[i]] !== 'object') {
+                    cur[parts[i]] = {};
+                }
+                cur = cur[parts[i]];
+            }
+            cur[parts[parts.length - 1]] = val;
+        }
+
+        function bindControl(ctl, path) {
+            var entry = { ctl: ctl, path: path, kind: 'display' };
+            /* 可输入控件：值变更写回 state */
+            if (ctl.constructor && (ctl.constructor.name === 'Edit')) {
+                entry.kind = 'input';
+                var origChange = ctl.onChange;
+                ctl.onChange = function () {
+                    setByPath(path, ctl.getValue());
+                    if (typeof origChange === 'function') { origChange.apply(null, arguments); }
+                };
+            } else if (ctl.constructor && ctl.constructor.name === 'CheckBox') {
+                entry.kind = 'checked';
+                var origChange2 = ctl.onChange;
+                ctl.onChange = function () {
+                    setByPath(path, !!ctl.checked);
+                    if (typeof origChange2 === 'function') { origChange2.apply(null, arguments); }
+                };
+            }
+            binds.push(entry);
+            return entry;
+        }
+
+        /** applyBinds() - 把 state 的值刷到控件上 */
+        function applyBinds() {
+            binds.forEach(function (b) {
+                var v = getByPath(b.path);
+                if (v === undefined) { return; }
+                if (b.kind === 'input') {
+                    var cur = b.ctl.getValue();
+                    if (String(cur) !== String(v)) { b.ctl.setValue(v); }
+                } else if (b.kind === 'checked') {
+                    if (!!b.ctl.checked !== !!v) {
+                        b.ctl.checked = !!v;
+                        b.ctl.invalidate();
+                    }
+                } else if (typeof b.ctl.setText === 'function') {
+                    b.ctl.setText(String(v));
+                }
+            });
+        }
+
+        /**
+         * evalCondition(expr) - 求值 if/show 表达式。
+         * 表达式里可以用 state / controls / Util 等。
+         */
+        function evalCondition(expr, ctl) {
+            try {
+                var f = Function.apply(null, JS_PARAMS.concat([
+                    'var __ctl = arguments[arguments.length - 1];',
+                    'return (' + expr + ');'
+                ]));
+                var args = JS_ARGS.concat([ctl]);
+                return !!f.apply(null, args);
+            } catch (err) {
+                LOG.error('EXC 条件求值失败: ' + expr + ' -> ' + (err && err.message));
+                return true;   /* 出错时保持可见，避免整页消失 */
+            }
+        }
+
+        function applyConditions() {
+            conditional.forEach(function (c) {
+                var vis = evalCondition(c.expr, c.ctl);
+                if (c.ctl.visible !== vis) {
+                    c.ctl.visible = vis;
+                }
+            });
+            if (win && win.client) { win.client.invalidate(); }
+        }
+
+        /**
+         * rebuildDynamic() - 双向绑定/状态变化后重建受影响的控件。
+         *   目前只做两件事：重算条件显隐、刷新 bind 控件。
+         */
+        function rebuildDynamic() {
+            try { applyConditions(); } catch (_) {}
+            try { applyBinds(); } catch (_) {}
         }
 
         buildChildren(winNode, win.client);
@@ -598,129 +791,37 @@
          * 所有调用都经过 EznK.Platform.Net 网关（规则：网络只能走平台层）。
          * 出错不抛异常，而是返回 Promise.reject(Error)，方便 .catch()。
          * ============================================================== */
-        var NetPlatform = G.EznK.Platform && G.EznK.Platform.Net;
+        /* ==============================================================
+         * 运行时作用域（Net / Timer / Store / Dialog / ...）
+         * 统一由 js/runtime/exc-scope.js 提供，这里只做接线。
+         * ============================================================== */
+        var SCOPE_FACTORY = G.EznK.Runtime && G.EznK.Runtime.excScope;
+        var runtime = SCOPE_FACTORY
+            ? SCOPE_FACTORY.makeScope({
+                appName: appName,
+                win: win,
+                ctx: ctx,
+                requestRender: function () { rebuildDynamic(); }
+            })
+            : null;
 
-        function netFail(msg) {
-            var e = new Error(msg || 'network error');
-            e.isNetworkError = true;
-            return e;
+        var Net = runtime ? runtime.Net : null;
+        var Timer = runtime ? runtime.Timer : null;
+        var Store = runtime ? runtime.Store : null;
+        var Dialog = runtime ? runtime.Dialog : null;
+        var Clipboard = runtime ? runtime.Clipboard : null;
+        var Notify = runtime ? runtime.Notify : null;
+        var Console2 = runtime ? runtime.Console : null;
+        var Util = runtime ? runtime.Util : null;
+        var stateObj = runtime ? runtime.state : {};
+
+        if (!Net) {
+            /* 兜底：作用域模块缺失时至少不崩 */
+            Net = { getText: function () { return Promise.reject(new Error('网络层不可用')); },
+                    get: function () { return Promise.reject(new Error('网络层不可用')); },
+                    getJSON: function () { return Promise.reject(new Error('网络层不可用')); },
+                    isOnline: function () { return false; } };
         }
-
-        function netEnsure() {
-            if (!NetPlatform) { throw netFail('网络层不可用'); }
-        }
-
-        var Net = {
-            version: '1.0.0',
-
-            /** isOnline() -> boolean */
-            isOnline: function () {
-                if (!NetPlatform) { return false; }
-                try {
-                    var r = NetPlatform.isOnline();
-                    return !!(r && r.value);
-                } catch (_) { return (G.navigator ? G.navigator.onLine !== false : true); }
-            },
-
-            /**
-             * request(url, opts) -> Promise<{ok, status, text, json, headers}>
-             *   opts: { method, headers, body, timeout }
-             */
-            request: function (url, opts) {
-                netEnsure();
-                var o = opts || {};
-                return NetPlatform.request(url, o).then(function (r) {
-                    if (r.status !== S.OK) {
-                        throw netFail(r.reason || ('请求失败 (status=' + r.status + ')'));
-                    }
-                    var res = r.value;
-                    return res.text().then(function (text) {
-                        var headers = {};
-                        try {
-                            res.headers.forEach(function (v, k) { headers[k] = v; });
-                        } catch (_) {}
-                        var parsed = null;
-                        var isJson = false;
-                        try {
-                            parsed = JSON.parse(text);
-                            isJson = true;
-                        } catch (_) {}
-                        return {
-                            ok: res.ok,
-                            status: res.status,
-                            url: res.url || url,
-                            text: text,
-                            json: isJson ? parsed : null,
-                            headers: headers
-                        };
-                    });
-                });
-            },
-
-            /** get(url, opts) -> Promise<string> 返回响应文本 */
-            get: function (url, opts) {
-                netEnsure();
-                var o = {};
-                if (opts) {
-                    Object.keys(opts).forEach(function (k) { o[k] = opts[k]; });
-                }
-                o.method = 'GET';
-                if (NetPlatform.fetchText) {
-                    return NetPlatform.fetchText(url, o).then(function (r) {
-                        if (r.status !== S.OK) { throw netFail(r.reason || '获取失败'); }
-                        return r.value;
-                    });
-                }
-                return Net.request(url, o).then(function (res) { return res.text; });
-            },
-
-            /** getJSON(url, opts) -> Promise<object> */
-            getJSON: function (url, opts) {
-                netEnsure();
-                var o = {};
-                if (opts) { Object.keys(opts).forEach(function (k) { o[k] = opts[k]; }); }
-                o.method = 'GET';
-                if (NetPlatform.fetchJson) {
-                    return NetPlatform.fetchJson(url, o).then(function (r) {
-                        if (r.status !== S.OK) { throw netFail(r.reason || '获取 JSON 失败'); }
-                        return r.value;
-                    });
-                }
-                return Net.request(url, o).then(function (res) {
-                    if (res.json === null) { throw netFail('响应不是合法 JSON'); }
-                    return res.json;
-                });
-            },
-
-            /** post(url, body, opts) -> Promise<string> */
-            post: function (url, body, opts) {
-                var o = {};
-                if (opts) { Object.keys(opts).forEach(function (k) { o[k] = opts[k]; }); }
-                o.method = 'POST';
-                o.body = (typeof body === 'string') ? body : (body === undefined ? '' : String(body));
-                return Net.request(url, o).then(function (res) { return res.text; });
-            },
-
-            /** postJSON(url, data, opts) -> Promise<object> */
-            postJSON: function (url, data, opts) {
-                var o = {};
-                if (opts) { Object.keys(opts).forEach(function (k) { o[k] = opts[k]; }); }
-                o.method = 'POST';
-                o.body = JSON.stringify(data === undefined ? {} : data);
-                var h = o.headers ? Object.assign({}, o.headers) : {};
-                if (!h['Content-Type'] && !h['content-type']) {
-                    h['Content-Type'] = 'application/json';
-                }
-                o.headers = h;
-                return Net.request(url, o).then(function (res) {
-                    if (res.json === null) { throw netFail('响应不是合法 JSON'); }
-                    return res.json;
-                });
-            },
-
-            /** loadText(url) -> Promise<string>  别名 */
-            loadText: function (url, opts) { return Net.get(url, opts); }
-        };
 
         /* The scope is frozen for creation: no control factory is exposed,
          * satisfying "JS blocks may only modify existing controls". */
@@ -729,18 +830,42 @@
             Ezn32: G.ezn32,
             SRM: G.EznK.Kernel.SRM,
             Net: Net,
+            Timer: Timer,
+            Store: Store,
+            Dialog: Dialog,
+            Clipboard: Clipboard,
+            Notify: Notify,
+            Console: Console2,
+            Util: Util,
+            state: stateObj,
             app: { name: appName, version: appVersion },
             window: win,
             controls: ctx.controls
         };
 
+        /* 所有 JS 代码块共用的参数名（顺序必须一致） */
+        var JS_PARAMS = ['Ezn32UI', 'Ezn32', 'SRM', 'Net', 'Timer', 'Store',
+                         'Dialog', 'Clipboard', 'Notify', 'Console', 'Util',
+                         'state', 'app', 'controls', 'window'];
+        var JS_ARGS = [Ezn32UI, G.ezn32, G.EznK.Kernel.SRM, Net, Timer, Store,
+                       Dialog, Clipboard, Notify, Console2, Util,
+                       stateObj, Scope.app, ctx.controls, win];
+
+        /** runJsBlock(src) - 在统一作用域里执行一段 JS */
+        function runJsBlock(src, label) {
+            try {
+                var f = Function.apply(null, JS_PARAMS.concat([src]));
+                return f.apply(null, JS_ARGS);
+            } catch (err) {
+                LOG.error('EXC ' + (label || 'JS') + ' 抛出: ' + (err && err.message));
+                throw err;
+            }
+        }
+
         jsQueue.forEach(function (job) {
             try {
-                var fn = new Function('Ezn32UI', 'Ezn32', 'SRM', 'Net', 'app', 'controls', 'window', job.js);
-                fn(Ezn32UI, Scope.Ezn32, Scope.SRM, Scope.Net, Scope.app, ctx.controls, win);
-            } catch (err) {
-                LOG.error('EXC JS block for <' + job.node.type + '> threw: ' + (err && err.message));
-            }
+                runJsBlock(job.js, 'JS block <' + job.node.type + '>');
+            } catch (_) { /* 已记录 */ }
         });
 
         /* 把 onClick JS 块绑到对应的按钮上。
@@ -769,17 +894,55 @@
             /* 用 IIFE 固定 oc，避免闭包共享最后一个值 */
             (function (jsSrc, ctl) {
                 ctl.onClick = function () {
-                    try {
-                        var f = new Function('Ezn32UI', 'Ezn32', 'SRM', 'Net',
-                            'app', 'controls', 'window', jsSrc);
-                        f(Ezn32UI, G.ezn32, G.EznK.Kernel.SRM, Scope.Net,
-                            Scope.app, ctx.controls, win);
-                    } catch (err) {
-                        LOG.error('EXC onClick threw: ' + (err && err.message));
-                    }
+                    try { runJsBlock(jsSrc, 'onClick'); } catch (_) { /* 已记录 */ }
                 };
             })(oc.__js, target);
         });
+
+        /* ==============================================================
+         * 生命周期 + 初始渲染
+         *   onLoad  : window 上的 JS 块，应用启动后执行一次
+         *   onClose : 窗口关闭时执行，用于清理
+         * ============================================================== */
+        try { applyConditions(); } catch (_) {}
+        try { applyBinds(); } catch (_) {}
+
+        /* JS 块被解析成 { __js: "..." } 对象，不是字符串 */
+        var onLoadRaw = winNode.props.onLoad;
+        var onLoadJs = (onLoadRaw && typeof onLoadRaw.__js === 'string') ? onLoadRaw.__js
+                     : (typeof onLoadRaw === 'string' ? onLoadRaw : '');
+        if (onLoadJs.trim().length) {
+            /* 延后一帧，等窗口真正渲染出来再执行 */
+            G.setTimeout(function () {
+                if (!win || win.destroyed) { return; }
+                try { runJsBlock(onLoadJs, 'onLoad'); } catch (_) {}
+            }, 30);
+        }
+        var onCloseRaw = winNode.props.onClose;
+        var onCloseJs = onCloseSrc || ((onCloseRaw && typeof onCloseRaw.__js === 'string') ? onCloseRaw.__js
+                      : (typeof onCloseRaw === 'string' ? onCloseRaw : ''));
+        if (onCloseJs.trim().length) {
+            var prevDestroy = win.onDestroy;
+            win.onDestroy = function () {
+                try { runJsBlock(onCloseJs, 'onClose'); } catch (_) {}
+                if (runtime && typeof runtime._dispose === 'function') {
+                    try { runtime._dispose(); } catch (_) {}
+                }
+                if (typeof prevDestroy === 'function') {
+                    try { prevDestroy(); } catch (_) {}
+                }
+            };
+        } else {
+            var prevDestroy2 = win.onDestroy;
+            win.onDestroy = function () {
+                if (runtime && typeof runtime._dispose === 'function') {
+                    try { runtime._dispose(); } catch (_) {}
+                }
+                if (typeof prevDestroy2 === 'function') {
+                    try { prevDestroy2(); } catch (_) {}
+                }
+            };
+        }
 
         return Promise.resolve(CORE.ok({
             windowId: win.id,
@@ -787,7 +950,9 @@
             appVersion: appVersion,
             ast: ast,
             controls: ctx.controls,
-            controlCount: built.length
+            controlCount: built.length,
+            scope: Scope,
+            runtime: runtime
         }));
     }
 
