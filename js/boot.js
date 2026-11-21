@@ -205,6 +205,18 @@
             var nc = G.EznK.Shell.notifications;
             if (nc) { nc.push({ title: 'EZNT', text: 'System ready. Welcome, ' + (state.user ? state.user.name : 'User') + '.', level: 'info', timeout: 4000 }); }
             LOG.info('EZNT ready');
+
+            /* 开机自启：等桌面完全就绪后再拉起，避免和应用启动抢资源 */
+            try {
+                var st = G.EznK.Service && G.EznK.Service.startup;
+                if (st && typeof st.runAll === 'function') {
+                    G.setTimeout(function () {
+                        try { st.runAll(); } catch (err) {
+                            LOG.error('开机自启执行失败: ' + (err && err.message));
+                        }
+                    }, 600);
+                }
+            } catch (_) {}
             SRM.emit('system:ready', { user: state.user });
             return CORE.ok({ ready: true, user: state.user, steps: steps });
         }, function (err) {
@@ -217,7 +229,7 @@
 
     /** Boot every L4 service in dependency order (explicit, never guessed). */
     function bootServices() {
-        var order = ['user', 'file', 'appRegistry', 'theme', 'resolution', 'notify', 'window', 'backup', 'wallpaper', 'screenSaver', 'fileAssoc'];
+        var order = ['user', 'file', 'appRegistry', 'theme', 'resolution', 'notify', 'window', 'backup', 'wallpaper', 'screenSaver', 'fileAssoc', 'startup', 'appInstaller', 'tray'];
         var svcs = (G.EznK && G.EznK.Service) || {};
         var failed = [];
         var chain = Promise.resolve();
